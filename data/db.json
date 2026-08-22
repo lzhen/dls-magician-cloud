@@ -1,0 +1,349 @@
+{
+  "settings": {
+    "productName": "DLS Magician",
+    "defaultWorkspaceId": "ws-growth"
+  },
+  "users": [
+    {
+      "id": "u-jen",
+      "name": "Jen Lee",
+      "email": "jen@dlsmagician.dev",
+      "initials": "JL",
+      "title": "Workspace admin",
+      "color": "violet"
+    },
+    {
+      "id": "u-alex",
+      "name": "Alex Kim",
+      "email": "alex@dlsmagician.dev",
+      "initials": "AK",
+      "title": "Product designer",
+      "color": "blue"
+    },
+    {
+      "id": "u-maria",
+      "name": "Maria Garcia",
+      "email": "maria@dlsmagician.dev",
+      "initials": "MG",
+      "title": "Design engineer",
+      "color": "green"
+    },
+    {
+      "id": "u-sam",
+      "name": "Sam Patel",
+      "email": "sam@dlsmagician.dev",
+      "initials": "SP",
+      "title": "Software engineer",
+      "color": "amber"
+    },
+    {
+      "id": "u-priya",
+      "name": "Priya Shah",
+      "email": "priya@dlsmagician.dev",
+      "initials": "PS",
+      "title": "Researcher",
+      "color": "pink"
+    }
+  ],
+  "workspaces": [
+    {
+      "id": "ws-growth",
+      "name": "Growth Marketing Team",
+      "slug": "growth-marketing",
+      "logo": "GM",
+      "plan": "Team",
+      "domain": "growth.example",
+      "authProviders": {
+        "microsoft": true,
+        "google": true,
+        "companySso": true,
+        "magicLink": true,
+        "ssoRequired": false,
+        "mfaRequired": true
+      },
+      "members": [
+        {
+          "userId": "u-jen",
+          "role": "Admin",
+          "joinedAt": "2026-05-24T05:07:09.852Z"
+        },
+        {
+          "userId": "u-alex",
+          "role": "Editor",
+          "joinedAt": "2026-06-13T05:07:09.852Z"
+        },
+        {
+          "userId": "u-maria",
+          "role": "Editor",
+          "joinedAt": "2026-07-13T05:07:09.852Z"
+        },
+        {
+          "userId": "u-sam",
+          "role": "Editor",
+          "joinedAt": "2026-07-23T05:07:09.852Z"
+        },
+        {
+          "userId": "u-priya",
+          "role": "Commenter",
+          "joinedAt": "2026-08-10T05:07:09.852Z"
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "p-omnichannel",
+      "name": "Omnichannel Workflow",
+      "description": "End-to-end campaign eligibility and offline data workflow.",
+      "workspaceId": "ws-growth",
+      "ownerId": "u-jen",
+      "status": "Draft",
+      "category": "Advertising",
+      "accent": "violet",
+      "createdAt": "2026-08-01T05:07:09.852Z",
+      "updatedAt": "2026-08-22T05:05:09.852Z",
+      "structuredLanguage": "GIVEN\nA brick-and-mortar advertiser wants to measure offline conversions.\n\nWHEN\nThey connect offline data and meet the required quality threshold.\n\nTHEN\nThey can create an omnichannel campaign optimized for offline outcomes.\n\nAND\nThe system tracks campaign performance and provides actionable insights.",
+      "members": [
+        {
+          "userId": "u-jen",
+          "role": "Admin"
+        },
+        {
+          "userId": "u-alex",
+          "role": "Editor"
+        },
+        {
+          "userId": "u-maria",
+          "role": "Editor"
+        },
+        {
+          "userId": "u-sam",
+          "role": "Viewer"
+        }
+      ],
+      "comments": [
+        {
+          "id": "c-1",
+          "userId": "u-alex",
+          "body": "Should the quality threshold be configurable by market?",
+          "anchor": "WHEN",
+          "resolved": false,
+          "createdAt": "2026-08-22T04:47:09.852Z"
+        },
+        {
+          "id": "c-2",
+          "userId": "u-maria",
+          "body": "The generated JSON is ready for API validation.",
+          "anchor": "Generated JSON",
+          "resolved": true,
+          "createdAt": "2026-08-22T04:55:09.852Z"
+        }
+      ],
+      "versions": [
+        {
+          "id": "v-143",
+          "number": "1.4.3",
+          "userId": "u-jen",
+          "message": "Clarified offline quality threshold and outcomes.",
+          "createdAt": "2026-08-22T05:05:09.852Z",
+          "content": "GIVEN\nA brick-and-mortar advertiser wants to measure offline conversions.\n\nWHEN\nThey connect offline data and meet the required quality threshold.\n\nTHEN\nThey can create an omnichannel campaign optimized for offline outcomes.\n\nAND\nThe system tracks campaign performance and provides actionable insights."
+        },
+        {
+          "id": "v-142",
+          "number": "1.4.2",
+          "userId": "u-maria",
+          "message": "Added campaign eligibility language.",
+          "createdAt": "2026-08-22T04:02:09.852Z",
+          "content": "GIVEN\nA brick-and-mortar advertiser wants to measure offline conversions.\n\nWHEN\nThey connect offline data.\n\nTHEN\nThey can create an omnichannel campaign.\n\nAND\nThe system tracks campaign performance."
+        },
+        {
+          "id": "v-141",
+          "number": "1.4.1",
+          "userId": "u-alex",
+          "message": "Added initial nurture sequence.",
+          "createdAt": "2026-08-21T05:07:09.852Z",
+          "content": "GIVEN\nAn advertiser wants to connect offline outcomes.\n\nWHEN\nOffline events are available.\n\nTHEN\nThe system creates a campaign workflow."
+        }
+      ]
+    },
+    {
+      "id": "p-ads-intent",
+      "name": "Ads Manager Intent",
+      "description": "Classify advertiser intent and route users to the right setup path.",
+      "workspaceId": "ws-growth",
+      "ownerId": "u-alex",
+      "status": "In review",
+      "category": "Advertising",
+      "accent": "green",
+      "createdAt": "2026-08-06T05:07:09.852Z",
+      "updatedAt": "2026-08-21T05:07:09.852Z",
+      "structuredLanguage": "GIVEN\nAn advertiser describes a campaign goal.\n\nWHEN\nThe system detects the primary intent and required signals.\n\nTHEN\nIt recommends the best campaign setup and explains why.",
+      "members": [
+        {
+          "userId": "u-alex",
+          "role": "Admin"
+        },
+        {
+          "userId": "u-jen",
+          "role": "Editor"
+        },
+        {
+          "userId": "u-maria",
+          "role": "Commenter"
+        }
+      ],
+      "comments": [],
+      "versions": []
+    },
+    {
+      "id": "p-offline-explorer",
+      "name": "Offline Signals Explorer",
+      "description": "Explore signal health, data quality, and remediation guidance.",
+      "workspaceId": "ws-growth",
+      "ownerId": "u-maria",
+      "status": "Published",
+      "category": "Analytics",
+      "accent": "amber",
+      "createdAt": "2026-07-08T05:07:09.852Z",
+      "updatedAt": "2026-08-19T05:07:09.852Z",
+      "structuredLanguage": "GIVEN\nA specialist reviews offline signal health.\n\nWHEN\nThe system detects missing or low-quality events.\n\nTHEN\nIt explains the issue and recommends the highest-impact fix.",
+      "members": [
+        {
+          "userId": "u-maria",
+          "role": "Admin"
+        },
+        {
+          "userId": "u-jen",
+          "role": "Editor"
+        },
+        {
+          "userId": "u-sam",
+          "role": "Editor"
+        }
+      ],
+      "comments": [],
+      "versions": []
+    },
+    {
+      "id": "p-pixel-assistant",
+      "name": "Pixel Setup Assistant",
+      "description": "Guide users through pixel installation and verification.",
+      "workspaceId": "ws-growth",
+      "ownerId": "u-sam",
+      "status": "Draft",
+      "category": "Onboarding",
+      "accent": "blue",
+      "createdAt": "2026-08-14T05:07:09.852Z",
+      "updatedAt": "2026-08-18T19:31:09.852Z",
+      "structuredLanguage": "GIVEN\nA developer needs to install a tracking pixel.\n\nWHEN\nThey choose a platform and enter the website URL.\n\nTHEN\nThe assistant generates setup instructions and validates the installation.",
+      "members": [
+        {
+          "userId": "u-sam",
+          "role": "Admin"
+        },
+        {
+          "userId": "u-jen",
+          "role": "Editor"
+        }
+      ],
+      "comments": [],
+      "versions": []
+    },
+    {
+      "id": "p-dataset-migration",
+      "name": "Dataset Migration Plan",
+      "description": "Migrate legacy data sources to a unified dataset model.",
+      "workspaceId": "ws-growth",
+      "ownerId": "u-jen",
+      "status": "Published",
+      "category": "Data",
+      "accent": "pink",
+      "createdAt": "2026-06-28T05:07:09.852Z",
+      "updatedAt": "2026-08-08T05:07:09.852Z",
+      "structuredLanguage": "GIVEN\nAn account uses a legacy offline event source.\n\nWHEN\nThe migration is eligible and data mappings are complete.\n\nTHEN\nThe system creates a unified dataset without interrupting event delivery.",
+      "members": [
+        {
+          "userId": "u-jen",
+          "role": "Admin"
+        },
+        {
+          "userId": "u-maria",
+          "role": "Editor"
+        },
+        {
+          "userId": "u-sam",
+          "role": "Editor"
+        }
+      ],
+      "comments": [],
+      "versions": []
+    },
+    {
+      "id": "p-audience-builder",
+      "name": "Audience Builder",
+      "description": "Build and refine high-intent audience definitions.",
+      "workspaceId": "ws-growth",
+      "ownerId": "u-priya",
+      "status": "Draft",
+      "category": "Advertising",
+      "accent": "cyan",
+      "createdAt": "2026-08-10T05:07:09.852Z",
+      "updatedAt": "2026-07-23T05:07:09.852Z",
+      "structuredLanguage": "GIVEN\nA marketer defines a desired customer segment.\n\nWHEN\nThe system has enough first-party signals.\n\nTHEN\nIt proposes an audience definition with estimated reach and confidence.",
+      "members": [
+        {
+          "userId": "u-priya",
+          "role": "Admin"
+        },
+        {
+          "userId": "u-jen",
+          "role": "Commenter"
+        }
+      ],
+      "comments": [],
+      "versions": []
+    }
+  ],
+  "activities": [
+    {
+      "id": "a-1",
+      "userId": "u-alex",
+      "projectId": "p-omnichannel",
+      "type": "comment",
+      "text": "commented on the offline quality threshold",
+      "createdAt": "2026-08-22T04:47:09.852Z"
+    },
+    {
+      "id": "a-2",
+      "userId": "u-maria",
+      "projectId": "p-omnichannel",
+      "type": "approve",
+      "text": "approved version 1.4.2",
+      "createdAt": "2026-08-22T04:02:09.852Z"
+    },
+    {
+      "id": "a-3",
+      "userId": "u-jen",
+      "projectId": "p-offline-explorer",
+      "type": "edit",
+      "text": "updated Offline Signals Explorer",
+      "createdAt": "2026-08-22T00:07:09.852Z"
+    },
+    {
+      "id": "a-4",
+      "userId": "u-sam",
+      "projectId": "p-omnichannel",
+      "type": "comment",
+      "text": "requested changes to the generated JSON",
+      "createdAt": "2026-08-21T21:07:09.852Z"
+    },
+    {
+      "id": "a-5",
+      "userId": "u-priya",
+      "projectId": null,
+      "type": "member",
+      "text": "joined the Growth Marketing Team workspace",
+      "createdAt": "2026-08-21T05:07:09.852Z"
+    }
+  ]
+}

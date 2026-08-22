@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DLS Magician Cloud — Help</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    body{overflow:auto;background:#09090b}.docs{max-width:920px;margin:0 auto;padding:48px 24px 90px}.docs h1,.docs h2{font-family:var(--font-display);font-weight:400}.docs h1{font-size:48px}.docs h2{margin-top:40px;font-size:28px}.docs p,.docs li{color:var(--text-soft);line-height:1.75}.docs code,.docs pre{font-family:var(--font-mono)}.docs pre{padding:18px;border:1px solid var(--line);border-radius:12px;background:#111114;overflow:auto}.docs a{color:var(--gold-strong)}
+  </style>
+</head>
+<body>
+  <main class="docs">
+    <div class="brand-lockup"><span class="brand-symbol"></span><span class="brand-name">DLS MAGICIAN</span></div>
+    <h1>Cloud collaboration MVP</h1>
+    <p>This prototype combines passwordless authentication, shared workspaces, a structured-language editor, generated JSON, live workflow preview, comments, permissions, version history, and organization security settings.</p>
+    <h2>Test collaboration</h2>
+    <ol>
+      <li>Open the app in two browsers or one normal and one incognito window.</li>
+      <li>Sign in with different providers; each provider maps to a different demo collaborator.</li>
+      <li>Open Omnichannel Workflow in both windows.</li>
+      <li>Edit the structured language, add comments, invite a member, or save a version.</li>
+      <li>The other window receives the update through Server-Sent Events.</li>
+    </ol>
+    <h2>Run locally</h2>
+    <pre>npm start
+# Open http://localhost:3000</pre>
+    <h2>Production note</h2>
+    <p>The included provider buttons simulate authentication. Real Microsoft, Google, SAML SSO, and magic-link sign-in require provider credentials and secure server configuration. The repository README describes the replacement points.</p>
+    <p><a href="/">Return to DLS Magician</a></p>
+  </main>
+</body>
+</html>

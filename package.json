@@ -1,0 +1,13 @@
+{
+  "name": "dls-magician-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A runnable cloud-collaboration MVP for DLS Magician.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
