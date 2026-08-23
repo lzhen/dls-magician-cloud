@@ -12,6 +12,8 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://rosofbnimiothwxsabyr.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_9qRf5tZIn0deozmhcqqmqw_4Z_3Dodi';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -205,7 +207,6 @@ if (!fs.existsSync(DB_PATH)) {
 }
 
 let db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
-const sessions = new Map();
 const sseClients = new Set();
 const presence = new Map();
 
@@ -213,27 +214,6 @@ function saveDb() {
   const tmp = `${DB_PATH}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
   fs.renameSync(tmp, DB_PATH);
-}
-
-function parseCookies(req) {
-  const header = req.headers.cookie || '';
-  return header.split(';').reduce((acc, pair) => {
-    const idx = pair.indexOf('=');
-    if (idx === -1) return acc;
-    const key = decodeURIComponent(pair.slice(0, idx).trim());
-    const value = decodeURIComponent(pair.slice(idx + 1).trim());
-    acc[key] = value;
-    return acc;
-  }, {});
-}
-
-function getSession(req) {
-  const sid = parseCookies(req).dls_sid;
-  if (!sid) return null;
-  const session = sessions.get(sid);
-  if (!session) return null;
-  session.lastSeenAt = Date.now();
-  return session;
 }
 
 function getUser(userId) {
@@ -258,6 +238,42 @@ function publicUser(user) {
     title: user.title,
     color: user.color
   };
+}
+
+function ensureLocalUser(authUser) {
+  let user = getUser(authUser.id) || db.users.find((candidate) => candidate.email?.toLowerCase() === authUser.email?.toLowerCase());
+  const metadata = authUser.user_metadata || {};
+  const name = metadata.full_name || metadata.name || authUser.email?.split('@')[0] || 'Workspace user';
+  if (!user) {
+    user = {
+      id: authUser.id,
+      name,
+      email: authUser.email || '',
+      initials: name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
+      title: 'Workspace member',
+      color: 'violet'
+    };
+    db.users.push(user);
+    db.workspaces[0]?.members.push({ userId: user.id, role: 'Editor', joinedAt: nowIso() });
+  } else {
+    user.name = name;
+    user.email = authUser.email || user.email;
+  }
+  saveDb();
+  return user;
+}
+
+async function getSession(req, url = null) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) return null;
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) return null;
+  const authUser = await response.json();
+  const user = ensureLocalUser(authUser);
+  return { sid: authUser.id, userId: user.id, provider: authUser.app_metadata?.provider || 'email', authUser };
 }
 
 function parseStructuredLanguage(text, name = 'Untitled workflow') {
@@ -403,48 +419,8 @@ function broadcast(type, payload, projectId = null, excludeSid = null) {
   }
 }
 
-function ensureUserForProvider(provider, email) {
-  const map = {
-    microsoft: 'u-jen',
-    google: 'u-alex',
-    sso: 'u-maria'
-  };
-  if (map[provider]) return getUser(map[provider]);
-
-  if (provider === 'magic') {
-    const normalized = String(email || '').trim().toLowerCase();
-    if (!normalized || !normalized.includes('@')) return null;
-    let user = db.users.find((candidate) => candidate.email.toLowerCase() === normalized);
-    if (!user) {
-      const local = normalized.split('@')[0].replace(/[._-]+/g, ' ').trim();
-      const name = local
-        .split(' ')
-        .filter(Boolean)
-        .map((part) => part[0].toUpperCase() + part.slice(1))
-        .join(' ') || 'Guest User';
-      const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
-      user = {
-        id: `u-${crypto.randomUUID()}`,
-        name,
-        email: normalized,
-        initials,
-        title: 'Guest collaborator',
-        color: 'cyan'
-      };
-      db.users.push(user);
-      const workspace = db.workspaces[0];
-      workspace.members.push({ userId: user.id, role: 'Commenter', joinedAt: nowIso() });
-      recordActivity(user.id, null, 'member', `joined the ${workspace.name} workspace`);
-      saveDb();
-    }
-    return user;
-  }
-
-  return null;
-}
-
-function requireAuth(req, res) {
-  const session = getSession(req);
+async function requireAuth(req, res, url) {
+  const session = await getSession(req, url);
   if (!session) {
     sendError(res, 401, 'Authentication required');
     return null;
@@ -477,8 +453,12 @@ function activePresence(projectId) {
 async function handleApi(req, res, url) {
   const pathname = url.pathname;
 
+  if (req.method === 'GET' && pathname === '/api/config') {
+    return sendJson(res, 200, { supabaseUrl: SUPABASE_URL, supabasePublishableKey: SUPABASE_PUBLISHABLE_KEY });
+  }
+
   if (req.method === 'GET' && pathname === '/api/session') {
-    const session = getSession(req);
+    const session = await getSession(req, url);
     if (!session) return sendJson(res, 200, { authenticated: false });
     return sendJson(res, 200, {
       authenticated: true,
@@ -487,42 +467,8 @@ async function handleApi(req, res, url) {
     });
   }
 
-  if (req.method === 'POST' && pathname === '/api/auth/login') {
-    const body = await readBody(req);
-    const provider = String(body.provider || '').toLowerCase();
-    const user = ensureUserForProvider(provider, body.email);
-    if (!user) return sendError(res, 400, 'Choose a valid sign-in provider or email address.');
-
-    const sid = crypto.randomUUID();
-    sessions.set(sid, {
-      sid,
-      userId: user.id,
-      provider,
-      createdAt: Date.now(),
-      lastSeenAt: Date.now()
-    });
-
-    return sendJson(
-      res,
-      200,
-      { authenticated: true, provider, user: publicUser(user) },
-      { 'Set-Cookie': `dls_sid=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` }
-    );
-  }
-
-  if (req.method === 'POST' && pathname === '/api/auth/logout') {
-    const cookies = parseCookies(req);
-    if (cookies.dls_sid) sessions.delete(cookies.dls_sid);
-    return sendJson(
-      res,
-      200,
-      { ok: true },
-      { 'Set-Cookie': 'dls_sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' }
-    );
-  }
-
   if (req.method === 'GET' && pathname === '/api/events') {
-    const session = requireAuth(req, res);
+    const session = await requireAuth(req, res, url);
     if (!session) return;
     const projectId = url.searchParams.get('projectId') || null;
 
@@ -551,7 +497,7 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const session = requireAuth(req, res);
+  const session = await requireAuth(req, res, url);
   if (!session) return;
   const currentUser = getUser(session.userId);
 
