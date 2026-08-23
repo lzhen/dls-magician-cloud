@@ -308,35 +308,16 @@ svg {
 }
 
 .brand-symbol {
-  position: relative;
+  display: inline-block;
   width: 28px;
   height: 24px;
   flex: 0 0 auto;
-  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
+  background: url('/logo.svg') center / contain no-repeat;
+  filter: invert(1) opacity(0.82) drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
 }
 
-.brand-symbol::before {
-  content: "";
-  position: absolute;
-  inset: 2px 2px 7px 1px;
-  border-radius: 50% 58% 44% 45%;
-  border: 5px solid rgba(245, 244, 241, 0.74);
-  border-left-color: rgba(245, 244, 241, 0.16);
-  border-bottom-color: transparent;
-  transform: rotate(-8deg) skewX(-9deg);
-}
-
-.brand-symbol::after {
-  content: "";
-  position: absolute;
-  width: 11px;
-  height: 5px;
-  left: 10px;
-  bottom: 1px;
-  border-radius: 50%;
-  background: linear-gradient(180deg, rgba(245, 244, 241, 0.86), rgba(245, 244, 241, 0.23));
-  transform: rotate(-9deg);
-}
+.brand-symbol::before,
+.brand-symbol::after { content: none; }
 
 .brand-name {
   font-family: var(--font-display);
@@ -373,32 +354,19 @@ svg {
 .auth-visual::before {
   content: "";
   position: absolute;
-  width: 980px;
-  height: 980px;
-  left: -310px;
-  top: -160px;
-  border: 96px solid rgba(255, 255, 255, 0.035);
-  border-left-color: rgba(255, 255, 255, 0.012);
-  border-bottom-color: rgba(255, 255, 255, 0.015);
-  border-radius: 48% 60% 42% 56%;
-  transform: rotate(11deg);
+  width: 920px;
+  height: 748px;
+  left: -180px;
+  top: -42px;
+  background: url('/logo.svg') center / contain no-repeat;
+  filter: invert(1);
+  opacity: 0.045;
+  transform: rotate(-8deg);
   pointer-events: none;
 }
 
 .auth-visual::after {
-  content: "";
-  position: absolute;
-  width: 780px;
-  height: 190px;
-  left: 50px;
-  bottom: -40px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-left-color: transparent;
-  border-bottom-color: transparent;
-  border-radius: 50%;
-  transform: rotate(-9deg);
-  filter: blur(0.2px);
-  pointer-events: none;
+  content: none;
 }
 
 .auth-glow {
