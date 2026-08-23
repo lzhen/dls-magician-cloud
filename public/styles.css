@@ -551,10 +551,15 @@ svg {
 .provider-mark {
   display: grid;
   place-items: center;
-  width: 23px;
-  height: 23px;
-  font-size: 15px;
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
   font-weight: 800;
+}
+
+.provider-mark .icon {
+  width: 20px;
+  height: 20px;
 }
 
 .microsoft-mark {
@@ -578,7 +583,8 @@ svg {
 
 .google-mark {
   font-family: Arial, sans-serif;
-  font-size: 18px;
+  font-size: 21px;
+  line-height: 20px;
   background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 0 41%, #fbbc05 0 66%, #ea4335 0 84%, #4285f4 0);
   -webkit-background-clip: text;
   background-clip: text;
