@@ -160,7 +160,7 @@ function providerMark(provider) {
 }
 
 function brandLockup() {
-  return `<span class="brand-lockup"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name">DLS MAGICIAN</span></span>`;
+  return `<span class="brand-lockup"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">MAGICIAN</span></span></span>`;
 }
 
 async function api(path, options = {}) {
