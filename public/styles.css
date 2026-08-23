@@ -370,16 +370,7 @@ svg {
 }
 
 .auth-glow {
-  position: absolute;
-  width: 380px;
-  height: 720px;
-  right: -140px;
-  top: 40px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
-  transform: rotate(13deg);
-  filter: blur(42px);
-  opacity: 0.2;
-  pointer-events: none;
+  display: none;
 }
 
 .auth-copy {
