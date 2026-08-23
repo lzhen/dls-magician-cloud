@@ -764,6 +764,8 @@ svg {
 }
 
 .sidebar-user-meta {
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -777,12 +779,17 @@ svg {
 }
 
 .sidebar-user-role {
+  display: block;
   overflow: hidden;
-  margin-top: 1px;
+  margin-top: 0;
   color: var(--muted-2);
   font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-user > .icon {
+  justify-self: end;
 }
 
 .avatar {
@@ -3072,6 +3079,51 @@ svg {
   background:
     radial-gradient(circle at 80% 10%, rgba(111, 86, 229, 0.13), transparent 34%),
     linear-gradient(135deg, #ffffff, #efefec);
+}
+
+[data-theme="light"] .hero-activity {
+  border-color: rgba(24, 24, 27, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 36px rgba(35, 35, 31, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+[data-theme="light"] .hero-activity-title {
+  color: #303036;
+}
+
+[data-theme="light"] .hero-activity-title .text-link {
+  color: #686870;
+}
+
+[data-theme="light"] .hero-activity-item {
+  border-top-color: rgba(24, 24, 27, 0.09);
+}
+
+[data-theme="light"] .hero-activity-name {
+  color: #3f3f46;
+}
+
+[data-theme="light"] .hero-activity-time {
+  color: #85858d;
+}
+
+[data-theme="light"] .sidebar-user {
+  border-top-color: rgba(24, 24, 27, 0.12);
+  background: #fafaf8;
+  color: var(--text);
+}
+
+[data-theme="light"] .sidebar-user-name {
+  color: #303036;
+}
+
+[data-theme="light"] .sidebar-user-role {
+  color: #77777f;
+}
+
+[data-theme="light"] .sidebar-user > .icon {
+  color: #686870;
 }
 
 [data-theme="light"] .editor-pane {
