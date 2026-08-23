@@ -1828,6 +1828,238 @@ svg {
   text-align: center;
 }
 
+/* Generated product interface */
+.prototype-stage {
+  min-height: 100%;
+  padding: 22px 16px 70px;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 50% 0, rgba(139, 120, 255, 0.1), transparent 38%),
+    #0a0a0d;
+}
+
+.prototype-window {
+  width: min(100%, 350px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  background: #111115;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.36);
+}
+
+.prototype-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.prototype-product,
+.prototype-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.prototype-product .brand-symbol {
+  width: 16px;
+  height: 14px;
+  transform: scale(0.62);
+  transform-origin: center;
+}
+
+.prototype-badge {
+  color: var(--green);
+}
+
+.prototype-content {
+  display: grid;
+  gap: 13px;
+  padding: 18px;
+}
+
+.prototype-heading h2 {
+  margin: 3px 0 5px;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.prototype-heading p,
+.prototype-card small {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.prototype-eyebrow {
+  color: var(--violet);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.prototype-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.prototype-card-title {
+  display: flex;
+  gap: 9px;
+  padding: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.prototype-card-title > span {
+  color: var(--violet);
+}
+
+.prototype-card-title strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+}
+
+.prototype-check {
+  display: grid;
+  grid-template-columns: 19px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 35px;
+  padding: 0 11px;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.prototype-check + .prototype-check {
+  border-top: 1px solid var(--line);
+}
+
+.prototype-check b {
+  color: var(--green);
+  font-size: 8.5px;
+}
+
+.prototype-checkmark {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.prototype-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prototype-field button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #17171c;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 9.5px;
+  text-align: left;
+}
+
+.prototype-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid rgba(108, 167, 255, 0.18);
+  border-radius: 8px;
+  background: var(--blue-soft);
+  color: #aebdd7;
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+
+.prototype-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.prototype-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 8.5px;
+  font-weight: 650;
+}
+
+.prototype-secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+}
+
+.prototype-primary {
+  max-width: 70%;
+  border: 1px solid rgba(139, 120, 255, 0.48);
+  background: var(--violet);
+  color: white;
+}
+
+.prototype-primary:disabled {
+  border-color: rgba(98, 213, 155, 0.35);
+  background: var(--green-soft);
+  color: var(--green);
+  cursor: default;
+}
+
+.prototype-modal-body {
+  height: 660px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.prototype-stage-expanded {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 32px;
+}
+
+.prototype-stage-expanded .prototype-window {
+  width: min(100%, 520px);
+}
+
+.prototype-stage-expanded .prototype-content {
+  padding: 28px;
+}
+
 .editor-floating-tip {
   position: absolute;
   left: 16px;
