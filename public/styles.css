@@ -348,7 +348,7 @@ svg {
   min-width: 0;
   padding: 46px 54px 48px;
   overflow: hidden;
-  border-right: 1px solid rgba(255, 255, 255, 0.055);
+  border-right: 0;
 }
 
 .auth-visual::before {
@@ -464,8 +464,7 @@ svg {
   min-width: 0;
   padding: 40px;
   background:
-    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.04), transparent 48%),
-    #08080a;
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.04), transparent 48%);
 }
 
 .auth-card {
