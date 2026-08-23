@@ -68,6 +68,7 @@ const state = {
   shareTab: 'invite',
   selectedVersionId: null,
   settingsTab: 'authentication',
+  previewMode: 'interface',
   searchQuery: ''
 };
 let supabaseClient = null;
@@ -825,9 +826,9 @@ function renderEditor() {
           <div class="editor-statusbar"><span>${icon('code', 'icon-sm')} Read-only generated output</span><span id="json-validity">${generated.valid ? 'Valid' : 'Incomplete'}</span></div>
         </article>
         <article class="editor-pane editor-pane-preview">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Live preview</div><div class="pane-tabs"><button class="pane-tab active">Flow</button><button class="pane-tab">Simulate</button></div></div>
-          <div class="editor-content flow-view"><div class="flow-canvas" id="flow-canvas">${renderFlow(generated.steps)}</div></div>
-          <div class="editor-statusbar"><span>${icon('eye', 'icon-sm')} Execution preview</span><span>${generated.steps.length} steps</span></div>
+          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Generated interface</div><div class="pane-tabs"><button class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface">Interface</button><button class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow">Flow</button></div></div>
+          <div class="editor-content" id="generated-preview">${state.previewMode === 'flow' ? `<div class="flow-view"><div class="flow-canvas">${renderFlow(generated.steps)}</div></div>` : renderGeneratedInterface(generated)}</div>
+          <div class="editor-statusbar"><span>${icon('eye', 'icon-sm')} ${state.previewMode === 'flow' ? 'Logic flow' : 'Interactive prototype'}</span><span>${generated.valid ? 'Ready' : 'Incomplete'}</span></div>
         </article>
       </section>
     </main>
@@ -891,17 +892,66 @@ function renderFlow(steps) {
   `).join('');
 }
 
+function stepText(generated, type, fallback = '') {
+  return generated.steps.find((step) => step.type === type && step.text)?.text || fallback;
+}
+
+function prototypeActionLabel(text) {
+  const normalized = String(text || '')
+    .replace(/^(they|the user|the advertiser|the system)\s+(can|will|should)\s+/i, '')
+    .replace(/[.]$/, '');
+  if (!normalized) return 'Continue';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function renderGeneratedInterface(generated, expanded = false) {
+  if (!generated.valid) {
+    return `<div class="flow-empty"><div><div class="empty-state-icon">${icon('magic')}</div><h3>Complete the intent</h3><p>Add GIVEN, WHEN, and THEN to generate the product interface.</p></div></div>`;
+  }
+  const context = stepText(generated, 'GIVEN', 'Describe the user and their goal.');
+  const condition = stepText(generated, 'WHEN', 'Complete the required setup.');
+  const outcome = stepText(generated, 'THEN', 'Continue to the next step.');
+  const followup = stepText(generated, 'AND', 'The system will track progress and surface actionable insights.');
+  const isOmnichannel = /omnichannel|offline|campaign/i.test(`${generated.intent} ${generated.entities.join(' ')} ${outcome}`);
+  const title = isOmnichannel ? 'Create omnichannel campaign' : prototypeActionLabel(outcome);
+  const action = prototypeActionLabel(outcome);
+  return `
+    <div class="prototype-stage ${expanded ? 'prototype-stage-expanded' : ''}">
+      <section class="prototype-window">
+        <header class="prototype-topbar">
+          <span class="prototype-product"><span class="brand-symbol"></span>DLS generated app</span>
+          <span class="prototype-badge">${icon('sparkles', 'icon-sm')}Generated</span>
+        </header>
+        <div class="prototype-content">
+          <div class="prototype-heading">
+            <span class="prototype-eyebrow">${isOmnichannel ? 'CAMPAIGN SETUP' : 'GENERATED WORKFLOW'}</span>
+            <h2>${escapeHtml(title)}</h2>
+            <p>${escapeHtml(context)}</p>
+          </div>
+          <div class="prototype-card">
+            <div class="prototype-card-title"><span>${icon('checkCircle', 'icon-sm')}</span><div><strong>Eligibility requirements</strong><small>${escapeHtml(condition)}</small></div></div>
+            <div class="prototype-check"><span class="prototype-checkmark">${icon('check', 'icon-sm')}</span><span>${isOmnichannel ? 'Offline data source connected' : 'Required information complete'}</span><b>Ready</b></div>
+            <div class="prototype-check"><span class="prototype-checkmark">${icon('check', 'icon-sm')}</span><span>${isOmnichannel ? 'Offline data quality' : 'Input quality'}</span><b>${isOmnichannel ? '8.7 / 10' : 'Validated'}</b></div>
+          </div>
+          <label class="prototype-field"><span>${isOmnichannel ? 'Optimization goal' : 'Workflow outcome'}</span><button type="button">${escapeHtml(isOmnichannel ? 'Omnichannel sales' : action)}${icon('chevronRight', 'icon-sm')}</button></label>
+          <div class="prototype-insight">${icon('activity', 'icon-sm')}<span>${escapeHtml(followup)}</span></div>
+          <div class="prototype-actions"><button class="prototype-secondary" type="button">Save draft</button><button class="prototype-primary" type="button" data-action="run-prototype">${escapeHtml(action)}${icon('arrowRight', 'icon-sm')}</button></div>
+        </div>
+      </section>
+    </div>`;
+}
+
 function updateEditorOutputs() {
   if (!state.activeProject) return;
   const parsed = parseStructuredLanguage(state.editorText, state.activeProject.name);
   const jsonCode = document.getElementById('json-code');
-  const flowCanvas = document.getElementById('flow-canvas');
+  const generatedPreview = document.getElementById('generated-preview');
   const validation = document.getElementById('validation-state');
   const jsonValidity = document.getElementById('json-validity');
   const lineNumbers = document.getElementById('line-numbers');
   const saveState = document.getElementById('editor-save-state');
   if (jsonCode) jsonCode.innerHTML = highlightJson(parsed);
-  if (flowCanvas) flowCanvas.innerHTML = renderFlow(parsed.steps);
+  if (generatedPreview) generatedPreview.innerHTML = state.previewMode === 'flow' ? `<div class="flow-view"><div class="flow-canvas">${renderFlow(parsed.steps)}</div></div>` : renderGeneratedInterface(parsed);
   if (validation) {
     validation.className = `validation-state ${parsed.valid ? 'valid' : 'invalid'}`;
     validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'No errors' : 'Missing required steps'}`;
@@ -1143,8 +1193,8 @@ function renderPreviewModal() {
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-lg" role="dialog" aria-modal="true">
-        <header class="modal-header"><div><h2 class="modal-title">Execution preview</h2><div class="modal-subtitle">Simulated flow generated from the current structured language.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
-        <div class="modal-body" style="height:620px;padding:0"><div class="flow-view" style="height:100%"><div class="flow-canvas">${renderFlow(parsed.steps)}</div></div></div>
+        <header class="modal-header"><div><h2 class="modal-title">Generated interface</h2><div class="modal-subtitle">Interactive product UI generated from the current structured language.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+        <div class="modal-body prototype-modal-body">${renderGeneratedInterface(parsed, true)}</div>
       </section>
     </div>
   `;
@@ -1623,6 +1673,15 @@ document.addEventListener('click', async (event) => {
     case 'preview':
       state.modal = { type: 'preview' };
       renderModal();
+      break;
+    case 'preview-mode':
+      state.previewMode = actionElement.dataset.mode === 'flow' ? 'flow' : 'interface';
+      renderEditor();
+      break;
+    case 'run-prototype':
+      actionElement.disabled = true;
+      actionElement.innerHTML = `${icon('check', 'icon-sm')}Interface action completed`;
+      showToast('Generated prototype action completed', 'success');
       break;
     case 'validate': {
       const parsed = parseStructuredLanguage(state.editorText, state.activeProject?.name);
