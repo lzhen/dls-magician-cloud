@@ -12,8 +12,8 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://rosofbnimiothwxsabyr.supabase.co';
-const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_9qRf5tZIn0deozmhcqqmqw_4Z_3Dodi';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vxlwnvwijnzimjvgpeug.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_r3jVlTJmChdbHkJRcaBfcw_2k13Yx2A';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
