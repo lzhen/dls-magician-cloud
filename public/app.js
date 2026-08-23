@@ -61,7 +61,7 @@ const state = {
   editorText: '',
   editorDirty: false,
   autosaveTimer: null,
-  eventSource: null,
+  streamController: null,
   presenceTimer: null,
   modal: null,
   magicOpen: false,
@@ -70,6 +70,7 @@ const state = {
   settingsTab: 'authentication',
   searchQuery: ''
 };
+let supabaseClient = null;
 
 const app = document.getElementById('app');
 const modalRoot = document.getElementById('modal-root');
@@ -167,6 +168,10 @@ async function api(path, options = {}) {
     method: options.method || 'GET',
     headers: { ...(options.headers || {}) }
   };
+  if (supabaseClient) {
+    const { data } = await supabaseClient.auth.getSession();
+    if (data.session?.access_token) config.headers.Authorization = `Bearer ${data.session.access_token}`;
+  }
   if (options.body !== undefined) {
     config.headers['Content-Type'] = 'application/json';
     config.body = JSON.stringify(options.body);
@@ -207,6 +212,13 @@ function renderLoading() {
 async function boot() {
   renderLoading();
   try {
+    const config = await api('/api/config');
+    supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
+      auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      if (!session && state.user) logout(false);
+    });
     const session = await api('/api/session');
     if (session.authenticated) {
       state.user = session.user;
@@ -215,20 +227,6 @@ async function boot() {
     }
   } catch (error) {
     console.error(error);
-  }
-
-  const preview = new URLSearchParams(window.location.search).get('preview');
-  if (!state.user && preview) {
-    try {
-      const session = await api('/api/auth/login', { method: 'POST', body: { provider: 'microsoft' } });
-      state.user = session.user;
-      state.provider = session.provider;
-      await loadBootstrap();
-      if (preview === 'editor') window.location.hash = '#project/p-omnichannel';
-      else window.location.hash = '#dashboard';
-    } catch (error) {
-      console.error(error);
-    }
   }
 
   state.loading = false;
@@ -332,7 +330,7 @@ function renderLogin() {
               <button class="btn btn-primary" type="submit">Send link</button>
             </form>
           ` : ''}
-          <div class="auth-demo-note">${icon('sparkles', 'icon-sm')}<span>This runnable MVP simulates provider authentication. Each provider signs in as a different collaborator so you can test team activity.</span></div>
+          <div class="auth-demo-note">${icon('shield', 'icon-sm')}<span>Authentication is secured by Supabase. Your account is recorded when you sign in.</span></div>
           <div class="auth-legal">By continuing, you agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</div>
         </div>
       </section>
@@ -1166,26 +1164,48 @@ function filterProjectRows(query) {
 
 function connectStream(projectId = null) {
   disconnectStream();
+  const controller = new AbortController();
+  state.streamController = controller;
+  streamEvents(projectId, controller).catch((error) => {
+    if (error.name !== 'AbortError') console.error('Realtime stream ended', error);
+  });
+}
+
+async function streamEvents(projectId, controller) {
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session?.access_token) return;
   const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-  const source = new EventSource(`/api/events${query}`);
-  state.eventSource = source;
-  source.onmessage = (event) => {
-    try {
-      const message = JSON.parse(event.data);
-      handleRealtimeMessage(message);
-    } catch (error) {
-      console.error('Invalid realtime message', error);
+  const response = await fetch(`/api/events${query}`, {
+    headers: { Authorization: `Bearer ${data.session.access_token}` },
+    signal: controller.signal
+  });
+  if (!response.ok || !response.body) throw new Error(`Realtime connection failed (${response.status})`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const packets = buffer.split('\n\n');
+    buffer = packets.pop() || '';
+    for (const packet of packets) {
+      const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
+      if (!line) continue;
+      try {
+        handleRealtimeMessage(JSON.parse(line.slice(6)));
+      } catch (error) {
+        console.error('Invalid realtime message', error);
+      }
     }
-  };
-  source.onerror = () => {
-    // EventSource automatically reconnects. Keep the UI quiet unless it persists.
-  };
+  }
 }
 
 function disconnectStream() {
-  if (state.eventSource) {
-    state.eventSource.close();
-    state.eventSource = null;
+  if (state.streamController) {
+    state.streamController.abort();
+    state.streamController = null;
   }
 }
 
@@ -1296,13 +1316,24 @@ function stopPresence() {
 async function authenticate(provider, email = '') {
   renderLoading();
   try {
-    const session = await api('/api/auth/login', { method: 'POST', body: { provider, email } });
-    state.user = session.user;
-    state.provider = session.provider;
-    await loadBootstrap();
-    window.location.hash = '#dashboard';
-    await handleRoute();
-    showToast(`Welcome, ${firstName(state.user.name)}`);
+    if (provider === 'magic') {
+      const { error } = await supabaseClient.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: `${window.location.origin}/#dashboard` }
+      });
+      if (error) throw error;
+      state.user = null;
+      renderLogin();
+      showToast('Check your email for the secure sign-in link.', 'info', 6000);
+      return;
+    }
+    if (provider === 'sso') throw new Error('Company SSO needs a verified organization domain before it can be enabled.');
+    const supabaseProvider = provider === 'microsoft' ? 'azure' : provider;
+    const { error } = await supabaseClient.auth.signInWithOAuth({
+      provider: supabaseProvider,
+      options: { redirectTo: `${window.location.origin}/#dashboard`, scopes: provider === 'microsoft' ? 'email' : undefined }
+    });
+    if (error) throw error;
   } catch (error) {
     state.user = null;
     renderLogin();
@@ -1310,8 +1341,8 @@ async function authenticate(provider, email = '') {
   }
 }
 
-async function logout() {
-  try { await api('/api/auth/logout', { method: 'POST' }); } catch (_) { /* noop */ }
+async function logout(signOut = true) {
+  if (signOut && supabaseClient) await supabaseClient.auth.signOut();
   disconnectStream();
   stopPresence();
   state.user = null;
