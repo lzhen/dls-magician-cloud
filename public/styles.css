@@ -504,6 +504,10 @@ svg {
   line-height: 1.15;
 }
 
+.auth-title-prefix {
+  color: rgba(210, 208, 211, 0.68);
+}
+
 .auth-card p {
   margin: 9px 0 0;
   color: var(--muted);
