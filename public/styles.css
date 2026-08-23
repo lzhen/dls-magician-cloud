@@ -753,10 +753,16 @@ svg {
   grid-template-columns: 34px 1fr 20px;
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: 66px;
   padding: 12px 14px;
+  border: 0;
   border-top: 1px solid var(--line);
+  background: #09090b;
+  color: #f4f2ef;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .sidebar-user:hover {
@@ -771,7 +777,7 @@ svg {
 
 .sidebar-user-name {
   overflow: hidden;
-  color: var(--text-soft);
+  color: #f4f2ef;
   font-size: 12.5px;
   font-weight: 600;
   text-overflow: ellipsis;
@@ -782,7 +788,7 @@ svg {
   display: block;
   overflow: hidden;
   margin-top: 0;
-  color: var(--muted-2);
+  color: #929198;
   font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -790,6 +796,7 @@ svg {
 
 .sidebar-user > .icon {
   justify-self: end;
+  color: #a4a3aa;
 }
 
 .avatar {
