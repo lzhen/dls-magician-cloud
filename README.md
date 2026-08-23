@@ -38,7 +38,7 @@ Open:
 http://localhost:3000
 ```
 
-The app is connected to Supabase project `rosofbnimiothwxsabyr`. Override its public runtime configuration when deploying:
+The app is connected to its dedicated Supabase project `vxlwnvwijnzimjvgpeug`. Override its public runtime configuration when deploying:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
