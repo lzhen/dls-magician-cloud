@@ -42,6 +42,8 @@ const ICONS = {
   external: '<path d="M14 3h7v7M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7L20 14"/><path d="M20 8v6h-6"/>',
   eye: '<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20.5 14.2A8 8 0 0 1 9.8 3.5 8.5 8.5 0 1 0 20.5 14.2Z"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/>'
 };
 
@@ -69,8 +71,10 @@ const state = {
   selectedVersionId: null,
   settingsTab: 'authentication',
   previewMode: 'interface',
-  searchQuery: ''
+  searchQuery: '',
+  theme: localStorage.getItem('dls-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
 };
+document.documentElement.dataset.theme = state.theme;
 let supabaseClient = null;
 
 const app = document.getElementById('app');
@@ -162,6 +166,11 @@ function providerMark(provider) {
 
 function brandLockup() {
   return `<span class="brand-lockup"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">MAGICIAN</span></span></span>`;
+}
+
+function themeToggle(className = '') {
+  const light = state.theme === 'light';
+  return `<button class="btn btn-icon btn-ghost theme-toggle ${className}" data-action="toggle-theme" aria-label="Switch to ${light ? 'dark' : 'light'} mode" title="${light ? 'Dark' : 'Light'} mode">${icon(light ? 'moon' : 'sun')}</button>`;
 }
 
 async function api(path, options = {}) {
@@ -303,6 +312,7 @@ async function loadProject(projectId, { silent = false } = {}) {
 function renderLogin() {
   app.innerHTML = `
     <main class="auth-shell">
+      ${themeToggle('auth-theme-toggle')}
       <section class="auth-visual" aria-label="DLS Magician product introduction">
         <div class="auth-glow"></div>
         <div>${brandLockup()}</div>
@@ -423,6 +433,7 @@ function topbar(title, subtitle = '', options = {}) {
         </div>
       `}
       <button class="btn btn-icon btn-ghost" data-action="notifications" aria-label="Notifications">${icon('bell')}</button>
+      ${themeToggle()}
       ${options.action || ''}
     </header>
   `;
@@ -802,6 +813,7 @@ function renderEditor() {
           <span id="presence-avatars">${avatarStack(members, members.length)}</span>
         </div>
         <div class="editor-actions">
+          ${themeToggle()}
           <button class="btn btn-sm" data-action="validate">${icon('checkCircle', 'icon-sm')}<span>Validate</span></button>
           <button class="btn btn-sm" data-action="preview">${icon('play', 'icon-sm')}<span>Preview</span></button>
           <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
@@ -1598,6 +1610,12 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-modal' && event.target !== actionElement && actionElement.classList.contains('modal-backdrop')) return;
 
   switch (action) {
+    case 'toggle-theme':
+      state.theme = state.theme === 'light' ? 'dark' : 'light';
+      document.documentElement.dataset.theme = state.theme;
+      localStorage.setItem('dls-theme', state.theme);
+      await handleRoute();
+      break;
     case 'auth-provider':
       await authenticate(actionElement.dataset.provider);
       break;
