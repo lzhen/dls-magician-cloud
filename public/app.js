@@ -324,7 +324,7 @@ function renderLogin() {
         <div class="auth-card">
           <div class="auth-card-header">
             <div class="auth-card-mark"><span class="brand-symbol" aria-hidden="true"></span></div>
-            <h2>Welcome to<br>DLS Magician</h2>
+            <h2>Welcome to<br><span class="auth-title-prefix">DLS</span> Magician</h2>
             <p>Secure sign-in for teams. No product password required.</p>
           </div>
           <div class="provider-list">
