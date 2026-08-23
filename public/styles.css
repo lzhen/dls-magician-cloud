@@ -308,30 +308,41 @@ svg {
 }
 
 .brand-symbol {
-  display: inline-block;
+  position: relative;
   width: 28px;
   height: 24px;
   flex: 0 0 auto;
-  background: url('/logo.svg') center / contain no-repeat;
-  filter: invert(1) opacity(0.82) drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.35));
 }
 
-.brand-symbol::before,
-.brand-symbol::after { content: none; }
+.brand-symbol::before {
+  content: "";
+  position: absolute;
+  inset: 2px 2px 7px 1px;
+  border-radius: 50% 58% 44% 45%;
+  border: 5px solid rgba(245, 244, 241, 0.74);
+  border-left-color: rgba(245, 244, 241, 0.16);
+  border-bottom-color: transparent;
+  transform: rotate(-8deg) skewX(-9deg);
+}
+
+.brand-symbol::after {
+  content: "";
+  position: absolute;
+  width: 11px;
+  height: 5px;
+  left: 10px;
+  bottom: 1px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(245, 244, 241, 0.86), rgba(245, 244, 241, 0.23));
+  transform: rotate(-9deg);
+}
 
 .brand-name {
   font-family: var(--font-display);
   font-size: 17px;
   letter-spacing: 0.045em;
   white-space: nowrap;
-}
-
-.brand-prefix {
-  color: rgba(210, 208, 211, 0.68);
-}
-
-.brand-product {
-  color: var(--text);
 }
 
 /* Auth */
@@ -356,29 +367,51 @@ svg {
   min-width: 0;
   padding: 46px 54px 48px;
   overflow: hidden;
-  border-right: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.055);
 }
 
 .auth-visual::before {
   content: "";
   position: absolute;
-  width: 920px;
-  height: 748px;
-  left: -180px;
-  top: -42px;
-  background: url('/logo.svg') center / contain no-repeat;
-  filter: invert(1);
-  opacity: 0.045;
-  transform: rotate(-8deg);
+  width: 980px;
+  height: 980px;
+  left: -310px;
+  top: -160px;
+  border: 96px solid rgba(255, 255, 255, 0.035);
+  border-left-color: rgba(255, 255, 255, 0.012);
+  border-bottom-color: rgba(255, 255, 255, 0.015);
+  border-radius: 48% 60% 42% 56%;
+  transform: rotate(11deg);
   pointer-events: none;
 }
 
 .auth-visual::after {
-  content: none;
+  content: "";
+  position: absolute;
+  width: 780px;
+  height: 190px;
+  left: 50px;
+  bottom: -40px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(-9deg);
+  filter: blur(0.2px);
+  pointer-events: none;
 }
 
 .auth-glow {
-  display: none;
+  position: absolute;
+  width: 380px;
+  height: 720px;
+  right: -140px;
+  top: 40px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  transform: rotate(13deg);
+  filter: blur(42px);
+  opacity: 0.2;
+  pointer-events: none;
 }
 
 .auth-copy {
@@ -463,7 +496,8 @@ svg {
   min-width: 0;
   padding: 40px;
   background:
-    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.04), transparent 48%);
+    radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.04), transparent 48%),
+    #08080a;
 }
 
 .auth-card {
@@ -484,16 +518,16 @@ svg {
 .auth-card-mark {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 54px;
+  height: 54px;
   margin: 0 auto 18px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015));
 }
 
 .auth-card-mark .brand-symbol {
-  transform: scale(1.25);
+  transform: scale(1.1);
 }
 
 .auth-card h2 {
@@ -502,10 +536,6 @@ svg {
   font-size: 30px;
   font-weight: 400;
   line-height: 1.15;
-}
-
-.auth-title-prefix {
-  color: rgba(210, 208, 211, 0.68);
 }
 
 .auth-card p {
@@ -551,29 +581,24 @@ svg {
 .provider-mark {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  font-size: 20px;
+  width: 23px;
+  height: 23px;
+  font-size: 15px;
   font-weight: 800;
-}
-
-.provider-mark .icon {
-  width: 20px;
-  height: 20px;
 }
 
 .microsoft-mark {
   display: grid;
-  grid-template-columns: repeat(2, 9px);
+  grid-template-columns: repeat(2, 7px);
   gap: 2px;
-  width: auto;
-  height: auto;
+  width: 16px;
+  height: 16px;
 }
 
 .microsoft-mark i {
   display: block;
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
 }
 
 .microsoft-mark i:nth-child(1) { background: #f35325; }
@@ -583,8 +608,7 @@ svg {
 
 .google-mark {
   font-family: Arial, sans-serif;
-  font-size: 21px;
-  line-height: 20px;
+  font-size: 18px;
   background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 0 41%, #fbbc05 0 66%, #ea4335 0 84%, #4285f4 0);
   -webkit-background-clip: text;
   background-clip: text;
