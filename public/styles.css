@@ -569,6 +569,7 @@ svg {
   width: 14px;
   height: 14px;
   justify-self: center;
+  transform: translateX(-2px);
 }
 
 .microsoft-mark i {
