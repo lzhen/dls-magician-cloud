@@ -164,9 +164,12 @@ function brandLockup() {
 }
 
 async function api(path, options = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), options.timeout || 12_000);
   const config = {
     method: options.method || 'GET',
-    headers: { ...(options.headers || {}) }
+    headers: { ...(options.headers || {}) },
+    signal: controller.signal
   };
   if (supabaseClient) {
     const { data } = await supabaseClient.auth.getSession();
@@ -176,7 +179,15 @@ async function api(path, options = {}) {
     config.headers['Content-Type'] = 'application/json';
     config.body = JSON.stringify(options.body);
   }
-  const response = await fetch(path, config);
+  let response;
+  try {
+    response = await fetch(path, config);
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('The server took too long to respond. Please refresh and try again.');
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
   let payload = null;
   const text = await response.text();
   if (text) {
@@ -219,11 +230,14 @@ async function boot() {
     supabaseClient.auth.onAuthStateChange((_event, session) => {
       if (!session && state.user) logout(false);
     });
-    const session = await api('/api/session');
-    if (session.authenticated) {
-      state.user = session.user;
-      state.provider = session.provider;
-      await loadBootstrap();
+    const { data: authData } = await supabaseClient.auth.getSession();
+    if (authData.session) {
+      const session = await api('/api/session');
+      if (session.authenticated) {
+        state.user = session.user;
+        state.provider = session.provider;
+        await loadBootstrap();
+      }
     }
   } catch (error) {
     console.error(error);
