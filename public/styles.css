@@ -323,8 +323,15 @@ svg {
   font-family: var(--font-display);
   font-size: 17px;
   letter-spacing: 0.045em;
-  color: rgba(210, 208, 211, 0.78);
   white-space: nowrap;
+}
+
+.brand-prefix {
+  color: rgba(210, 208, 211, 0.68);
+}
+
+.brand-product {
+  color: var(--text);
 }
 
 /* Auth */
