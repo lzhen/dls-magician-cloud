@@ -476,16 +476,16 @@ svg {
 .auth-card-mark {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 42px;
+  height: 42px;
   margin: 0 auto 18px;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 16px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.015));
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .auth-card-mark .brand-symbol {
-  transform: scale(1.1);
+  transform: scale(1.25);
 }
 
 .auth-card h2 {
