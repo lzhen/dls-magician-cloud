@@ -3041,6 +3041,10 @@ svg {
   color: rgba(29, 29, 32, 0.55);
 }
 
+[data-theme="light"] .auth-title-prefix {
+  color: rgba(29, 29, 32, 0.62);
+}
+
 [data-theme="light"] .auth-shell {
   background:
     radial-gradient(circle at 10% 5%, rgba(255, 255, 255, 0.9), transparent 34%),
