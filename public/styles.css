@@ -3033,6 +3033,14 @@ svg {
   background: #ffffff;
 }
 
+[data-theme="light"] .provider-btn {
+  color: rgba(29, 29, 32, 0.72);
+}
+
+[data-theme="light"] .provider-btn:hover {
+  color: rgba(29, 29, 32, 0.86);
+}
+
 [data-theme="light"] .brand-symbol {
   filter: opacity(0.78) drop-shadow(0 6px 9px rgba(0, 0, 0, 0.12));
 }
