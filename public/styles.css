@@ -3155,6 +3155,25 @@ svg {
   color: #686870;
 }
 
+[data-theme="light"] .avatar {
+  border-color: rgba(24, 24, 27, 0.06);
+  background: linear-gradient(145deg, #f5f4f2, #e9e8e5);
+  color: #55545a;
+  box-shadow: 0 5px 14px rgba(37, 37, 31, 0.1);
+}
+
+[data-theme="light"] .avatar-stack .avatar,
+[data-theme="light"] .auth-proof .avatar {
+  border-color: transparent;
+}
+
+[data-theme="light"] .avatar.violet { background: linear-gradient(145deg, #eeeafd, #ddd6f7); color: #594a91; }
+[data-theme="light"] .avatar.blue { background: linear-gradient(145deg, #e7f2fc, #d3e7f8); color: #285884; }
+[data-theme="light"] .avatar.green { background: linear-gradient(145deg, #e5f4ed, #cee8db); color: #27644e; }
+[data-theme="light"] .avatar.amber { background: linear-gradient(145deg, #f7efe3, #eadbc4); color: #725431; }
+[data-theme="light"] .avatar.pink { background: linear-gradient(145deg, #faeaf2, #f1d4e3); color: #7b3e60; }
+[data-theme="light"] .avatar.cyan { background: linear-gradient(145deg, #e4f4f5, #cce8eb); color: #2a626a; }
+
 [data-theme="light"] .editor-pane {
   border-color: var(--line);
   background: #ffffff;
