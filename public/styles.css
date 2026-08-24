@@ -3072,7 +3072,7 @@ svg {
 }
 
 [data-theme="light"] .auth-panel {
-  background: rgba(255, 255, 255, 0.52);
+  background: transparent;
 }
 
 [data-theme="light"] .auth-card {
