@@ -2989,7 +2989,14 @@ svg {
 }
 
 [data-theme="light"] .sidebar {
-  box-shadow: 1px 0 0 var(--line);
+  border-right-color: rgba(24, 24, 27, 0.035);
+  box-shadow: none;
+}
+
+[data-theme="light"] .editor-pane,
+[data-theme="light"] .share-nav,
+[data-theme="light"] .version-sidebar {
+  border-right-color: rgba(24, 24, 27, 0.045);
 }
 
 [data-theme="light"] .nav-item:hover,
