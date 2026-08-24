@@ -43,6 +43,14 @@
       "initials": "PS",
       "title": "Researcher",
       "color": "pink"
+    },
+    {
+      "id": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "name": "Li Zhen",
+      "email": "rainbow0229@gmail.com",
+      "initials": "R",
+      "title": "Workspace member",
+      "color": "violet"
     }
   ],
   "workspaces": [
@@ -86,6 +94,11 @@
           "userId": "u-priya",
           "role": "Commenter",
           "joinedAt": "2026-08-10T05:07:09.852Z"
+        },
+        {
+          "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+          "role": "Editor",
+          "joinedAt": "2026-08-23T03:24:34.533Z"
         }
       ]
     }
@@ -176,8 +189,8 @@
       "category": "Advertising",
       "accent": "green",
       "createdAt": "2026-08-06T05:07:09.852Z",
-      "updatedAt": "2026-08-21T05:07:09.852Z",
-      "structuredLanguage": "GIVEN\nAn advertiser describes a campaign goal.\n\nWHEN\nThe system detects the primary intent and required signals.\n\nTHEN\nIt recommends the best campaign setup and explains why.",
+      "updatedAt": "2026-08-23T14:59:49.926Z",
+      "structuredLanguage": "GIVEN\nAn advertiser describes a campaign goal.\n\nWHEN\nThe system detects the primary intent and required signals.\n\nTHEN\nIt recommends the best campaign setup and explains why.\n\n",
       "members": [
         {
           "userId": "u-alex",
@@ -305,6 +318,86 @@
     }
   ],
   "activities": [
+    {
+      "id": "a-64b3ece5-a345-4c8c-abf1-4ddccdab516a",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:59:49.928Z"
+    },
+    {
+      "id": "a-7e89bfcf-dc60-4fd6-a441-cc33277313f7",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:59:42.346Z"
+    },
+    {
+      "id": "a-2d83b57a-24b4-4419-9d55-3444c55ff225",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:59:31.930Z"
+    },
+    {
+      "id": "a-9a0dd330-4e40-4dfc-a4b0-8dde7a300416",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:59:24.089Z"
+    },
+    {
+      "id": "a-40d7c9fd-3c76-4a7e-aad2-f889fbb27efd",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:59:14.415Z"
+    },
+    {
+      "id": "a-1b074e4a-f3fe-4aa5-a1d1-41af7dfd03b9",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:59:08.425Z"
+    },
+    {
+      "id": "a-1da21afb-3dff-44e2-aeb1-670cf1a918dd",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:58:59.713Z"
+    },
+    {
+      "id": "a-0800e9fd-5bfb-4713-be7d-c728386b29a9",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:58:53.473Z"
+    },
+    {
+      "id": "a-3ec7aa3e-67a4-4272-9f3b-d795976411c4",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:58:49.980Z"
+    },
+    {
+      "id": "a-e642695d-0fe5-4ed7-a991-983afee7c41a",
+      "userId": "37dc9749-6c3b-4fa4-aebe-79d26a6faa30",
+      "projectId": "p-ads-intent",
+      "type": "edit",
+      "text": "updated Ads Manager Intent",
+      "createdAt": "2026-08-23T14:58:46.603Z"
+    },
     {
       "id": "a-1",
       "userId": "u-alex",
