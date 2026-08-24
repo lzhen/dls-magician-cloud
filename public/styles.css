@@ -449,7 +449,7 @@ svg {
 
 .auth-proof .avatar {
   margin-left: -8px;
-  border: 2px solid #0b0b0d;
+  border-color: transparent;
 }
 
 .auth-proof .avatar:first-child {
@@ -3062,9 +3062,12 @@ svg {
   box-shadow: 0 28px 80px rgba(45, 44, 38, 0.12);
 }
 
-[data-theme="light"] .auth-card-mark,
 [data-theme="light"] .auth-demo-note {
   background: rgba(29, 29, 32, 0.035);
+}
+
+[data-theme="light"] .auth-card-mark {
+  background: transparent;
 }
 
 .auth-theme-toggle {
