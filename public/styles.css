@@ -3042,7 +3042,7 @@ svg {
 }
 
 [data-theme="light"] .auth-title-prefix {
-  color: rgba(29, 29, 32, 0.62);
+  color: rgba(29, 29, 32, 0.54);
 }
 
 [data-theme="light"] .auth-shell {
