@@ -895,9 +895,6 @@ function renderEditor() {
           <span id="presence-avatars">${avatarStack(members, members.length)}</span>
         </div>
         <div class="editor-actions">
-          ${themeToggle()}
-          <button class="btn btn-icon btn-sm editor-utility-action" data-action="validate" aria-label="Validate intent" title="Validate intent">${icon('checkCircle', 'icon-sm')}</button>
-          <button class="btn btn-icon btn-sm editor-utility-action" data-action="versions" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
           <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
           <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
           <button class="btn btn-primary btn-sm editor-publish" data-action="publish-prototype">${icon('sparkles', 'icon-sm')}<span>Publish prototype</span></button>
@@ -906,24 +903,38 @@ function renderEditor() {
       </header>
       <section class="editor-body" style="--intent-width:${state.intentWidth}%">
         <article class="editor-pane editor-pane-language" id="intent-panel">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">1</span>Structured intent</div><div class="intent-legend" aria-label="Intent structure"><span class="given">Given</span><span class="when">When</span><span class="then">Then</span></div></div>
+          <div class="pane-header"><div class="pane-title"><span class="step-number">1</span>Structured intent</div><span id="validation-state" class="validation-state ${generated.valid ? 'valid' : 'invalid'}" role="status">${icon(generated.valid ? 'checkCircle' : 'alert', 'icon-sm')}${generated.valid ? 'Valid' : 'Needs input'}</span></div>
           <div class="editor-content">
-            <div class="editor-line-guide" id="line-numbers">${renderLineNumbers(state.editorText)}</div>
-            <textarea id="structured-editor" class="structured-editor" spellcheck="false" aria-label="Structured language editor">${escapeHtml(state.editorText)}</textarea>
-            <div class="editor-floating-tip">${icon('sparkles', 'icon-sm')}Use GIVEN, WHEN, THEN, and AND to make intent machine-readable.</div>
+            <div class="intent-blocks" id="structured-editor" aria-label="Structured intent editor">${renderIntentBlocks(generated.steps)}</div>
+            <div class="editor-floating-tip">${icon('sparkles', 'icon-sm')}Each block maps directly to the generated interface.</div>
           </div>
-          <div class="editor-statusbar"><span id="validation-state" class="validation-state ${generated.valid ? 'valid' : 'invalid'}" role="status">${icon(generated.valid ? 'checkCircle' : 'alert', 'icon-sm')}${generated.valid ? 'No errors' : 'Missing required steps'}</span><span>DLSC v2.1</span></div>
         </article>
-        <div class="pane-resizer" data-resizer="intent" role="separator" aria-label="Resize intent and output panels" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="55" aria-valuenow="${state.intentWidth}" aria-controls="intent-panel output-panel" tabindex="0"></div>
+        <div class="pane-resizer" data-resizer="intent" role="separator" aria-label="Resize intent and output panels; double click to reset" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="55" aria-valuenow="${state.intentWidth}" aria-controls="intent-panel output-panel" tabindex="0"><span aria-hidden="true"></span></div>
         <article class="editor-pane editor-pane-output">
-          <div class="pane-header output-pane-header"><div class="pane-title"><span class="step-number">2</span>Output</div><div class="pane-tabs output-tabs" role="tablist" aria-label="Output format"><button id="output-tab-interface" class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface" role="tab" aria-selected="${state.previewMode === 'interface'}" aria-controls="output-panel" tabindex="${state.previewMode === 'interface' ? '0' : '-1'}">Interface</button><button id="output-tab-json" class="pane-tab ${state.previewMode === 'json' ? 'active' : ''}" data-action="preview-mode" data-mode="json" role="tab" aria-selected="${state.previewMode === 'json'}" aria-controls="output-panel" tabindex="${state.previewMode === 'json' ? '0' : '-1'}">JSON</button><button id="output-tab-flow" class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow" role="tab" aria-selected="${state.previewMode === 'flow'}" aria-controls="output-panel" tabindex="${state.previewMode === 'flow' ? '0' : '-1'}">Logic flow</button></div><div class="output-tools">${renderOutputTools()}</div></div>
+          <div class="pane-header output-pane-header"><div class="pane-title"><span class="step-number">2</span>Output</div><div class="pane-tabs output-tabs" role="tablist" aria-label="Output format"><button id="output-tab-interface" class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface" role="tab" aria-selected="${state.previewMode === 'interface'}" aria-controls="output-panel" tabindex="${state.previewMode === 'interface' ? '0' : '-1'}">Interface</button><button id="output-tab-json" class="pane-tab ${state.previewMode === 'json' ? 'active' : ''}" data-action="preview-mode" data-mode="json" role="tab" aria-selected="${state.previewMode === 'json'}" aria-controls="output-panel" tabindex="${state.previewMode === 'json' ? '0' : '-1'}">JSON</button><button id="output-tab-flow" class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow" role="tab" aria-selected="${state.previewMode === 'flow'}" aria-controls="output-panel" tabindex="${state.previewMode === 'flow' ? '0' : '-1'}">Logic flow</button></div></div>
+          ${state.previewMode === 'flow' ? '' : `<div class="output-toolbar"><span class="output-system-summary">${escapeHtml(DESIGN_SYSTEMS[state.designSystem].name)} · ${designSystemComponents().length} components</span><div class="output-tools">${renderOutputTools()}</div></div>`}
           <div class="editor-content output-content viewport-${escapeHtml(state.previewViewport)} zoom-${escapeHtml(state.previewZoom)}" id="output-panel" role="tabpanel" aria-labelledby="output-tab-${escapeHtml(state.previewMode)}"><div id="generated-preview">${renderOutput(generated)}</div></div>
-          <div class="editor-statusbar"><span>${state.previewMode === 'interface' ? `${icon('eye', 'icon-sm')} Generated with ${escapeHtml(DESIGN_SYSTEMS[state.designSystem].name)}` : state.previewMode === 'json' ? `${icon('code', 'icon-sm')} Design-system-aware schema` : `${icon('activity', 'icon-sm')} Intent logic`}</span><span>${generated.valid ? `${designSystemComponents().length} approved components` : 'Incomplete'}</span></div>
         </article>
       </section>
     </main>
   `;
   renderModal();
+}
+
+function renderIntentBlocks(steps) {
+  const required = ['GIVEN', 'WHEN', 'THEN'];
+  const normalized = [...steps];
+  required.forEach((type) => {
+    if (!normalized.some((step) => step.type === type)) normalized.push({ type, text: '' });
+  });
+  return normalized.map((step, index) => `
+    <section class="intent-block intent-${escapeHtml(step.type.toLowerCase())}" data-intent-type="${escapeHtml(step.type)}">
+      <div class="intent-block-rail"><span>${escapeHtml(step.type)}</span><small>${index + 1}</small></div>
+      <div class="intent-block-body">
+        <label for="intent-step-${index}">${step.type === 'GIVEN' ? 'Starting context' : step.type === 'WHEN' ? 'Trigger or condition' : step.type === 'THEN' ? 'Expected outcome' : 'Additional behavior'}</label>
+        <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
+      </div>
+    </section>`).join('');
 }
 
 function renderLineNumbers(text) {
@@ -1042,7 +1053,7 @@ function updateEditorOutputs() {
   if (generatedPreview) generatedPreview.innerHTML = renderOutput(parsed);
   if (validation) {
     validation.className = `validation-state ${parsed.valid ? 'valid' : 'invalid'}`;
-    validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'No errors' : 'Missing required steps'}`;
+    validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'Valid' : 'Needs input'}`;
   }
   if (lineNumbers) lineNumbers.innerHTML = renderLineNumbers(state.editorText);
   if (saveState) saveState.textContent = 'Unsaved changes…';
@@ -1912,8 +1923,9 @@ document.addEventListener('submit', async (event) => {
 document.addEventListener('input', (event) => {
   const target = event.target;
   if (target.matches('input, textarea, select') && target.getAttribute('aria-invalid') === 'true') target.removeAttribute('aria-invalid');
-  if (target.id === 'structured-editor') {
-    state.editorText = target.value;
+  if (target.matches('.intent-step-input')) {
+    const fields = [...document.querySelectorAll('.intent-step-input')];
+    state.editorText = fields.map((field) => `${field.dataset.intentType}\n${field.value.trim()}`).join('\n\n');
     state.editorDirty = true;
     updateEditorOutputs();
     scheduleAutosave();
@@ -2022,6 +2034,15 @@ document.addEventListener('pointerdown', (event) => {
   document.addEventListener('pointermove', onMove);
   document.addEventListener('pointerup', onUp);
   event.preventDefault();
+});
+
+document.addEventListener('dblclick', (event) => {
+  const resizer = event.target.closest('[data-resizer="intent"]');
+  if (!resizer) return;
+  state.intentWidth = 40;
+  resizer.closest('.editor-body')?.style.setProperty('--intent-width', '40%');
+  resizer.setAttribute('aria-valuenow', '40');
+  showToast('Panel widths reset.', 'info');
 });
 
 window.addEventListener('hashchange', handleRoute);
