@@ -11,7 +11,7 @@
   --text: #f4f2ef;
   --text-soft: #c2c0c4;
   --muted: #86858d;
-  --muted-2: #66656d;
+  --muted-2: #8e8c96;
   --gold: #c7a86b;
   --gold-strong: #e2c684;
   --violet: #8b78ff;
@@ -87,6 +87,15 @@ textarea:focus-visible,
 select:focus-visible,
 a:focus-visible {
   outline: 2px solid rgba(139, 120, 255, 0.72);
+  outline-offset: 2px;
+}
+
+.input:focus-visible,
+.textarea:focus-visible,
+.select:focus-visible,
+.output-control:focus-visible,
+.design-system-picker select:focus-visible {
+  outline: 2px solid #a99cff;
   outline-offset: 2px;
 }
 
@@ -894,7 +903,8 @@ svg {
   margin-right: auto;
 }
 
-.topbar-title h1 {
+.topbar-title h1,
+.topbar-heading {
   overflow: hidden;
   margin: 0;
   font-family: var(--font-display);
@@ -1163,6 +1173,8 @@ svg {
   border-radius: var(--radius-md);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
   cursor: pointer;
+  color: inherit;
+  text-decoration: none;
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
@@ -1454,6 +1466,16 @@ svg {
   gap: 10px;
   color: var(--text-soft);
   font-weight: 600;
+}
+
+.table-project-link {
+  color: var(--text-soft);
+  text-decoration: none;
+}
+
+.table-project-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .mini-file-icon {
@@ -1842,6 +1864,11 @@ svg {
 
 .output-content {
   background: var(--bg-soft);
+}
+
+#generated-preview {
+  width: 100%;
+  height: 100%;
 }
 
 .output-content.viewport-desktop .prototype-window {
@@ -3302,8 +3329,8 @@ svg {
   --line-strong: rgba(24, 24, 27, 0.2);
   --text: #1d1d20;
   --text-soft: #4e4e55;
-  --muted: #77777f;
-  --muted-2: #9b9ba2;
+  --muted: #686870;
+  --muted-2: #606068;
   --violet-soft: rgba(111, 86, 229, 0.1);
   --green-soft: rgba(26, 151, 91, 0.1);
   --blue-soft: rgba(56, 114, 205, 0.1);
@@ -3601,4 +3628,24 @@ svg {
   background: #ffffff;
   color: var(--text);
   box-shadow: 0 16px 40px rgba(36, 36, 31, 0.16);
+}
+
+.editor-save-state,
+.presence-label,
+.modal-subtitle,
+.settings-row-description,
+.helper,
+.toast-message {
+  font-size: max(11px, 0.6875rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
