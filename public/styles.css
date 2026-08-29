@@ -3849,6 +3849,111 @@ svg {
 [data-theme="light"] .intent-step-input { color: var(--text); }
 [data-theme="light"] .output-toolbar { background: #fafaf8; }
 
+/* Preserve the original light-mode visual treatment. */
+[data-theme="light"] .editor-topbar {
+  min-height: 68px;
+  padding-inline: 18px;
+  border-bottom-color: var(--line);
+}
+[data-theme="light"] .editor-brand-button { border-radius: 9px; }
+[data-theme="light"] .editor-project-name .status-pill {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 10px;
+}
+[data-theme="light"] .editor-project-name .status-pill::before { content: none; }
+[data-theme="light"] .editor-pane { border-right: 1px solid var(--line); }
+[data-theme="light"] .editor-pane:last-child { border-right: 0; }
+[data-theme="light"] .pane-header {
+  min-height: 54px;
+  border-bottom-color: var(--line);
+  background: #fff;
+}
+[data-theme="light"] .step-number {
+  border: 1px solid var(--line);
+  background: transparent;
+}
+[data-theme="light"] .pane-tab.active {
+  background: rgba(29, 29, 32, .055);
+  box-shadow: none;
+}
+[data-theme="light"] .pane-resizer::after { background: var(--line); }
+[data-theme="light"] .intent-blocks {
+  padding: 22px 22px 90px 54px;
+  background:
+    linear-gradient(90deg, rgba(29,29,32,.025) 0 40px, transparent 40px),
+    #fbfbfa;
+}
+[data-theme="light"] .intent-block {
+  display: block;
+  overflow: visible;
+  margin: 0 0 18px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+[data-theme="light"] .intent-block:focus-within {
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+[data-theme="light"] .intent-block-rail {
+  display: flex;
+  padding: 0 0 6px;
+  flex-direction: row;
+  background: transparent;
+}
+[data-theme="light"] .intent-block-rail small { display: none; }
+[data-theme="light"] .intent-block-body { padding: 0; }
+[data-theme="light"] .intent-block-body label { display: none; }
+[data-theme="light"] .intent-step-input {
+  min-height: 48px;
+  resize: none;
+  color: #29292d;
+  font-size: 14px;
+  line-height: 1.75;
+}
+[data-theme="light"] .output-toolbar {
+  min-height: 46px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+[data-theme="light"] .editor-floating-tip {
+  border: 1px solid rgba(111,86,229,.22);
+  border-radius: 8px;
+  background: #f7f7f5;
+  box-shadow: none;
+}
+[data-theme="light"] .prototype-window { border-radius: 14px; }
+[data-theme="light"] .prototype-card { border-radius: 10px; }
+[data-theme="light"] .prototype-field button,
+[data-theme="light"] .prototype-insight,
+[data-theme="light"] .prototype-actions button { border-radius: 8px; }
+[data-theme="light"] .prototype-heading h2 { font-size: 26px; }
+[data-theme="light"] .prototype-heading p,
+[data-theme="light"] .prototype-card small,
+[data-theme="light"] .prototype-check,
+[data-theme="light"] .prototype-insight { font-size: 11px; }
+[data-theme="light"] .prototype-card-title strong,
+[data-theme="light"] .prototype-field button { font-size: 12px; }
+[data-theme="light"] .prototype-actions button { font-size: 11px; }
+[data-theme="light"] .prototype-stage.ds-material .prototype-card,
+[data-theme="light"] .prototype-stage.ds-ant .prototype-card {
+  border: 1px solid var(--line);
+  background: #f7f7f5;
+  box-shadow: none;
+}
+[data-theme="light"] .prototype-stage.ds-material .prototype-primary,
+[data-theme="light"] .prototype-stage.ds-material .prototype-secondary {
+  border-radius: 8px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+[data-theme="light"] .prototype-stage.ds-dls .prototype-window { background: #fff; }
+
 @media (max-width: 760px) {
   .editor-collaborators { display: none; }
   .editor-actions .btn:not(.editor-publish):not([data-action="editor-more"]) { display: none; }
