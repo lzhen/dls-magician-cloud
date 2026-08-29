@@ -85,6 +85,7 @@ const state = {
   streamController: null,
   presenceTimer: null,
   modal: null,
+  modalReturnFocus: null,
   magicOpen: false,
   shareTab: 'invite',
   selectedVersionId: null,
@@ -104,6 +105,14 @@ let supabaseClient = null;
 const app = document.getElementById('app');
 const modalRoot = document.getElementById('modal-root');
 const toastRoot = document.getElementById('toast-root');
+const statusAnnouncer = document.getElementById('status-announcer');
+const alertAnnouncer = document.getElementById('alert-announcer');
+
+function announce(message, urgent = false) {
+  const region = urgent ? alertAnnouncer : statusAnnouncer;
+  region.textContent = '';
+  window.requestAnimationFrame(() => { region.textContent = String(message || ''); });
+}
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -286,6 +295,8 @@ function showToast(message, type = 'success', duration = 3600) {
   const node = document.createElement('div');
   node.className = `toast ${type}`;
   node.id = id;
+  node.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  node.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
   node.innerHTML = `
     <span class="toast-icon">${icon(iconName)}</span>
     <span class="toast-message">${escapeHtml(message)}</span>
@@ -296,7 +307,7 @@ function showToast(message, type = 'success', duration = 3600) {
 }
 
 function renderLoading() {
-  app.innerHTML = `<div class="loading-screen"><div class="loading-mark"><div class="spinner"></div><div>Preparing your workspace…</div></div></div>`;
+  app.innerHTML = `<div class="loading-screen" role="status" aria-live="polite"><div class="loading-mark"><div class="spinner" aria-hidden="true"></div><div>Preparing your workspace…</div></div></div>`;
 }
 
 async function boot() {
@@ -469,7 +480,7 @@ function sidebar(activePage) {
           <div class="sidebar-label">Settings</div>
           <nav class="nav-list">
             ${navItem('settings', 'Preferences', 'settings', activePage, '#settings')}
-            <a class="nav-item" href="/help.html" target="_blank">${icon('files')}<span>Help & docs</span></a>
+            <a class="nav-item" href="/help.html" target="_blank" rel="noopener">${icon('files')}<span>Help & docs<span class="sr-only"> (opens in a new tab)</span></span></a>
           </nav>
         </div>
       </div>
@@ -483,7 +494,8 @@ function sidebar(activePage) {
 }
 
 function navItem(page, label, iconName, activePage, href, badge = null) {
-  return `<a class="nav-item ${activePage === page ? 'active' : ''}" href="${href}">${icon(iconName)}<span>${escapeHtml(label)}</span>${badge !== null ? `<span class="nav-badge">${badge}</span>` : ''}</a>`;
+  const active = activePage === page;
+  return `<a class="nav-item ${active ? 'active' : ''}" href="${href}" ${active ? 'aria-current="page"' : ''}>${icon(iconName)}<span>${escapeHtml(label)}</span>${badge !== null ? `<span class="nav-badge">${badge}</span>` : ''}</a>`;
 }
 
 function topbar(title, subtitle = '', options = {}) {
@@ -491,7 +503,7 @@ function topbar(title, subtitle = '', options = {}) {
     <header class="topbar">
       <button class="btn btn-icon btn-ghost mobile-only" data-action="mobile-home" aria-label="Open navigation">${icon('menu')}</button>
       <div class="topbar-title">
-        <h1>${escapeHtml(title)}</h1>
+        <div class="topbar-heading">${escapeHtml(title)}</div>
         ${subtitle ? `<div class="topbar-subtitle">${escapeHtml(subtitle)}</div>` : ''}
       </div>
       ${options.hideSearch ? '' : `
@@ -608,7 +620,7 @@ function renderDashboardPage() {
 
 function renderProjectCard(project) {
   return `
-    <article class="project-card" data-accent="${escapeHtml(project.accent || 'violet')}" data-action="open-project" data-project-id="${escapeHtml(project.id)}" tabindex="0">
+    <a class="project-card" href="#project/${escapeHtml(project.id)}" data-accent="${escapeHtml(project.accent || 'violet')}">
       <div class="project-card-top">
         ${projectIcon(project.accent)}
         <span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span>
@@ -619,7 +631,7 @@ function renderProjectCard(project) {
         ${avatarStack(project.members, project.memberCount)}
         <span class="project-meta">Updated ${relativeTime(project.updatedAt)}</span>
       </div>
-    </article>
+    </a>
   `;
 }
 
@@ -649,7 +661,7 @@ function renderProjectsPage() {
           <button class="btn btn-icon" aria-label="Filters">${icon('filter')}</button>
         </div>
         <table class="data-table">
-          <thead><tr><th>Name</th><th>Status</th><th>Category</th><th>Collaborators</th><th>Last modified</th><th>Owner</th></tr></thead>
+          <thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Category</th><th scope="col">Collaborators</th><th scope="col">Last modified</th><th scope="col">Owner</th></tr></thead>
           <tbody id="project-table-body">
             ${state.projects.map(renderProjectTableRow).join('')}
           </tbody>
@@ -661,8 +673,8 @@ function renderProjectsPage() {
 
 function renderProjectTableRow(project) {
   return `
-    <tr data-project-name="${escapeHtml(project.name.toLowerCase())}" data-action="open-project" data-project-id="${escapeHtml(project.id)}">
-      <td><div class="table-name"><span class="mini-file-icon">${icon('files', 'icon-sm')}</span><span>${escapeHtml(project.name)}</span></div></td>
+    <tr data-project-name="${escapeHtml(project.name.toLowerCase())}">
+      <td><a class="table-name table-project-link" href="#project/${escapeHtml(project.id)}"><span class="mini-file-icon">${icon('files', 'icon-sm')}</span><span>${escapeHtml(project.name)}</span></a></td>
       <td><span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span></td>
       <td>${escapeHtml(project.category)}</td>
       <td>${avatarStack(project.members, project.memberCount)}</td>
@@ -740,7 +752,7 @@ function renderMembersPage() {
       <div class="page-header"><div><div class="page-kicker">People and access</div><h1 class="page-title">Members</h1><p class="page-description">Manage who can create, edit, comment on, and administer shared projects.</p></div><button class="btn btn-primary" data-action="open-workspace-invite">${icon('userPlus')}Invite member</button></div>
       <section class="table-shell">
         <table class="data-table">
-          <thead><tr><th>Member</th><th>Role</th><th>Title</th><th>Joined</th><th>Status</th></tr></thead>
+          <thead><tr><th scope="col">Member</th><th scope="col">Role</th><th scope="col">Title</th><th scope="col">Joined</th><th scope="col">Status</th></tr></thead>
           <tbody>
             ${(workspace?.members || []).map((member) => `
               <tr>
@@ -765,14 +777,14 @@ function renderSettingsPage() {
     <div class="page">
       <div class="page-header"><div><div class="page-kicker">Workspace administration</div><h1 class="page-title">Settings</h1><p class="page-description">Configure identity providers, company SSO, security policies, and workspace defaults.</p></div></div>
       <div class="settings-layout">
-        <nav class="settings-nav">
+        <nav class="settings-nav" role="tablist" aria-label="Settings sections">
           ${settingsNavButton('general', 'General', 'settings')}
           ${settingsNavButton('authentication', 'Authentication', 'shield')}
           ${settingsNavButton('team', 'Team', 'members')}
           ${settingsNavButton('security', 'Security', 'lock')}
           ${settingsNavButton('billing', 'Plan & billing', 'files')}
         </nav>
-        <section class="settings-content">
+        <section class="settings-content" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab-${escapeHtml(state.settingsTab)}">
           ${renderSettingsContent(workspace, auth)}
         </section>
       </div>
@@ -781,7 +793,8 @@ function renderSettingsPage() {
 }
 
 function settingsNavButton(tab, label, iconName) {
-  return `<button class="${state.settingsTab === tab ? 'active' : ''}" data-action="settings-tab" data-tab="${tab}">${icon(iconName, 'icon-sm')}${escapeHtml(label)}</button>`;
+  const selected = state.settingsTab === tab;
+  return `<button id="settings-tab-${tab}" class="${selected ? 'active' : ''}" data-action="settings-tab" data-tab="${tab}" role="tab" aria-selected="${selected}" aria-controls="settings-panel" tabindex="${selected ? '0' : '-1'}">${icon(iconName, 'icon-sm')}${escapeHtml(label)}</button>`;
 }
 
 function renderSettingsContent(workspace, auth) {
@@ -790,8 +803,8 @@ function renderSettingsContent(workspace, auth) {
       <section class="settings-section">
         <div class="settings-section-header"><h3>Organization profile</h3><p>Basic information shown to collaborators.</p></div>
         <div style="padding:18px;display:grid;gap:14px">
-          <div class="form-row"><div class="field"><label>Organization name</label><input class="input" value="${escapeHtml(workspace?.name || '')}" /></div><div class="field"><label>Workspace slug</label><input class="input" value="${escapeHtml(workspace?.slug || '')}" /></div></div>
-          <div class="field"><label>Verified domain</label><input class="input" value="${escapeHtml(workspace?.domain || '')}" /></div>
+          <div class="form-row"><div class="field"><label for="organization-name">Organization name</label><input id="organization-name" class="input" value="${escapeHtml(workspace?.name || '')}" /></div><div class="field"><label for="workspace-slug">Workspace slug</label><input id="workspace-slug" class="input" value="${escapeHtml(workspace?.slug || '')}" /></div></div>
+          <div class="field"><label for="verified-domain">Verified domain</label><input id="verified-domain" class="input" value="${escapeHtml(workspace?.domain || '')}" /></div>
           <div><button class="btn btn-primary" data-action="save-general-settings">Save changes</button></div>
         </div>
       </section>
@@ -818,7 +831,7 @@ function renderSettingsContent(workspace, auth) {
         <div class="settings-section-header"><h3>Security policies</h3><p>Apply organization-wide access safeguards.</p></div>
         ${settingsToggle('mfaRequired', 'Require multi-factor authentication', 'Require MFA for all team members after provider sign-in.', auth.mfaRequired, 'lock')}
         ${settingsToggle('ssoRequired', 'Require company SSO', 'Restrict sign-in to your configured company identity provider.', auth.ssoRequired, 'shield')}
-        <div class="settings-row"><div><div class="settings-row-title">Session timeout</div><div class="settings-row-description">Automatically end inactive sessions.</div></div><select class="select" style="width:140px"><option>8 hours</option><option>24 hours</option><option>7 days</option></select></div>
+        <div class="settings-row"><div><div class="settings-row-title">Session timeout</div><div class="settings-row-description">Automatically end inactive sessions.</div></div><select class="select" style="width:140px" aria-label="Session timeout"><option>8 hours</option><option>24 hours</option><option>7 days</option></select></div>
       </section>
     `;
   }
@@ -843,7 +856,7 @@ function renderSettingsContent(workspace, auth) {
     <section class="settings-section">
       <div class="settings-section-header"><h3>SSO configuration</h3><p>Use your verified domain to route employees to company authentication.</p></div>
       <div class="settings-row"><div><div class="settings-row-title">SSO enforcement</div><div class="settings-row-description">${auth.ssoRequired ? 'Required for all verified-domain users.' : 'Optional; users can choose another enabled provider.'}</div></div><button class="btn btn-sm" data-action="settings-tab" data-tab="security">Edit policy</button></div>
-      <div class="settings-row"><div><div class="settings-row-title">Default project role</div><div class="settings-row-description">Role assigned to users provisioned by SSO.</div></div><select class="select" style="width:140px"><option>Editor</option><option>Commenter</option><option>Viewer</option></select></div>
+      <div class="settings-row"><div><div class="settings-row-title">Default project role</div><div class="settings-row-description">Role assigned to users provisioned by SSO.</div></div><select class="select" style="width:140px" aria-label="Default project role"><option>Editor</option><option>Commenter</option><option>Viewer</option></select></div>
     </section>
   `;
 }
@@ -874,7 +887,7 @@ function renderEditor() {
           <button class="editor-brand-button" data-action="back-dashboard" aria-label="Back to workspace"><span class="brand-symbol" style="transform:scale(.75)"></span></button>
           <div class="editor-project-meta">
             <div class="editor-project-name"><h1>${escapeHtml(project.name)}</h1><span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span></div>
-            <div class="editor-save-state" id="editor-save-state">Saved ${relativeTime(project.updatedAt)}</div>
+            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">Saved ${relativeTime(project.updatedAt)}</div>
           </div>
         </div>
         <div class="editor-collaborators">
@@ -892,19 +905,19 @@ function renderEditor() {
         </div>
       </header>
       <section class="editor-body" style="--intent-width:${state.intentWidth}%">
-        <article class="editor-pane editor-pane-language">
+        <article class="editor-pane editor-pane-language" id="intent-panel">
           <div class="pane-header"><div class="pane-title"><span class="step-number">1</span>Structured intent</div><div class="intent-legend" aria-label="Intent structure"><span class="given">Given</span><span class="when">When</span><span class="then">Then</span></div></div>
           <div class="editor-content">
             <div class="editor-line-guide" id="line-numbers">${renderLineNumbers(state.editorText)}</div>
             <textarea id="structured-editor" class="structured-editor" spellcheck="false" aria-label="Structured language editor">${escapeHtml(state.editorText)}</textarea>
             <div class="editor-floating-tip">${icon('sparkles', 'icon-sm')}Use GIVEN, WHEN, THEN, and AND to make intent machine-readable.</div>
           </div>
-          <div class="editor-statusbar"><span id="validation-state" class="validation-state ${generated.valid ? 'valid' : 'invalid'}">${icon(generated.valid ? 'checkCircle' : 'alert', 'icon-sm')}${generated.valid ? 'No errors' : 'Missing required steps'}</span><span>DLSC v2.1</span></div>
+          <div class="editor-statusbar"><span id="validation-state" class="validation-state ${generated.valid ? 'valid' : 'invalid'}" role="status">${icon(generated.valid ? 'checkCircle' : 'alert', 'icon-sm')}${generated.valid ? 'No errors' : 'Missing required steps'}</span><span>DLSC v2.1</span></div>
         </article>
-        <div class="pane-resizer" data-resizer="intent" role="separator" aria-label="Resize intent and output panels" aria-orientation="vertical" tabindex="0"></div>
+        <div class="pane-resizer" data-resizer="intent" role="separator" aria-label="Resize intent and output panels" aria-orientation="vertical" aria-valuemin="30" aria-valuemax="55" aria-valuenow="${state.intentWidth}" aria-controls="intent-panel output-panel" tabindex="0"></div>
         <article class="editor-pane editor-pane-output">
-          <div class="pane-header output-pane-header"><div class="pane-title"><span class="step-number">2</span>Output</div><div class="pane-tabs output-tabs"><button class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface">Interface</button><button class="pane-tab ${state.previewMode === 'json' ? 'active' : ''}" data-action="preview-mode" data-mode="json">JSON</button><button class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow">Logic flow</button></div><div class="output-tools">${renderOutputTools()}</div></div>
-          <div class="editor-content output-content viewport-${escapeHtml(state.previewViewport)} zoom-${escapeHtml(state.previewZoom)}" id="generated-preview">${renderOutput(generated)}</div>
+          <div class="pane-header output-pane-header"><div class="pane-title"><span class="step-number">2</span>Output</div><div class="pane-tabs output-tabs" role="tablist" aria-label="Output format"><button id="output-tab-interface" class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface" role="tab" aria-selected="${state.previewMode === 'interface'}" aria-controls="output-panel" tabindex="${state.previewMode === 'interface' ? '0' : '-1'}">Interface</button><button id="output-tab-json" class="pane-tab ${state.previewMode === 'json' ? 'active' : ''}" data-action="preview-mode" data-mode="json" role="tab" aria-selected="${state.previewMode === 'json'}" aria-controls="output-panel" tabindex="${state.previewMode === 'json' ? '0' : '-1'}">JSON</button><button id="output-tab-flow" class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow" role="tab" aria-selected="${state.previewMode === 'flow'}" aria-controls="output-panel" tabindex="${state.previewMode === 'flow' ? '0' : '-1'}">Logic flow</button></div><div class="output-tools">${renderOutputTools()}</div></div>
+          <div class="editor-content output-content viewport-${escapeHtml(state.previewViewport)} zoom-${escapeHtml(state.previewZoom)}" id="output-panel" role="tabpanel" aria-labelledby="output-tab-${escapeHtml(state.previewMode)}"><div id="generated-preview">${renderOutput(generated)}</div></div>
           <div class="editor-statusbar"><span>${state.previewMode === 'interface' ? `${icon('eye', 'icon-sm')} Generated with ${escapeHtml(DESIGN_SYSTEMS[state.designSystem].name)}` : state.previewMode === 'json' ? `${icon('code', 'icon-sm')} Design-system-aware schema` : `${icon('activity', 'icon-sm')} Intent logic`}</span><span>${generated.valid ? `${designSystemComponents().length} approved components` : 'Incomplete'}</span></div>
         </article>
       </section>
@@ -1011,7 +1024,7 @@ function renderGeneratedInterface(generated, expanded = false) {
             <div class="prototype-check"><span class="prototype-checkmark">${icon('check', 'icon-sm')}</span><span>${isOmnichannel ? 'Offline data source connected' : 'Required information complete'}</span><b>Ready</b></div>
             <div class="prototype-check"><span class="prototype-checkmark">${icon('check', 'icon-sm')}</span><span>${isOmnichannel ? 'Offline data quality' : 'Input quality'}</span><b>${isOmnichannel ? '8.7 / 10' : 'Validated'}</b></div>
           </div>
-          <label class="prototype-field"><span>${isOmnichannel ? 'Optimization goal' : 'Workflow outcome'}</span><button type="button">${escapeHtml(isOmnichannel ? 'Omnichannel sales' : action)}${icon('chevronRight', 'icon-sm')}</button></label>
+          <div class="prototype-field"><span id="prototype-field-label">${isOmnichannel ? 'Optimization goal' : 'Workflow outcome'}</span><button type="button" aria-labelledby="prototype-field-label">${escapeHtml(isOmnichannel ? 'Omnichannel sales' : action)}${icon('chevronRight', 'icon-sm')}</button></div>
           <div class="prototype-insight">${icon('activity', 'icon-sm')}<span>${escapeHtml(followup)}</span></div>
           <div class="prototype-actions"><button class="prototype-secondary" type="button">Save draft</button><button class="prototype-primary" type="button" data-action="run-prototype">${escapeHtml(action)}${icon('arrowRight', 'icon-sm')}</button></div>
         </div>
@@ -1074,6 +1087,25 @@ function renderModal() {
   else if (type === 'user-menu') modalRoot.innerHTML = renderUserMenuModal();
   else if (type === 'connect-mcp') modalRoot.innerHTML = renderMcpConnectionModal();
   else modalRoot.innerHTML = '';
+  activateModal();
+}
+
+function modalFocusableElements() {
+  return [...modalRoot.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.hidden && element.getClientRects().length);
+}
+
+function activateModal() {
+  if (!state.modal || !modalRoot.querySelector('[role="dialog"]')) return;
+  const shouldMoveFocus = !state.modalReturnFocus;
+  if (shouldMoveFocus) state.modalReturnFocus = document.activeElement;
+  app.inert = true;
+  if (!shouldMoveFocus) return;
+  window.requestAnimationFrame(() => {
+    const autofocus = modalRoot.querySelector('[autofocus]');
+    const focusable = modalFocusableElements();
+    (autofocus || focusable[0] || modalRoot.querySelector('[role="dialog"]'))?.focus();
+  });
 }
 
 function renderNewProjectModal(template = null) {
@@ -1084,11 +1116,11 @@ function renderNewProjectModal(template = null) {
         <header class="modal-header"><div><h2 class="modal-title" id="new-project-title">Create a new project</h2><div class="modal-subtitle">Start with a shared structured-language workspace.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close">${icon('close')}</button></header>
         <form data-form="new-project">
           <div class="modal-body" style="display:grid;gap:16px">
-            <div class="field"><label>Project name</label><input class="input" name="name" value="${escapeHtml(templateName)}" placeholder="e.g. Omnichannel eligibility workflow" required autofocus /></div>
-            <div class="field"><label>Description</label><textarea class="textarea" name="description" placeholder="What should this workflow help the team design or build?">${escapeHtml(template?.description || '')}</textarea></div>
+            <div class="field"><label for="new-project-name">Project name</label><input id="new-project-name" class="input" name="name" value="${escapeHtml(templateName)}" placeholder="e.g. Omnichannel eligibility workflow" required autofocus /></div>
+            <div class="field"><label for="new-project-description">Description</label><textarea id="new-project-description" class="textarea" name="description" placeholder="What should this workflow help the team design or build?">${escapeHtml(template?.description || '')}</textarea></div>
             <div class="form-row">
-              <div class="field"><label>Workspace</label><select class="select" name="workspaceId">${state.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}</option>`).join('')}</select></div>
-              <div class="field"><label>Category</label><select class="select" name="category"><option>Workflow</option><option>Advertising</option><option>AI</option><option>Analytics</option><option>Onboarding</option></select></div>
+              <div class="field"><label for="new-project-workspace">Workspace</label><select id="new-project-workspace" class="select" name="workspaceId">${state.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}</option>`).join('')}</select></div>
+              <div class="field"><label for="new-project-category">Category</label><select id="new-project-category" class="select" name="category"><option>Workflow</option><option>Advertising</option><option>AI</option><option>Analytics</option><option>Onboarding</option></select></div>
             </div>
             <input type="hidden" name="templateId" value="${escapeHtml(template?.id || '')}" />
           </div>
@@ -1108,12 +1140,12 @@ function renderShareModal() {
       <section class="modal modal-xl" role="dialog" aria-modal="true" aria-labelledby="share-title">
         <header class="modal-header"><div><h2 class="modal-title" id="share-title">Share “${escapeHtml(project.name)}”</h2><div class="modal-subtitle">Invite collaborators and manage project-level permissions.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close">${icon('close')}</button></header>
         <div class="share-layout">
-          <nav class="share-nav">
-            <button class="${state.shareTab === 'invite' ? 'active' : ''}" data-action="share-tab" data-tab="invite">${icon('userPlus', 'icon-sm')}Invite people</button>
-            <button class="${state.shareTab === 'link' ? 'active' : ''}" data-action="share-tab" data-tab="link">${icon('link', 'icon-sm')}Share link</button>
-            <button class="${state.shareTab === 'workspace' ? 'active' : ''}" data-action="share-tab" data-tab="workspace">${icon('workspace', 'icon-sm')}Workspace access</button>
+          <nav class="share-nav" role="tablist" aria-label="Sharing options">
+            <button class="${state.shareTab === 'invite' ? 'active' : ''}" data-action="share-tab" data-tab="invite" role="tab" aria-selected="${state.shareTab === 'invite'}" aria-controls="share-panel" tabindex="${state.shareTab === 'invite' ? '0' : '-1'}">${icon('userPlus', 'icon-sm')}Invite people</button>
+            <button class="${state.shareTab === 'link' ? 'active' : ''}" data-action="share-tab" data-tab="link" role="tab" aria-selected="${state.shareTab === 'link'}" aria-controls="share-panel" tabindex="${state.shareTab === 'link' ? '0' : '-1'}">${icon('link', 'icon-sm')}Share link</button>
+            <button class="${state.shareTab === 'workspace' ? 'active' : ''}" data-action="share-tab" data-tab="workspace" role="tab" aria-selected="${state.shareTab === 'workspace'}" aria-controls="share-panel" tabindex="${state.shareTab === 'workspace' ? '0' : '-1'}">${icon('workspace', 'icon-sm')}Workspace access</button>
           </nav>
-          <div class="share-main">${tabContent}</div>
+          <div class="share-main" id="share-panel" role="tabpanel">${tabContent}</div>
           <aside class="role-guide">
             <h3>Role permissions</h3>
             <div class="role-card"><strong>Admin</strong><span>Full access to project content, members, permissions, and settings.</span></div>
@@ -1132,8 +1164,8 @@ function renderInviteTab(project) {
   return `
     <h3>Invite teammates by email</h3>
     <form class="invite-row" data-form="invite-member">
-      <input class="input" name="email" type="email" placeholder="teammate@company.com" required />
-      <select class="select" name="role"><option>Editor</option><option>Commenter</option><option>Viewer</option><option>Admin</option></select>
+      <label class="sr-only" for="invite-email">Email address</label><input id="invite-email" class="input" name="email" type="email" placeholder="teammate@company.com" required />
+      <label class="sr-only" for="invite-role">Project role</label><select id="invite-role" class="select" name="role"><option>Editor</option><option>Commenter</option><option>Viewer</option><option>Admin</option></select>
       <button class="btn btn-primary" type="submit">Invite</button>
     </form>
     <h3>People with access</h3>
@@ -1158,7 +1190,7 @@ function renderShareLinkTab(project) {
     <div class="share-link-card">
       <div class="settings-row-title">${icon('link', 'icon-sm')}Anyone invited to this project can use this link</div>
       <div class="settings-row-description">Access still follows the member role assigned above.</div>
-      <div class="share-link-row"><input id="share-url" class="input" value="${escapeHtml(url)}" readonly /><button class="btn" data-action="copy-link">${icon('copy', 'icon-sm')}Copy</button></div>
+      <div class="share-link-row"><label class="sr-only" for="share-url">Project share URL</label><input id="share-url" class="input" value="${escapeHtml(url)}" readonly /><button class="btn" data-action="copy-link">${icon('copy', 'icon-sm')}Copy</button></div>
     </div>
     <div style="margin-top:16px" class="share-link-card">
       <div class="settings-row-title">${icon('lock', 'icon-sm')}Restricted access</div>
@@ -1174,7 +1206,7 @@ function renderWorkspaceAccessTab(project) {
       <div class="workspace-row" style="padding:0;border:0">
         <div class="workspace-logo">${escapeHtml(project.workspace?.logo || 'WS')}</div>
         <div><div class="row-title">${escapeHtml(project.workspace?.name || 'Workspace')}</div><div class="row-subtitle">Workspace members can request access.</div></div>
-        <select class="select" style="width:130px"><option>Restricted</option><option>Can view</option><option>Can comment</option></select>
+        <select class="select" style="width:130px" aria-label="Workspace access level"><option>Restricted</option><option>Can view</option><option>Can comment</option></select>
       </div>
     </div>
     <p class="helper" style="margin-top:12px">Enterprise SSO and workspace membership determine who can request access.</p>
@@ -1188,7 +1220,7 @@ function renderCommentsDrawer() {
   return `
     <div class="modal-backdrop" data-action="close-modal" style="place-items:stretch end;padding:0;background:rgba(0,0,0,.38)">
       <aside class="comments-drawer" role="dialog" aria-modal="true" aria-labelledby="comments-title">
-        <header class="drawer-header"><div class="drawer-title" id="comments-title">${icon('comment')}Comments <span class="badge">${comments.filter((comment) => !comment.resolved).length} open</span></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+        <header class="drawer-header"><div class="drawer-title" id="comments-title">${icon('comment')}Comments <span class="badge">${comments.filter((comment) => !comment.resolved).length} open</span></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close comments">${icon('close')}</button></header>
         <div class="drawer-body">
           ${comments.length ? comments.map((comment) => `
             <article class="comment-card" style="${comment.resolved ? 'opacity:.62' : ''}">
@@ -1200,8 +1232,8 @@ function renderCommentsDrawer() {
           `).join('') : `<div class="empty-state"><div><div class="empty-state-icon">${icon('comment')}</div><h3>No comments yet</h3><p>Start a review thread for the structured language, generated JSON, or flow preview.</p></div></div>`}
         </div>
         <form class="drawer-composer" data-form="new-comment">
-          <textarea class="textarea" name="body" placeholder="Add a comment…" required></textarea>
-          <div class="composer-row"><select class="select" name="anchor"><option>General</option><option>GIVEN</option><option>WHEN</option><option>THEN</option><option>Generated JSON</option><option>Live preview</option></select><button class="btn btn-primary" type="submit">Comment</button></div>
+          <label class="sr-only" for="comment-body">Comment</label><textarea id="comment-body" class="textarea" name="body" placeholder="Add a comment…" required></textarea>
+          <div class="composer-row"><label class="sr-only" for="comment-anchor">Comment location</label><select id="comment-anchor" class="select" name="anchor"><option>General</option><option>GIVEN</option><option>WHEN</option><option>THEN</option><option>Generated JSON</option><option>Live preview</option></select><button class="btn btn-primary" type="submit">Comment</button></div>
         </form>
       </aside>
     </div>
@@ -1217,7 +1249,7 @@ function renderVersionsModal() {
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-xl" role="dialog" aria-modal="true" aria-labelledby="versions-title">
-        <header class="modal-header"><div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare, document, and restore changes to “${escapeHtml(project.name)}”.</div></div><div style="display:flex;gap:8px"><button class="btn" data-action="create-version">${icon('save', 'icon-sm')}Save version</button><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></div></header>
+        <header class="modal-header"><div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare, document, and restore changes to “${escapeHtml(project.name)}”.</div></div><div style="display:flex;gap:8px"><button class="btn" data-action="create-version">${icon('save', 'icon-sm')}Save version</button><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button></div></header>
         ${versions.length ? `
           <div class="version-layout">
             <aside class="version-sidebar">
@@ -1268,8 +1300,8 @@ function renderPreviewModal() {
   const system = DESIGN_SYSTEMS[state.designSystem];
   return `
     <div class="modal-backdrop" data-action="close-modal">
-      <section class="modal modal-lg" role="dialog" aria-modal="true">
-        <header class="modal-header preview-modal-header"><div><h2 class="modal-title">Generated interface</h2><div class="modal-subtitle">${system.components} approved components · ${escapeHtml(system.name)}</div></div><div class="preview-modal-actions">${designSystemSelect()}<button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></div></header>
+      <section class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="preview-title" aria-describedby="preview-description" tabindex="-1">
+        <header class="modal-header preview-modal-header"><div><h2 class="modal-title" id="preview-title">Generated interface</h2><div class="modal-subtitle" id="preview-description">${system.components} approved components · ${escapeHtml(system.name)}</div></div><div class="preview-modal-actions">${designSystemSelect()}<button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close preview">${icon('close')}</button></div></header>
         <div class="modal-body prototype-modal-body">${renderGeneratedInterface(parsed, true)}</div>
       </section>
     </div>
@@ -1280,11 +1312,11 @@ function renderMcpConnectionModal() {
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="mcp-title">
-        <header class="modal-header"><div><h2 class="modal-title" id="mcp-title">Connect your design system</h2><div class="modal-subtitle">Expose approved tokens, components, and usage rules through an MCP server.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+        <header class="modal-header"><div><h2 class="modal-title" id="mcp-title">Connect your design system</h2><div class="modal-subtitle">Expose approved tokens, components, and usage rules through an MCP server.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close design system connection">${icon('close')}</button></header>
         <form data-form="connect-mcp">
           <div class="modal-body mcp-connect-body">
-            <div class="field"><label>MCP server URL</label><input class="input" type="url" name="serverUrl" placeholder="https://design-system.company.com/mcp" required /></div>
-            <div class="field"><label>Connection name</label><input class="input" name="name" placeholder="Company design system" required /></div>
+            <div class="field"><label for="mcp-server-url">MCP server URL</label><input id="mcp-server-url" class="input" type="url" name="serverUrl" placeholder="https://design-system.company.com/mcp" required /></div>
+            <div class="field"><label for="mcp-connection-name">Connection name</label><input id="mcp-connection-name" class="input" name="name" placeholder="Company design system" required /></div>
             <div class="mcp-capabilities">
               <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Tokens</strong><small>Color, type, spacing, radius</small></span></div>
               <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Components</strong><small>Props, variants, states</small></span></div>
@@ -1302,8 +1334,8 @@ function renderMcpConnectionModal() {
 function renderUserMenuModal() {
   return `
     <div class="modal-backdrop" data-action="close-modal">
-      <section class="modal" style="width:min(100%,420px)" role="dialog" aria-modal="true">
-        <header class="modal-header"><div><h2 class="modal-title">Account</h2><div class="modal-subtitle">Signed in through ${escapeHtml(state.provider || 'workspace authentication')}.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+      <section class="modal" style="width:min(100%,420px)" role="dialog" aria-modal="true" aria-labelledby="account-title" tabindex="-1">
+        <header class="modal-header"><div><h2 class="modal-title" id="account-title">Account</h2><div class="modal-subtitle">Signed in through ${escapeHtml(state.provider || 'workspace authentication')}.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close account">${icon('close')}</button></header>
         <div class="modal-body">
           <div style="display:flex;align-items:center;gap:14px;padding:8px 0 20px">${avatar(state.user, 'avatar-lg')}<div><div class="person-name" style="font-size:14px">${escapeHtml(state.user.name)}</div><div class="person-email">${escapeHtml(state.user.email)}</div></div></div>
           <button class="btn btn-danger" style="width:100%" data-action="logout">${icon('logout', 'icon-sm')}Sign out</button>
@@ -1314,8 +1346,12 @@ function renderUserMenuModal() {
 }
 
 function closeModal() {
+  const returnFocus = state.modalReturnFocus;
   state.modal = null;
   modalRoot.innerHTML = '';
+  app.inert = false;
+  state.modalReturnFocus = null;
+  window.requestAnimationFrame(() => returnFocus?.isConnected && returnFocus.focus());
 }
 
 function filterProjectRows(query) {
@@ -1738,6 +1774,7 @@ document.addEventListener('click', async (event) => {
     case 'share-tab':
       state.shareTab = actionElement.dataset.tab;
       renderModal();
+      window.requestAnimationFrame(() => modalRoot.querySelector(`[data-action="share-tab"][data-tab="${state.shareTab}"]`)?.focus());
       break;
     case 'copy-link': {
       const input = document.getElementById('share-url');
@@ -1768,6 +1805,7 @@ document.addEventListener('click', async (event) => {
     case 'select-version':
       state.selectedVersionId = actionElement.dataset.versionId;
       renderModal();
+      window.requestAnimationFrame(() => modalRoot.querySelector(`[data-version-id="${state.selectedVersionId}"]`)?.focus());
       break;
     case 'create-version':
       await createVersion();
@@ -1782,6 +1820,7 @@ document.addEventListener('click', async (event) => {
     case 'preview-mode':
       state.previewMode = ['interface', 'json', 'flow'].includes(actionElement.dataset.mode) ? actionElement.dataset.mode : 'interface';
       renderEditor();
+      window.requestAnimationFrame(() => document.getElementById(`output-tab-${state.previewMode}`)?.focus());
       break;
     case 'publish-prototype':
       await saveEditor();
@@ -1811,6 +1850,7 @@ document.addEventListener('click', async (event) => {
     case 'settings-tab':
       state.settingsTab = actionElement.dataset.tab;
       renderShell('settings');
+      window.requestAnimationFrame(() => document.getElementById(`settings-tab-${state.settingsTab}`)?.focus());
       break;
     case 'toggle-setting':
       await toggleWorkspaceSetting(actionElement.dataset.setting);
@@ -1871,6 +1911,7 @@ document.addEventListener('submit', async (event) => {
 
 document.addEventListener('input', (event) => {
   const target = event.target;
+  if (target.matches('input, textarea, select') && target.getAttribute('aria-invalid') === 'true') target.removeAttribute('aria-invalid');
   if (target.id === 'structured-editor') {
     state.editorText = target.value;
     state.editorDirty = true;
@@ -1880,6 +1921,11 @@ document.addEventListener('input', (event) => {
     filterProjectRows(target.value);
   }
 });
+
+document.addEventListener('invalid', (event) => {
+  event.target.setAttribute('aria-invalid', 'true');
+  announce(`${event.target.labels?.[0]?.textContent || event.target.getAttribute('aria-label') || 'Field'}: ${event.target.validationMessage}`, true);
+}, true);
 
 document.addEventListener('change', async (event) => {
   const target = event.target;
@@ -1894,7 +1940,10 @@ document.addEventListener('change', async (event) => {
     }
     state.designSystem = target.value;
     localStorage.setItem('dls-magician-design-system', state.designSystem);
-    if (state.modal?.type === 'preview') renderModal();
+    if (state.modal?.type === 'preview') {
+      renderModal();
+      window.requestAnimationFrame(() => modalRoot.querySelector('[data-action="design-system-select"]')?.focus());
+    }
     else renderEditor();
     showToast(`Generating with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
   } else if (target.dataset.action === 'preview-viewport') {
@@ -1907,10 +1956,40 @@ document.addEventListener('change', async (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
+  if (state.modal && event.key === 'Tab') {
+    const focusable = modalFocusableElements();
+    if (!focusable.length) {
+      event.preventDefault();
+      modalRoot.querySelector('[role="dialog"]')?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+  if (event.target.matches('[role="tab"]') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
+    const tabs = [...event.target.closest('[role="tablist"]')?.querySelectorAll('[role="tab"]') || []];
+    if (tabs.length) {
+      event.preventDefault();
+      const current = tabs.indexOf(event.target);
+      const previous = ['ArrowLeft', 'ArrowUp'].includes(event.key);
+      const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (current + (previous ? -1 : 1) + tabs.length) % tabs.length;
+      tabs[nextIndex].focus();
+      tabs[nextIndex].click();
+    }
+    return;
+  }
   if (event.target.matches('[data-resizer="intent"]') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
     event.preventDefault();
     state.intentWidth = Math.min(55, Math.max(30, state.intentWidth + (event.key === 'ArrowRight' ? 2 : -2)));
     event.target.closest('.editor-body')?.style.setProperty('--intent-width', `${state.intentWidth}%`);
+    event.target.setAttribute('aria-valuenow', String(state.intentWidth));
     return;
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
@@ -1934,6 +2013,7 @@ document.addEventListener('pointerdown', (event) => {
     const percent = Math.min(55, Math.max(30, ((moveEvent.clientX - rect.left) / rect.width) * 100));
     state.intentWidth = Math.round(percent * 10) / 10;
     body.style.setProperty('--intent-width', `${state.intentWidth}%`);
+    resizer.setAttribute('aria-valuenow', String(state.intentWidth));
   };
   const onUp = () => {
     document.removeEventListener('pointermove', onMove);
