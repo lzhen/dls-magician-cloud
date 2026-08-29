@@ -3085,6 +3085,93 @@ svg {
   .form-row { grid-template-columns: 1fr; }
 }
 
+/* Layered dark editor surfaces */
+[data-theme="dark"] .editor-shell {
+  background: #101115;
+}
+
+[data-theme="dark"] .editor-topbar {
+  border-bottom-color: rgba(255, 255, 255, 0.11);
+  background: #17181d;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.38);
+}
+
+[data-theme="dark"] .editor-topbar .btn,
+[data-theme="dark"] .editor-brand-button {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #202127;
+}
+
+[data-theme="dark"] .editor-topbar .btn:hover,
+[data-theme="dark"] .editor-brand-button:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: #292b32;
+}
+
+[data-theme="dark"] .editor-pane {
+  border-right-color: rgba(255, 255, 255, 0.11);
+  background: #131419;
+}
+
+[data-theme="dark"] .editor-pane-language {
+  background: #15161b;
+}
+
+[data-theme="dark"] .editor-pane-json {
+  background: #111319;
+}
+
+[data-theme="dark"] .editor-pane-preview {
+  background: #16171c;
+}
+
+[data-theme="dark"] .pane-header {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+  background: #1b1c22;
+}
+
+[data-theme="dark"] .pane-tab.active,
+[data-theme="dark"] .pane-tab:hover {
+  background: #2a2b32;
+  color: #eeeeef;
+}
+
+[data-theme="dark"] .step-number {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+[data-theme="dark"] .structured-editor {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 40px, transparent 40px),
+    #15161b;
+  color: #e8e7eb;
+}
+
+[data-theme="dark"] .json-view {
+  background: #111319;
+}
+
+[data-theme="dark"] .editor-statusbar {
+  border-top-color: rgba(255, 255, 255, 0.1);
+  background: #18191e;
+}
+
+[data-theme="dark"] .prototype-stage,
+[data-theme="dark"] .flow-view {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(139, 120, 255, 0.1), transparent 34%),
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    #14161b;
+  background-size: auto, 26px 26px, 26px 26px, auto;
+}
+
+[data-theme="dark"] .design-system-picker select {
+  border-color: rgba(255, 255, 255, 0.14);
+  background-color: #25262c;
+}
+
 /* Light theme */
 [data-theme="light"] {
   color-scheme: light;
