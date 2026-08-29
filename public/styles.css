@@ -687,6 +687,7 @@ svg {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow: hidden;
   height: 100vh;
   border-right: 1px solid var(--line);
   background:
@@ -699,7 +700,19 @@ svg {
   align-items: center;
   height: 72px;
   padding: 0 20px;
+  min-width: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-header .brand-lockup {
+  width: 100%;
+  min-width: 0;
+}
+
+.sidebar-header .brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-scroll {
@@ -775,10 +788,22 @@ svg {
   grid-template-columns: 34px 1fr 20px;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  max-width: 100%;
   min-height: 66px;
+  margin: 0;
   padding: 12px 14px;
+  border: 0;
   border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .sidebar-user:hover {
