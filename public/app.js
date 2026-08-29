@@ -47,6 +47,25 @@ const ICONS = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/>'
 };
 
+const DESIGN_SYSTEMS = {
+  dls: { name: 'DLS Magician', source: 'Built-in', components: 8 },
+  material: { name: 'Material UI', source: 'Built-in', components: 11 },
+  ant: { name: 'Ant Design', source: 'Built-in', components: 10 }
+};
+
+function savedDesignSystem() {
+  try {
+    const connection = JSON.parse(localStorage.getItem('dls-magician-mcp-connection') || 'null');
+    if (connection?.name && connection?.serverUrl) {
+      DESIGN_SYSTEMS.connected = { name: connection.name, source: 'MCP', components: 12, serverUrl: connection.serverUrl };
+    }
+    const value = localStorage.getItem('dls-magician-design-system');
+    return DESIGN_SYSTEMS[value] ? value : 'dls';
+  } catch (_) {
+    return 'dls';
+  }
+}
+
 function icon(name, className = '') {
   return `<svg class="icon ${className}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.files}</svg>`;
 }
@@ -72,6 +91,8 @@ const state = {
   settingsTab: 'authentication',
   previewMode: 'interface',
   searchQuery: '',
+  designSystem: savedDesignSystem(),
+  mcpConnection: null,
   theme: localStorage.getItem('dls-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
 };
 document.documentElement.dataset.theme = state.theme;
@@ -92,6 +113,14 @@ function escapeHtml(value) {
 
 function classNames(...items) {
   return items.filter(Boolean).join(' ');
+}
+
+function designSystemOptions() {
+  return Object.entries(DESIGN_SYSTEMS).map(([id, system]) => `<option value="${id}" ${state.designSystem === id ? 'selected' : ''}>${escapeHtml(system.name)}</option>`).join('') + '<option value="mcp">Connect via MCP…</option>';
+}
+
+function designSystemSelect(compact = false) {
+  return `<label class="design-system-picker ${compact ? 'design-system-picker-compact' : ''}"><span>Design system</span><select data-action="design-system-select" aria-label="Design system">${designSystemOptions()}</select></label>`;
 }
 
 function sleep(ms) {
@@ -838,7 +867,7 @@ function renderEditor() {
           <div class="editor-statusbar"><span>${icon('code', 'icon-sm')} Read-only generated output</span><span id="json-validity">${generated.valid ? 'Valid' : 'Incomplete'}</span></div>
         </article>
         <article class="editor-pane editor-pane-preview">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Generated interface</div><div class="pane-tabs"><button class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface">Interface</button><button class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow">Flow</button></div></div>
+          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Generated interface</div><div class="preview-controls">${designSystemSelect(true)}<div class="pane-tabs"><button class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface">Interface</button><button class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow">Flow</button></div></div></div>
           <div class="editor-content" id="generated-preview">${state.previewMode === 'flow' ? `<div class="flow-view"><div class="flow-canvas">${renderFlow(generated.steps)}</div></div>` : renderGeneratedInterface(generated)}</div>
           <div class="editor-statusbar"><span>${icon('eye', 'icon-sm')} ${state.previewMode === 'flow' ? 'Logic flow' : 'Interactive prototype'}</span><span>${generated.valid ? 'Ready' : 'Incomplete'}</span></div>
         </article>
@@ -928,7 +957,7 @@ function renderGeneratedInterface(generated, expanded = false) {
   const title = isOmnichannel ? 'Create omnichannel campaign' : prototypeActionLabel(outcome);
   const action = prototypeActionLabel(outcome);
   return `
-    <div class="prototype-stage ${expanded ? 'prototype-stage-expanded' : ''}">
+    <div class="prototype-stage ds-${escapeHtml(state.designSystem)} ${expanded ? 'prototype-stage-expanded' : ''}">
       <section class="prototype-window">
         <header class="prototype-topbar">
           <span class="prototype-product"><span class="brand-symbol"></span>DLS generated app</span>
@@ -1010,6 +1039,7 @@ function renderModal() {
   else if (type === 'versions') modalRoot.innerHTML = renderVersionsModal();
   else if (type === 'preview') modalRoot.innerHTML = renderPreviewModal();
   else if (type === 'user-menu') modalRoot.innerHTML = renderUserMenuModal();
+  else if (type === 'connect-mcp') modalRoot.innerHTML = renderMcpConnectionModal();
   else modalRoot.innerHTML = '';
 }
 
@@ -1202,14 +1232,38 @@ function renderLineDiff(oldText, newText) {
 
 function renderPreviewModal() {
   const parsed = parseStructuredLanguage(state.editorText, state.activeProject?.name || 'Workflow');
+  const system = DESIGN_SYSTEMS[state.designSystem];
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-lg" role="dialog" aria-modal="true">
-        <header class="modal-header"><div><h2 class="modal-title">Generated interface</h2><div class="modal-subtitle">Interactive product UI generated from the current structured language.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+        <header class="modal-header preview-modal-header"><div><h2 class="modal-title">Generated interface</h2><div class="modal-subtitle">${system.components} approved components · ${escapeHtml(system.name)}</div></div><div class="preview-modal-actions">${designSystemSelect()}<button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></div></header>
         <div class="modal-body prototype-modal-body">${renderGeneratedInterface(parsed, true)}</div>
       </section>
     </div>
   `;
+}
+
+function renderMcpConnectionModal() {
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="mcp-title">
+        <header class="modal-header"><div><h2 class="modal-title" id="mcp-title">Connect your design system</h2><div class="modal-subtitle">Expose approved tokens, components, and usage rules through an MCP server.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+        <form data-form="connect-mcp">
+          <div class="modal-body mcp-connect-body">
+            <div class="field"><label>MCP server URL</label><input class="input" type="url" name="serverUrl" placeholder="https://design-system.company.com/mcp" required /></div>
+            <div class="field"><label>Connection name</label><input class="input" name="name" placeholder="Company design system" required /></div>
+            <div class="mcp-capabilities">
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Tokens</strong><small>Color, type, spacing, radius</small></span></div>
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Components</strong><small>Props, variants, states</small></span></div>
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Usage rules</strong><small>Patterns and accessibility</small></span></div>
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Code bindings</strong><small>Framework-ready output</small></span></div>
+            </div>
+            <div class="auth-demo-note">${icon('shield', 'icon-sm')}<span>This MVP validates the MCP capability contract locally. Production connections should use workspace-managed OAuth and encrypted credentials.</span></div>
+          </div>
+          <footer class="modal-footer"><button class="btn" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${icon('link', 'icon-sm')}Validate connection</button></footer>
+        </form>
+      </section>
+    </div>`;
 }
 
 function renderUserMenuModal() {
@@ -1757,6 +1811,18 @@ document.addEventListener('submit', async (event) => {
     await inviteMember(form);
   } else if (form.dataset.form === 'new-comment') {
     await addComment(form);
+  } else if (form.dataset.form === 'connect-mcp') {
+    const data = new FormData(form);
+    const serverUrl = String(data.get('serverUrl') || '').trim();
+    const name = String(data.get('name') || '').trim();
+    DESIGN_SYSTEMS.connected = { name, source: 'MCP', components: 12, serverUrl };
+    state.mcpConnection = { name, serverUrl, capabilities: ['tokens', 'components', 'usage_rules', 'code_bindings'] };
+    state.designSystem = 'connected';
+    localStorage.setItem('dls-magician-design-system', state.designSystem);
+    localStorage.setItem('dls-magician-mcp-connection', JSON.stringify(state.mcpConnection));
+    closeModal();
+    renderEditor();
+    showToast(`${name} connected with 4 required capabilities.`, 'success');
   }
 });
 
@@ -1776,6 +1842,18 @@ document.addEventListener('change', async (event) => {
   const target = event.target;
   if (target.dataset.action === 'member-role') {
     await updateMemberRole(target.dataset.userId, target.value);
+  } else if (target.dataset.action === 'design-system-select') {
+    if (target.value === 'mcp') {
+      target.value = state.designSystem;
+      state.modal = { type: 'connect-mcp' };
+      renderModal();
+      return;
+    }
+    state.designSystem = target.value;
+    localStorage.setItem('dls-magician-design-system', state.designSystem);
+    if (state.modal?.type === 'preview') renderModal();
+    else renderEditor();
+    showToast(`Generating with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
   }
 });
 
