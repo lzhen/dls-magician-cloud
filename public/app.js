@@ -90,6 +90,9 @@ const state = {
   selectedVersionId: null,
   settingsTab: 'authentication',
   previewMode: 'interface',
+  previewViewport: 'desktop',
+  previewZoom: '100',
+  intentWidth: 40,
   searchQuery: '',
   designSystem: savedDesignSystem(),
   mcpConnection: null,
@@ -121,6 +124,43 @@ function designSystemOptions() {
 
 function designSystemSelect(compact = false) {
   return `<label class="design-system-picker ${compact ? 'design-system-picker-compact' : ''}"><span>Design system</span><select data-action="design-system-select" aria-label="Design system">${designSystemOptions()}</select></label>`;
+}
+
+function designSystemComponents() {
+  const components = {
+    dls: ['Surface', 'Status card', 'Select field', 'Inline insight', 'Button'],
+    material: ['Paper', 'Card', 'List', 'Select', 'Alert', 'Button'],
+    ant: ['Layout', 'Card', 'List', 'Select', 'Alert', 'Button'],
+    connected: ['Surface', 'Card', 'Field', 'Message', 'Button']
+  };
+  return components[state.designSystem] || components.dls;
+}
+
+function generatedOutput(generated) {
+  const system = DESIGN_SYSTEMS[state.designSystem];
+  return {
+    ...generated,
+    designSystem: {
+      id: state.designSystem,
+      name: system.name,
+      source: system.source,
+      components: designSystemComponents()
+    }
+  };
+}
+
+function renderOutput(generated) {
+  if (state.previewMode === 'json') return `<div class="json-view"><pre class="json-code" id="json-code">${highlightJson(generatedOutput(generated))}</pre></div>`;
+  if (state.previewMode === 'flow') return `<div class="flow-view"><div class="flow-canvas">${renderFlow(generated.steps)}</div></div>`;
+  return renderGeneratedInterface(generated);
+}
+
+function renderOutputTools() {
+  if (state.previewMode === 'json') {
+    return `${designSystemSelect(true)}<button class="btn btn-sm btn-ghost" data-action="copy-generated-json">${icon('copy', 'icon-sm')}<span>Copy JSON</span></button>`;
+  }
+  if (state.previewMode === 'flow') return '';
+  return `${designSystemSelect(true)}<select class="output-control" data-action="preview-viewport" aria-label="Preview viewport"><option value="desktop" ${state.previewViewport === 'desktop' ? 'selected' : ''}>Desktop</option><option value="mobile" ${state.previewViewport === 'mobile' ? 'selected' : ''}>Mobile</option></select><select class="output-control" data-action="preview-zoom" aria-label="Preview zoom"><option value="75" ${state.previewZoom === '75' ? 'selected' : ''}>75%</option><option value="100" ${state.previewZoom === '100' ? 'selected' : ''}>100%</option><option value="125" ${state.previewZoom === '125' ? 'selected' : ''}>125%</option></select><button class="btn btn-icon btn-sm btn-ghost" data-action="preview" aria-label="Expand preview" title="Expand preview">${icon('external', 'icon-sm')}</button>`;
 }
 
 function sleep(ms) {
@@ -843,17 +883,17 @@ function renderEditor() {
         </div>
         <div class="editor-actions">
           ${themeToggle()}
-          <button class="btn btn-sm" data-action="validate">${icon('checkCircle', 'icon-sm')}<span>Validate</span></button>
-          <button class="btn btn-sm" data-action="preview">${icon('play', 'icon-sm')}<span>Preview</span></button>
+          <button class="btn btn-icon btn-sm editor-utility-action" data-action="validate" aria-label="Validate intent" title="Validate intent">${icon('checkCircle', 'icon-sm')}</button>
+          <button class="btn btn-icon btn-sm editor-utility-action" data-action="versions" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
           <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
-          <button class="btn btn-sm" data-action="versions">${icon('history', 'icon-sm')}<span>History</span></button>
           <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
-          <button class="btn btn-icon btn-sm" data-action="editor-more" aria-label="More actions">${icon('more', 'icon-sm')}</button>
+          <button class="btn btn-primary btn-sm editor-publish" data-action="publish-prototype">${icon('sparkles', 'icon-sm')}<span>Publish prototype</span></button>
+          <button class="btn btn-icon btn-sm" data-action="editor-more" aria-label="More actions" title="More actions">${icon('more', 'icon-sm')}</button>
         </div>
       </header>
-      <section class="editor-body">
+      <section class="editor-body" style="--intent-width:${state.intentWidth}%">
         <article class="editor-pane editor-pane-language">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">1</span>Structured language</div><div class="pane-tabs"><button class="pane-tab active">Write</button><button class="pane-tab">Examples</button></div></div>
+          <div class="pane-header"><div class="pane-title"><span class="step-number">1</span>Structured intent</div><div class="intent-legend" aria-label="Intent structure"><span class="given">Given</span><span class="when">When</span><span class="then">Then</span></div></div>
           <div class="editor-content">
             <div class="editor-line-guide" id="line-numbers">${renderLineNumbers(state.editorText)}</div>
             <textarea id="structured-editor" class="structured-editor" spellcheck="false" aria-label="Structured language editor">${escapeHtml(state.editorText)}</textarea>
@@ -861,15 +901,11 @@ function renderEditor() {
           </div>
           <div class="editor-statusbar"><span id="validation-state" class="validation-state ${generated.valid ? 'valid' : 'invalid'}">${icon(generated.valid ? 'checkCircle' : 'alert', 'icon-sm')}${generated.valid ? 'No errors' : 'Missing required steps'}</span><span>DLSC v2.1</span></div>
         </article>
-        <article class="editor-pane editor-pane-json">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">2</span>Generated JSON</div><div class="pane-tabs"><button class="pane-tab active">JSON</button><button class="pane-tab">Schema</button></div></div>
-          <div class="editor-content json-view"><pre class="json-code" id="json-code">${highlightJson(generated)}</pre></div>
-          <div class="editor-statusbar"><span>${icon('code', 'icon-sm')} Read-only generated output</span><span id="json-validity">${generated.valid ? 'Valid' : 'Incomplete'}</span></div>
-        </article>
-        <article class="editor-pane editor-pane-preview">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Generated interface</div><div class="preview-controls">${designSystemSelect(true)}<div class="pane-tabs"><button class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface">Interface</button><button class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow">Flow</button></div></div></div>
-          <div class="editor-content" id="generated-preview">${state.previewMode === 'flow' ? `<div class="flow-view"><div class="flow-canvas">${renderFlow(generated.steps)}</div></div>` : renderGeneratedInterface(generated)}</div>
-          <div class="editor-statusbar"><span>${icon('eye', 'icon-sm')} ${state.previewMode === 'flow' ? 'Logic flow' : 'Interactive prototype'}</span><span>${generated.valid ? 'Ready' : 'Incomplete'}</span></div>
+        <div class="pane-resizer" data-resizer="intent" role="separator" aria-label="Resize intent and output panels" aria-orientation="vertical" tabindex="0"></div>
+        <article class="editor-pane editor-pane-output">
+          <div class="pane-header output-pane-header"><div class="pane-title"><span class="step-number">2</span>Output</div><div class="pane-tabs output-tabs"><button class="pane-tab ${state.previewMode === 'interface' ? 'active' : ''}" data-action="preview-mode" data-mode="interface">Interface</button><button class="pane-tab ${state.previewMode === 'json' ? 'active' : ''}" data-action="preview-mode" data-mode="json">JSON</button><button class="pane-tab ${state.previewMode === 'flow' ? 'active' : ''}" data-action="preview-mode" data-mode="flow">Logic flow</button></div><div class="output-tools">${renderOutputTools()}</div></div>
+          <div class="editor-content output-content viewport-${escapeHtml(state.previewViewport)} zoom-${escapeHtml(state.previewZoom)}" id="generated-preview">${renderOutput(generated)}</div>
+          <div class="editor-statusbar"><span>${state.previewMode === 'interface' ? `${icon('eye', 'icon-sm')} Generated with ${escapeHtml(DESIGN_SYSTEMS[state.designSystem].name)}` : state.previewMode === 'json' ? `${icon('code', 'icon-sm')} Design-system-aware schema` : `${icon('activity', 'icon-sm')} Intent logic`}</span><span>${generated.valid ? `${designSystemComponents().length} approved components` : 'Incomplete'}</span></div>
         </article>
       </section>
     </main>
@@ -956,12 +992,13 @@ function renderGeneratedInterface(generated, expanded = false) {
   const isOmnichannel = /omnichannel|offline|campaign/i.test(`${generated.intent} ${generated.entities.join(' ')} ${outcome}`);
   const title = isOmnichannel ? 'Create omnichannel campaign' : prototypeActionLabel(outcome);
   const action = prototypeActionLabel(outcome);
+  const system = DESIGN_SYSTEMS[state.designSystem];
   return `
     <div class="prototype-stage ds-${escapeHtml(state.designSystem)} ${expanded ? 'prototype-stage-expanded' : ''}">
       <section class="prototype-window">
         <header class="prototype-topbar">
-          <span class="prototype-product"><span class="brand-symbol"></span>DLS generated app</span>
-          <span class="prototype-badge">${icon('sparkles', 'icon-sm')}Generated</span>
+          <span class="prototype-product"><span class="brand-symbol"></span>Generated by DLS Magician</span>
+          <span class="prototype-badge">${icon('sparkles', 'icon-sm')}${escapeHtml(system.name)}</span>
         </header>
         <div class="prototype-content">
           <div class="prototype-heading">
@@ -985,19 +1022,15 @@ function renderGeneratedInterface(generated, expanded = false) {
 function updateEditorOutputs() {
   if (!state.activeProject) return;
   const parsed = parseStructuredLanguage(state.editorText, state.activeProject.name);
-  const jsonCode = document.getElementById('json-code');
   const generatedPreview = document.getElementById('generated-preview');
   const validation = document.getElementById('validation-state');
-  const jsonValidity = document.getElementById('json-validity');
   const lineNumbers = document.getElementById('line-numbers');
   const saveState = document.getElementById('editor-save-state');
-  if (jsonCode) jsonCode.innerHTML = highlightJson(parsed);
-  if (generatedPreview) generatedPreview.innerHTML = state.previewMode === 'flow' ? `<div class="flow-view"><div class="flow-canvas">${renderFlow(parsed.steps)}</div></div>` : renderGeneratedInterface(parsed);
+  if (generatedPreview) generatedPreview.innerHTML = renderOutput(parsed);
   if (validation) {
     validation.className = `validation-state ${parsed.valid ? 'valid' : 'invalid'}`;
     validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'No errors' : 'Missing required steps'}`;
   }
-  if (jsonValidity) jsonValidity.textContent = parsed.valid ? 'Valid' : 'Incomplete';
   if (lineNumbers) lineNumbers.innerHTML = renderLineNumbers(state.editorText);
   if (saveState) saveState.textContent = 'Unsaved changes…';
 }
@@ -1747,9 +1780,19 @@ document.addEventListener('click', async (event) => {
       renderModal();
       break;
     case 'preview-mode':
-      state.previewMode = actionElement.dataset.mode === 'flow' ? 'flow' : 'interface';
+      state.previewMode = ['interface', 'json', 'flow'].includes(actionElement.dataset.mode) ? actionElement.dataset.mode : 'interface';
       renderEditor();
       break;
+    case 'publish-prototype':
+      await saveEditor();
+      showToast(`Prototype published with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
+      break;
+    case 'copy-generated-json': {
+      const parsed = generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject?.name));
+      await navigator.clipboard.writeText(JSON.stringify(parsed, null, 2));
+      showToast('Generated JSON copied.', 'success');
+      break;
+    }
     case 'run-prototype':
       actionElement.disabled = true;
       actionElement.innerHTML = `${icon('check', 'icon-sm')}Interface action completed`;
@@ -1854,10 +1897,22 @@ document.addEventListener('change', async (event) => {
     if (state.modal?.type === 'preview') renderModal();
     else renderEditor();
     showToast(`Generating with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
+  } else if (target.dataset.action === 'preview-viewport') {
+    state.previewViewport = target.value === 'mobile' ? 'mobile' : 'desktop';
+    renderEditor();
+  } else if (target.dataset.action === 'preview-zoom') {
+    state.previewZoom = ['75', '100', '125'].includes(target.value) ? target.value : '100';
+    renderEditor();
   }
 });
 
 document.addEventListener('keydown', (event) => {
+  if (event.target.matches('[data-resizer="intent"]') && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    event.preventDefault();
+    state.intentWidth = Math.min(55, Math.max(30, state.intentWidth + (event.key === 'ArrowRight' ? 2 : -2)));
+    event.target.closest('.editor-body')?.style.setProperty('--intent-width', `${state.intentWidth}%`);
+    return;
+  }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
     if (state.activeProject) saveEditor().then(() => showToast('Project saved'));
@@ -1867,6 +1922,26 @@ document.addEventListener('keydown', (event) => {
     const card = event.target.closest('[data-action="open-project"]');
     window.location.hash = `#project/${card.dataset.projectId}`;
   }
+});
+
+document.addEventListener('pointerdown', (event) => {
+  const resizer = event.target.closest('[data-resizer="intent"]');
+  if (!resizer) return;
+  const body = resizer.closest('.editor-body');
+  if (!body) return;
+  const rect = body.getBoundingClientRect();
+  const onMove = (moveEvent) => {
+    const percent = Math.min(55, Math.max(30, ((moveEvent.clientX - rect.left) / rect.width) * 100));
+    state.intentWidth = Math.round(percent * 10) / 10;
+    body.style.setProperty('--intent-width', `${state.intentWidth}%`);
+  };
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  event.preventDefault();
 });
 
 window.addEventListener('hashchange', handleRoute);
