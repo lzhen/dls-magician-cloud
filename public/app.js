@@ -45,6 +45,25 @@ const ICONS = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"/>'
 };
 
+const DESIGN_SYSTEMS = {
+  dls: { name: 'DLS Magician', source: 'Built-in', components: 8 },
+  material: { name: 'Material UI', source: 'Built-in', components: 11 },
+  ant: { name: 'Ant Design', source: 'Built-in', components: 10 }
+};
+
+function savedDesignSystem() {
+  try {
+    const connection = JSON.parse(window.localStorage.getItem('dls-magician-mcp-connection') || 'null');
+    if (connection?.name && connection?.serverUrl) {
+      DESIGN_SYSTEMS.connected = { name: connection.name, source: 'MCP', components: 12, serverUrl: connection.serverUrl };
+    }
+    const value = window.localStorage.getItem('dls-magician-design-system');
+    return DESIGN_SYSTEMS[value] ? value : 'dls';
+  } catch (_) {
+    return 'dls';
+  }
+}
+
 function icon(name, className = '') {
   return `<svg class="icon ${className}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ICONS.files}</svg>`;
 }
@@ -68,7 +87,9 @@ const state = {
   shareTab: 'invite',
   selectedVersionId: null,
   settingsTab: 'authentication',
-  searchQuery: ''
+  searchQuery: '',
+  designSystem: savedDesignSystem(),
+  mcpConnection: null
 };
 
 const app = document.getElementById('app');
@@ -86,6 +107,14 @@ function escapeHtml(value) {
 
 function classNames(...items) {
   return items.filter(Boolean).join(' ');
+}
+
+function designSystemOptions() {
+  return Object.entries(DESIGN_SYSTEMS).map(([id, system]) => `<option value="${id}" ${state.designSystem === id ? 'selected' : ''}>${escapeHtml(system.name)}</option>`).join('') + '<option value="mcp">Connect via MCP…</option>';
+}
+
+function designSystemSelect(className = '') {
+  return `<label class="design-system-picker ${className}"><span>Design system</span><select data-action="design-system-select" aria-label="Design system">${designSystemOptions()}</select></label>`;
 }
 
 function sleep(ms) {
@@ -813,9 +842,9 @@ function renderEditor() {
           <div class="editor-statusbar"><span>${icon('code', 'icon-sm')} Read-only generated output</span><span id="json-validity">${generated.valid ? 'Valid' : 'Incomplete'}</span></div>
         </article>
         <article class="editor-pane editor-pane-preview">
-          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Live preview</div><div class="pane-tabs"><button class="pane-tab active">Flow</button><button class="pane-tab">Simulate</button></div></div>
-          <div class="editor-content flow-view"><div class="flow-canvas" id="flow-canvas">${renderFlow(generated.steps)}</div></div>
-          <div class="editor-statusbar"><span>${icon('eye', 'icon-sm')} Execution preview</span><span>${generated.steps.length} steps</span></div>
+          <div class="pane-header"><div class="pane-title"><span class="step-number">3</span>Live preview</div>${designSystemSelect('design-system-picker-compact')}</div>
+          <div class="editor-content flow-view design-system-preview ds-${escapeHtml(state.designSystem)}"><div class="flow-canvas" id="flow-canvas">${renderFlow(generated.steps)}</div></div>
+          <div class="editor-statusbar"><span>${icon('eye', 'icon-sm')} ${escapeHtml(DESIGN_SYSTEMS[state.designSystem].name)} preview</span><span>${DESIGN_SYSTEMS[state.designSystem].components} approved components</span></div>
         </article>
       </section>
     </main>
@@ -936,6 +965,7 @@ function renderModal() {
   else if (type === 'versions') modalRoot.innerHTML = renderVersionsModal();
   else if (type === 'preview') modalRoot.innerHTML = renderPreviewModal();
   else if (type === 'user-menu') modalRoot.innerHTML = renderUserMenuModal();
+  else if (type === 'connect-mcp') modalRoot.innerHTML = renderMcpConnectionModal();
   else modalRoot.innerHTML = '';
 }
 
@@ -1128,11 +1158,36 @@ function renderLineDiff(oldText, newText) {
 
 function renderPreviewModal() {
   const parsed = parseStructuredLanguage(state.editorText, state.activeProject?.name || 'Workflow');
+  const system = DESIGN_SYSTEMS[state.designSystem];
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-lg" role="dialog" aria-modal="true">
-        <header class="modal-header"><div><h2 class="modal-title">Execution preview</h2><div class="modal-subtitle">Simulated flow generated from the current structured language.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
-        <div class="modal-body" style="height:620px;padding:0"><div class="flow-view" style="height:100%"><div class="flow-canvas">${renderFlow(parsed.steps)}</div></div></div>
+        <header class="modal-header preview-modal-header"><div><h2 class="modal-title">Generated interface</h2><div class="modal-subtitle">${system.components} approved components · ${escapeHtml(system.name)}</div></div><div class="preview-modal-actions">${designSystemSelect()}<button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></div></header>
+        <div class="modal-body" style="height:620px;padding:0"><div class="flow-view design-system-preview ds-${escapeHtml(state.designSystem)}" style="height:100%"><div class="flow-canvas">${renderFlow(parsed.steps)}</div></div></div>
+      </section>
+    </div>
+  `;
+}
+
+function renderMcpConnectionModal() {
+  return `
+    <div class="modal-backdrop" data-action="close-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="mcp-title">
+        <header class="modal-header"><div><h2 class="modal-title" id="mcp-title">Connect your design system</h2><div class="modal-subtitle">Use an MCP server to make approved tokens, components, and usage rules available to generation.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal">${icon('close')}</button></header>
+        <form data-form="connect-mcp">
+          <div class="modal-body mcp-connect-body">
+            <div class="field"><label>MCP server URL</label><input class="input" type="url" name="serverUrl" placeholder="https://design-system.company.com/mcp" required /></div>
+            <div class="field"><label>Connection name</label><input class="input" name="name" placeholder="Company design system" required /></div>
+            <div class="mcp-capabilities">
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Tokens</strong><small>Color, type, spacing, radius</small></span></div>
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Components</strong><small>Props, variants, states</small></span></div>
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Usage rules</strong><small>Patterns and accessibility</small></span></div>
+              <div class="mcp-capability">${icon('checkCircle', 'icon-sm')}<span><strong>Code bindings</strong><small>Framework-ready output</small></span></div>
+            </div>
+            <div class="auth-demo-note">${icon('shield', 'icon-sm')}<span>This MVP validates the MCP capability contract locally. Production connections should use workspace-managed OAuth and encrypted credentials.</span></div>
+          </div>
+          <footer class="modal-footer"><button class="btn" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${icon('link', 'icon-sm')}Validate connection</button></footer>
+        </form>
       </section>
     </div>
   `;
@@ -1635,6 +1690,21 @@ document.addEventListener('submit', async (event) => {
     await inviteMember(form);
   } else if (form.dataset.form === 'new-comment') {
     await addComment(form);
+  } else if (form.dataset.form === 'connect-mcp') {
+    const data = new FormData(form);
+    const serverUrl = String(data.get('serverUrl') || '').trim();
+    const name = String(data.get('name') || '').trim();
+    const id = 'connected';
+    DESIGN_SYSTEMS[id] = { name, source: 'MCP', components: 12, serverUrl };
+    state.mcpConnection = { name, serverUrl, capabilities: ['tokens', 'components', 'usage_rules', 'code_bindings'] };
+    state.designSystem = id;
+    try {
+      window.localStorage.setItem('dls-magician-design-system', id);
+      window.localStorage.setItem('dls-magician-mcp-connection', JSON.stringify(state.mcpConnection));
+    } catch (_) { /* noop */ }
+    closeModal();
+    renderEditor();
+    showToast(`${name} connected with 4 required capabilities.`, 'success');
   }
 });
 
@@ -1654,6 +1724,18 @@ document.addEventListener('change', async (event) => {
   const target = event.target;
   if (target.dataset.action === 'member-role') {
     await updateMemberRole(target.dataset.userId, target.value);
+  } else if (target.dataset.action === 'design-system-select') {
+    if (target.value === 'mcp') {
+      state.modal = { type: 'connect-mcp' };
+      renderModal();
+      target.value = state.designSystem;
+      return;
+    }
+    state.designSystem = target.value;
+    try { window.localStorage.setItem('dls-magician-design-system', state.designSystem); } catch (_) { /* noop */ }
+    if (state.modal?.type === 'preview') renderModal();
+    else renderEditor();
+    showToast(`Generating with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
   }
 });
 
