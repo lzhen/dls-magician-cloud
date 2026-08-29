@@ -3962,3 +3962,45 @@ svg {
   .output-toolbar { align-items: flex-start; flex-direction: column; }
   .output-tools { width: 100%; margin-left: 0; overflow-x: auto; }
 }
+
+/* Final theme overrides: keep borders neutral and primary actions legible. */
+[data-theme="light"] .dashboard-hero,
+[data-theme="light"] .project-card,
+[data-theme="light"] .table-shell,
+[data-theme="light"] .workspace-card,
+[data-theme="light"] .activity-card,
+[data-theme="light"] .template-card,
+[data-theme="light"] .stat-card,
+[data-theme="light"] .settings-section { border-color: transparent; }
+
+[data-theme="light"] button:focus-visible,
+[data-theme="light"] a:focus-visible,
+[data-theme="light"] input:focus-visible,
+[data-theme="light"] textarea:focus-visible,
+[data-theme="light"] select:focus-visible { outline-color: rgba(45, 45, 50, .42); }
+
+[data-theme="dark"] button:focus-visible,
+[data-theme="dark"] a:focus-visible,
+[data-theme="dark"] input:focus-visible,
+[data-theme="dark"] textarea:focus-visible,
+[data-theme="dark"] select:focus-visible { outline-color: rgba(218, 217, 224, .52); }
+
+[data-theme="dark"] .pane-tab.active {
+  box-shadow: inset 0 -2px 0 rgba(235, 234, 240, .72);
+}
+
+[data-theme="dark"] .pane-resizer:hover::after,
+[data-theme="dark"] .pane-resizer:focus-visible::after {
+  background: rgba(218, 217, 224, .58);
+}
+
+[data-theme="dark"] .editor-topbar .btn.btn-primary,
+[data-theme="dark"] .editor-topbar .btn.btn-primary:hover,
+[data-theme="dark"] .editor-topbar .btn.btn-primary:focus-visible {
+  border-color: #f2f1f4;
+  background: #f2f1f4;
+  color: #151519;
+  opacity: 1;
+}
+
+[data-theme="dark"] .editor-topbar .btn.btn-primary .icon { color: #151519; }
