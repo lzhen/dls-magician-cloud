@@ -3994,12 +3994,12 @@ svg {
   background: rgba(218, 217, 224, .58);
 }
 
-/* Primary actions use the DLS gold accent in both themes. */
+/* Primary actions use the original clean white treatment. */
 [data-theme="dark"] .btn.btn-primary,
 [data-theme="light"] .btn.btn-primary {
-  border-color: var(--gold);
-  background: var(--gold);
-  color: #211a0f;
+  border-color: #f2f1f4;
+  background: #f2f1f4;
+  color: #151519;
   box-shadow: none;
   font-weight: 700;
   opacity: 1;
@@ -4007,15 +4007,15 @@ svg {
 
 [data-theme="dark"] .btn.btn-primary:hover,
 [data-theme="light"] .btn.btn-primary:hover {
-  border-color: var(--gold-strong);
-  background: var(--gold-strong);
-  color: #171108;
+  border-color: #ffffff;
+  background: #ffffff;
+  color: #0c0c0e;
 }
 
 [data-theme="dark"] .btn.btn-primary:focus-visible,
 [data-theme="light"] .btn.btn-primary:focus-visible {
-  outline-color: rgba(226, 198, 132, .72);
+  outline-color: rgba(218, 217, 224, .62);
 }
 
 [data-theme="dark"] .btn.btn-primary .icon,
-[data-theme="light"] .btn.btn-primary .icon { color: #211a0f; }
+[data-theme="light"] .btn.btn-primary .icon { color: #151519; }
