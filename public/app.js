@@ -1349,7 +1349,7 @@ function renderUserMenuModal() {
         <header class="modal-header"><div><h2 class="modal-title" id="account-title">Account</h2><div class="modal-subtitle">Signed in through ${escapeHtml(state.provider || 'workspace authentication')}.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close account">${icon('close')}</button></header>
         <div class="modal-body">
           <div style="display:flex;align-items:center;gap:14px;padding:8px 0 20px">${avatar(state.user, 'avatar-lg')}<div><div class="person-name" style="font-size:14px">${escapeHtml(state.user.name)}</div><div class="person-email">${escapeHtml(state.user.email)}</div></div></div>
-          <button class="btn btn-danger" style="width:100%" data-action="logout">${icon('logout', 'icon-sm')}Sign out</button>
+          <button class="btn btn-primary" style="width:100%" data-action="logout">${icon('logout', 'icon-sm')}Sign out</button>
         </div>
       </section>
     </div>
