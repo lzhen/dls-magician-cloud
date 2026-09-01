@@ -38,6 +38,15 @@ Open:
 http://localhost:3000
 ```
 
+### Install on iPhone or iPad
+
+1. Deploy the app to an HTTPS URL and open it in Safari.
+2. Tap **Share**.
+3. Choose **Add to Home Screen**, then **Add**.
+4. Launch **DLS Magician** from the Home Screen for the standalone app experience.
+
+The included web app manifest, Apple touch icon, safe-area layout, and service worker provide the installable iOS PWA shell. The workspace shell is cached for resilient startup; authenticated API data still requires a network connection.
+
 The app is connected to its dedicated Supabase project `vxlwnvwijnzimjvgpeug`. Override its public runtime configuration when deploying:
 
 ```bash

@@ -769,10 +769,12 @@ function serveStatic(req, res, url) {
 
   try {
     const stat = fs.statSync(filePath);
+    const shouldRevalidate = filePath.endsWith('index.html') || filePath.endsWith('sw.js') || filePath.endsWith('manifest.webmanifest');
     res.writeHead(200, {
       'Content-Type': mimeType(filePath),
       'Content-Length': stat.size,
-      'Cache-Control': filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=3600'
+      'Cache-Control': shouldRevalidate ? 'no-cache' : 'public, max-age=3600',
+      ...(filePath.endsWith('sw.js') ? { 'Service-Worker-Allowed': '/' } : {})
     });
     fs.createReadStream(filePath).pipe(res);
   } catch (error) {

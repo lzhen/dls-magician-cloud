@@ -99,6 +99,7 @@ const state = {
   mcpConnection: null,
   theme: localStorage.getItem('dls-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
 };
+let deferredInstallPrompt = null;
 document.documentElement.dataset.theme = state.theme;
 let supabaseClient = null;
 
@@ -498,6 +499,18 @@ function navItem(page, label, iconName, activePage, href, badge = null) {
   return `<a class="nav-item ${active ? 'active' : ''}" href="${href}" ${active ? 'aria-current="page"' : ''}>${icon(iconName)}<span>${escapeHtml(label)}</span>${badge !== null ? `<span class="nav-badge">${badge}</span>` : ''}</a>`;
 }
 
+function mobileNavigation(activePage) {
+  return `
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      ${navItem('dashboard', 'Home', 'home', activePage, '#dashboard')}
+      ${navItem('projects', 'Projects', 'projects', activePage, '#projects')}
+      ${navItem('templates', 'Templates', 'templates', activePage, '#templates')}
+      ${navItem('activity', 'Activity', 'activity', activePage, '#activity')}
+      ${navItem('settings', 'Settings', 'settings', activePage, '#settings')}
+    </nav>
+  `;
+}
+
 function topbar(title, subtitle = '', options = {}) {
   return `
     <header class="topbar">
@@ -541,6 +554,7 @@ function renderShell(activePage) {
           ${content}
         </div>
       </main>
+      ${mobileNavigation(page)}
     </div>
   `;
   renderModal();
@@ -2046,10 +2060,26 @@ document.addEventListener('dblclick', (event) => {
 });
 
 window.addEventListener('hashchange', handleRoute);
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  showToast('DLS Magician was added to your home screen.', 'success');
+});
 window.addEventListener('beforeunload', () => {
   if (state.editorDirty) saveEditor();
   disconnectStream();
   stopPresence();
 });
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      console.warn('Service worker registration failed.', error);
+    });
+  });
+}
 
 boot();
