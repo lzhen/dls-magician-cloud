@@ -34,3 +34,9 @@
 [data-theme="light"] .component-suggestions { --cs-bg: #fff; --cs-text: #25222d; --cs-muted: #686070; --cs-line: #ded8e5; --cs-hover: #f1ecf8; --cs-accent: #7047bd; box-shadow: 0 10px 32px #26123420; }
 @media (max-width: 600px) { .component-browse { top: 7px; right: 8px; min-height: 32px; } .cs-option { min-height: 48px; } .cs-category { font-size: 9px; } }
 @media (forced-colors: active) { .cs-option[aria-selected="true"] { outline: 2px solid Highlight; } }
+
+/* WHEN uses the blue interaction accent and explains each trigger. */
+.component-suggestions[data-suggestion-kind="behavior"] { --cs-accent: #85baff; --cs-hover: #293447; }
+[data-theme="light"] .component-suggestions[data-suggestion-kind="behavior"] { --cs-accent: #195fbb; --cs-hover: #edf4ff; }
+.component-suggestions[data-suggestion-kind="behavior"] .cs-option-copy small { white-space: normal; overflow: visible; }
+.component-browse[data-suggestion-kind="behavior"]:focus-visible { outline-color: var(--blue, #85baff); }

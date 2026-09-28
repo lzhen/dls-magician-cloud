@@ -1,4 +1,4 @@
-/* Component-name completion for the structured intent editor. No network calls. */
+/* Intent-aware completion: components in GIVEN; behaviors in WHEN. No network calls. */
 (function (root, factory) {
   'use strict';
   const api = factory();
@@ -21,6 +21,33 @@
     Pagination: ['pagination', 'Navigation'], Menu: ['menu', 'Navigation'], Link: ['link', 'Navigation'],
     Icon: ['icon', 'Content'], Skeleton: ['skeleton', 'Feedback']
   };
+  // Authoring vocabulary only. Choosing an event does not execute THEN or attach a listener.
+  const behaviorDefinitions = [
+    ['Click', 'Click', 'click', 'Pointer', 'Activate a control by clicking or tapping.', 'clicks|clicked|tap|taps|tapped|activate'],
+    ['DoubleClick', 'Double click', 'double click', 'Pointer', 'Click the same target twice in quick succession.', 'double-click|doubleclick|dblclick|double clicks|double clicked'],
+    ['RightClick', 'Right click', 'right click', 'Pointer', 'Open a context menu on the target.', 'right-click|rightclick|context menu|contextmenu'],
+    ['Hover', 'Hover', 'hover', 'Pointer', 'Move the pointer over the component.', 'hovers|hovered|mouse enter|mouseenter|pointer enter|pointerenter|mouse over|mouseover'],
+    ['PointerLeave', 'Pointer leave', 'pointer leave', 'Pointer', 'Move the pointer away from the component.', 'mouse leave|mouseleave|pointerleave|hover ends|mouse out|mouseout'],
+    ['Focus', 'Focus', 'focus', 'Focus', 'The component receives focus.', 'focuses|focused|focus in|focusin'],
+    ['Blur', 'Blur', 'blur', 'Focus', 'Focus moves away from the component.', 'blurred|loses focus|lose focus|focus out|focusout'],
+    ['Input', 'Type / input', 'type', 'Input', 'Text is entered, edited, or deleted.', 'input|typing|types|typed|text input|text entry'],
+    ['Change', 'Value change', 'change', 'Input', 'A field value changes.', 'changes|changed|value change|value changed|on change'],
+    ['Select', 'Select', 'select', 'Input', 'An option or item is selected.', 'selects|selected|selection|choose|option selected'],
+    ['Check', 'Check', 'check', 'Input', 'A checkbox becomes checked.', 'checked|checks|checkbox checked'],
+    ['Uncheck', 'Uncheck', 'uncheck', 'Input', 'A checkbox becomes unchecked.', 'unchecked|unchecks|checkbox unchecked'],
+    ['Toggle', 'Toggle', 'toggle', 'Input', 'A switch changes between on and off.', 'toggles|toggled|switch|toggle on|toggle off'],
+    ['KeyDown', 'Key down', 'key down', 'Keyboard', 'A keyboard key is pressed; specify the key.', 'keydown|key pressed|press key'],
+    ['KeyUp', 'Key up', 'key up', 'Keyboard', 'A keyboard key is released; specify the key.', 'keyup|key released|release key'],
+    ['PressEnter', 'Press Enter', 'press Enter', 'Keyboard', 'The Enter key is pressed.', 'enter|return|enter key|presses Enter'],
+    ['PressEscape', 'Press Escape', 'press Escape', 'Keyboard', 'The Escape key is pressed.', 'escape|esc|escape key|presses Escape'],
+    ['Submit', 'Submit', 'submit', 'Form', 'The user submits a form.', 'submits|submitted|form submit|submission'],
+    ['Reset', 'Reset', 'reset', 'Form', 'Form values are reset.', 'resets|form reset'],
+    ['DragStart', 'Drag start', 'drag start', 'Drag & drop', 'The user starts dragging an item.', 'drag|dragstart|start dragging'],
+    ['DragOver', 'Drag over', 'drag over', 'Drag & drop', 'A dragged item moves over a drop target.', 'dragover|drag enter|dragenter'],
+    ['Drop', 'Drop', 'drop', 'Drag & drop', 'A dragged item is released on a drop target.', 'dropped|drops|drag drop|drag and drop'],
+    ['Scroll', 'Scroll', 'scroll', 'View', 'The user scrolls a page or region.', 'scrolls|scrolling|scrolled'],
+    ['Load', 'Load', 'load', 'View', 'The page or component finishes loading.', 'loaded|page load|component load|on load']
+  ];
   const normalize = value => String(value || '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
   const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const fieldSelector = 'textarea.intent-step-input';
@@ -33,6 +60,19 @@
         category: copy[entry.type]?.[1] || 'Component', aliases: entry.aliases.slice(),
         terms: [...new Set([insert, entry.type.replace(/([a-z])([A-Z])/g, '$1 $2'), entry.type, ...entry.aliases].map(normalize))] };
     });
+  }
+  function behaviorCatalog() {
+    return behaviorDefinitions.map(([type, label, insert, category, description, alternatives]) => {
+      const aliases = [insert, ...alternatives.split('|')];
+      return { type, label, insert, category, description, aliases, kind: 'behavior',
+        terms: [...new Set([label, type, ...aliases].map(normalize))] };
+    });
+  }
+  function suggestionKind(intentType) {
+    return String(intentType || '').toUpperCase() === 'WHEN' ? 'behavior' : 'component';
+  }
+  function catalogForIntent(intentType, components, behaviors = behaviorCatalog()) {
+    return suggestionKind(intentType) === 'behavior' ? behaviors : components;
   }
   function matches(entries, query) {
     const q = normalize(query);
@@ -67,7 +107,8 @@
     const rightWord = value.slice(end).match(/^[\p{L}\p{N}_-]*/u)[0];
     const slash = /(?:^|[\s(,;])\/([a-z -]*)$/i.exec(left);
     if (slash) return { start: start - slash[1].length - 1, end: end + rightWord.length, query: slash[1], explicit: true };
-    if (!left.trim() || /(?:\b(?:a|an|the|and|with|add|show|include|containing|contains)\s+|[,;]\s*)$/i.test(left)) {
+    if (!left.trim() || /(?:\b(?:a|an|the|and|with|add|show|include|containing|contains)\s+|[,;]\s*)$/i.test(left) ||
+      (entries[0]?.kind === 'behavior' && /^(?:(?:the )?user|on|when)\s+$/i.test(left))) {
       return { start, end, query: '', explicit: force };
     }
     const tail = left.match(/(?:[a-z][a-z-]*\s+){0,3}[a-z][a-z-]*$/i);
@@ -108,6 +149,7 @@
     if (root.__dlsAutocomplete) return root.__dlsAutocomplete;
     const doc = root.document;
     const entries = catalog(root.DLSComponentPreview?.registry);
+    const behaviors = behaviorCatalog();
     if (!doc || !entries.length) return null;
     const popup = doc.createElement('div');
     popup.id = 'dls-component-suggestions'; popup.className = 'component-suggestions'; popup.hidden = true;
@@ -118,7 +160,10 @@
     const help = doc.createElement('div');
     help.id = 'dls-component-autocomplete-help'; help.className = 'cs-sr-only';
     help.textContent = 'Component suggestions are available. Type a component name, slash, or press Control Space to browse. Use Up and Down, then Enter to insert. Escape closes. Tab moves to the next field.';
-    doc.body.append(popup, live, help);
+    const behaviorHelp = doc.createElement('div');
+    behaviorHelp.id = 'dls-behavior-autocomplete-help'; behaviorHelp.className = 'cs-sr-only';
+    behaviorHelp.textContent = 'WHEN defines an interaction or event. Type click, hover, focus, type, or submit; use slash or Control Space to browse behaviors. Use Up and Down, then Enter to insert. Escape closes. Tab moves to the next field. This defines the trigger; THEN describes its outcome.';
+    doc.body.append(popup, live, help, behaviorHelp);
     let activeField = null, options = [], activeIndex = -1, currentContext = null;
     let composing = false, committing = false, pointerInPopup = false, frame = 0;
     const enhanced = new WeakSet();
@@ -169,21 +214,28 @@
     }
     function open(field, force = false) {
       if (composing || committing || field.disabled || field.readOnly) return;
-      const ctx = context(field.value, field.selectionStart, field.selectionEnd, entries, force);
+      const kind = suggestionKind(field.dataset.intentType);
+      const choices = catalogForIntent(field.dataset.intentType, entries, behaviors);
+      const plural = kind === 'behavior' ? 'Behaviors' : 'Components';
+      const ctx = context(field.value, field.selectionStart, field.selectionEnd, choices, force);
       if (!ctx) { close(); return; }
-      const found = matches(entries, ctx.query);
+      const found = matches(choices, ctx.query);
       if (!found.length && !ctx.explicit) { close(); return; }
       if (activeField !== field) close();
       activeField = field; currentContext = {...ctx, snapshot: field.value}; options = found;
-      popup.querySelector('.cs-count').textContent = ctx.query ? `${found.length} of ${entries.length}` : String(entries.length);
+      popup.dataset.suggestionKind = kind;
+      popup.querySelector('.cs-heading strong').textContent = plural;
+      list.setAttribute('aria-label', plural);
+      popup.querySelector('.cs-empty').textContent = `No matching ${plural.toLowerCase()}. Keep typing or press Esc.`;
+      popup.querySelector('.cs-count').textContent = ctx.query ? `${found.length} of ${choices.length}` : String(choices.length);
       list.innerHTML = found.map((entry, index) => {
-        const detail = entry.aliases.filter(alias => normalize(alias) !== normalize(entry.insert)).slice(0, 3).join(' · ');
-        return `<div class="cs-option" id="dls-component-option-${index}" role="option" aria-selected="false" data-component-index="${index}"><span class="cs-component-mark" aria-hidden="true">◇</span><span class="cs-option-copy"><strong>${escape(entry.label)}</strong><small>${escape(detail || entry.type)}</small></span><span class="cs-category">${escape(entry.category)}</span></div>`;
+        const detail = entry.description || entry.aliases.filter(alias => normalize(alias) !== normalize(entry.insert)).slice(0, 3).join(' · ');
+        return `<div class="cs-option" id="dls-component-option-${index}" role="option" aria-selected="false" data-component-index="${index}"><span class="cs-component-mark" aria-hidden="true">${kind === 'behavior' ? '↳' : '◇'}</span><span class="cs-option-copy"><strong>${escape(entry.label)}</strong><small>${escape(detail || entry.type)}</small></span><span class="cs-category">${escape(entry.category)}</span></div>`;
       }).join('');
       popup.querySelector('.cs-empty').hidden = found.length > 0;
       popup.hidden = false; list.scrollTop = 0; setActive(-1); position();
       browseButton(field)?.setAttribute('aria-expanded', 'true');
-      announce(`${found.length} component suggestions. Use Up or Down, then Enter to insert.`);
+      announce(`${found.length} ${kind} suggestions. Use Up or Down, then Enter to insert.`);
     }
     function choose(index) {
       const field = activeField, ctx = currentContext, entry = options[index];
@@ -213,11 +265,15 @@
         // Retain native multiline textbox semantics; focus stays here while navigating the listbox.
         field.setAttribute('aria-autocomplete', 'list'); field.setAttribute('aria-haspopup', 'listbox');
         field.setAttribute('aria-controls', list.id);
-        field.setAttribute('aria-describedby', `${field.getAttribute('aria-describedby') || ''} ${help.id}`.trim());
+        const kind = suggestionKind(field.dataset.intentType);
+        const fieldHelp = kind === 'behavior' ? behaviorHelp : help;
+        field.setAttribute('aria-describedby', `${field.getAttribute('aria-describedby') || ''} ${fieldHelp.id}`.trim());
+        if (kind === 'behavior') field.setAttribute('placeholder', 'Choose a behavior: click, hover, focus, type, submit…');
         const button = doc.createElement('button');
         button.type = 'button'; button.className = 'component-browse'; button.dataset.componentBrowse = '';
-        button.textContent = '+ Component';
-        button.setAttribute('aria-label', `Insert component in ${field.dataset.intentType || 'intent'}`);
+        button.dataset.suggestionKind = kind;
+        button.textContent = kind === 'behavior' ? '+ Behavior' : '+ Component';
+        button.setAttribute('aria-label', `Insert ${kind} in ${field.dataset.intentType || 'intent'}`);
         button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-controls', list.id); button.setAttribute('aria-expanded', 'false');
         field.parentElement.classList.add('has-component-completion');
         field.parentElement.insertBefore(button, field);
@@ -276,9 +332,9 @@
     });
     observer.observe(doc.getElementById('app') || doc.body, {subtree: true, childList: true});
     enhance();
-    const controller = { catalog: entries, close };
+    const controller = { catalog: entries, behaviors, close };
     root.__dlsAutocomplete = controller;
     return controller;
   }
-  return { catalog, matches, insideQuote, context, replacement, install };
+  return { catalog, behaviorCatalog, suggestionKind, catalogForIntent, matches, insideQuote, context, replacement, install };
 });
