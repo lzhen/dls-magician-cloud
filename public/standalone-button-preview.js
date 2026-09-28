@@ -30,7 +30,7 @@
       .replace(/\b(?:without|instead of|not (?:a|an|the|inside|in))\b[\s\S]*$/i, '');
     const requested = description.match(roots) || [];
     if (requested.length !== 1 || requested[0].toLowerCase() !== 'button') return null;
-    if (/\b(?:two|three|multiple|several|[2-9]|\d{2,})\b/i.test(description)) return null;
+    if (/\b(?:two|three|multiple|several|[2-9]|\d{2,})\s+(?:(?:primary|secondary|disabled|small|large)\s+)*buttons?\b|\bbutton\s+group\b/i.test(description)) return null;
 
     const explicit = context.match(/\b(?:label(?:led|ed)?|text|caption|named|called|says|reads)\s*(?:(?:is|of)\s+|[:=]\s*)?["'“‘`]([^"'”’`]+)["'”’`]/i);
     const quotedName = context.match(/["'“‘`]([^"'”’`]+)["'”’`]\s+button\b/i);
