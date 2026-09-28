@@ -1,0 +1,168 @@
+"""Isolated editor DOM tests. No authentication, network, or saved-project mutations.
+Requires node, Python Playwright and Chromium (or CHROMIUM_PATH).
+"""
+from pathlib import Path
+import json
+import os
+import shutil
+import subprocess
+from playwright.sync_api import sync_playwright, expect
+
+ROOT = Path(__file__).resolve().parent.parent
+registry = subprocess.check_output(['node', '-e', 'console.log(JSON.stringify(require("./public/component-preview.js").registry))'], cwd=ROOT, text=True)
+fixture = '''<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+*{box-sizing:border-box}body{margin:0;background:#15161b;color:#eee;font:14px system-ui}header{padding:18px;border-bottom:1px solid #38353f}main{display:grid;grid-template-columns:40% 60%;height:720px}#structured-editor{padding:20px;overflow:auto;min-width:0}.intent-block{display:grid;grid-template-columns:65px 1fr;border:1px solid #3a3740;border-radius:10px;background:#1d1d23;margin:0 0 14px}.rail{padding:18px 10px;background:#282334;font-size:11px;color:#bba7ff}.intent-block-body{padding:14px;min-width:0}.intent-block-body>label{display:block;font-size:11px;color:#aaa3b5}.intent-step-input{display:block;background:transparent;border:0;color:#eee;width:100%;height:65px;resize:vertical;padding:12px 0 0;font:13px/1.6 monospace}#output-panel{padding:24px;border-left:1px solid #3a3740;color:#aaa;overflow-wrap:anywhere}@media(max-width:600px){main{display:block;height:auto}#structured-editor{height:500px;padding:10px}#output-panel{display:none}.intent-block{grid-template-columns:50px 1fr}}
+</style></head><body><header>DLS Magician · Autocomplete integration fixture <button id="outside">Outside editor</button></header><div id="app"><main><div id="structured-editor"></div><article id="output-panel"><h2>Output</h2><p id="echo"></p></article></main></div><script>
+const registry = REGISTRY;
+window.DLSComponentPreview={registry};
+const state={editorText:'',editorDirty:false};window.inputCount=0;window.savesScheduled=0;
+function renderFields(){document.getElementById('structured-editor').innerHTML=['GIVEN','WHEN','THEN','AND'].map((type,i)=>`<section class="intent-block"><div class="rail">${type}</div><div class="intent-block-body"><label for="intent-step-${i}">${type==='GIVEN'?'Starting context':type==='WHEN'?'Trigger or condition':type==='THEN'?'Expected outcome':'Additional behavior'}</label><textarea id="intent-step-${i}" class="intent-step-input" data-intent-type="${type}" placeholder="Describe this step…"></textarea></div></section>`).join('');}
+// Exact production input-handler path, with rendering and scheduling recorded locally.
+function updateEditorOutputs(){document.getElementById('echo').textContent=state.editorText;}
+function scheduleAutosave(){window.savesScheduled++;}
+document.addEventListener('input',event=>{const target=event.target;if(target.matches('.intent-step-input')){const fields=[...document.querySelectorAll('.intent-step-input')];state.editorText=fields.map(field=>`${field.dataset.intentType}\\n${field.value.trim()}`).join('\\n\\n');state.editorDirty=true;inputCount++;updateEditorOutputs();scheduleAutosave();}});
+renderFields();
+</script></body></html>'''.replace('REGISTRY', registry)
+checks = []
+with sync_playwright() as p:
+    browser = p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or shutil.which('chromium'), headless=True, args=['--no-sandbox'])
+    page = browser.new_page(viewport={'width':1400,'height':940})
+    errors = []
+    page.on('pageerror', lambda err: errors.append(str(err)))
+    def setup(pg):
+        pg.set_content(fixture)
+        pg.add_style_tag(content=(ROOT/'public/component-autocomplete.css').read_text())
+        pg.add_script_tag(content=(ROOT/'public/component-autocomplete.js').read_text())
+    setup(page)
+    field = page.locator('#intent-step-0')
+    popup = page.locator('#dls-component-suggestions')
+    rows = page.locator('#dls-component-options [role=option]')
+    def record(name):
+        checks.append(name)
+        print('PASS',name,flush=True)
+    def fill(text):
+        field.fill(text)
+        field.focus()
+    field.focus()
+    expect(rows).to_have_count(len(json.loads(registry)))
+    record('All registered components available on empty-field focus')
+    fill('a bu')
+    expect(rows.first).to_contain_text('Button')
+    expect(rows).to_have_count(3)
+    record('Typing a prefix filters names and aliases')
+    before=page.evaluate('inputCount')
+    field.press('ArrowDown');expect(field).to_have_attribute('aria-activedescendant','dls-component-option-0')
+    field.press('Enter');expect(field).to_have_value('a button ');expect(popup).to_be_hidden()
+    assert page.evaluate('inputCount')==before+1
+    assert page.evaluate('state.editorDirty')
+    assert page.evaluate('savesScheduled')==page.evaluate('inputCount')
+    expect(page.locator('#echo')).to_contain_text('a button')
+    record('Arrow/Enter inserts and triggers existing input/save path exactly once')
+    field.press('Control+z');expect(field).to_have_value('a bu')
+    record('Native undo restores typed prefix')
+    fill('an in')
+    rows.filter(has_text='Text input').click()
+    expect(field).to_have_value('an text input ');expect(field).to_be_focused()
+    record('Click selects a component and retains typing focus')
+    fill('a button labeled "Save"')
+    field.evaluate('(e)=>e.setSelectionRange(4,4)')
+    field.press('Control+Space');field.press('ArrowDown');field.press('Enter')
+    expect(field).to_have_value('a button labeled "Save"')
+    record('Insertion in the middle preserves label and sentence suffix')
+    fill('a /date p');expect(rows).to_have_count(1)
+    field.press('ArrowDown');field.press('Enter');expect(field).to_have_value('a date picker ')
+    record('Slash filters multiword aliases and is removed on acceptance')
+    fill('/');expect(rows).to_have_count(35)
+    field.press('ArrowUp');expect(rows.last).to_have_attribute('aria-selected','true')
+    field.press('ArrowDown');expect(rows.first).to_have_attribute('aria-selected','true')
+    record('Up/Down wraps through all components')
+    field.press('Escape');expect(popup).to_be_hidden();expect(field).to_have_value('/')
+    record('Escape dismisses without changing user text')
+    fill('a bu');field.press('Enter');expect(field).to_have_value('a bu\n')
+    record('Enter without an explicit highlighted choice preserves newline entry')
+    fill('a bu');field.press('ArrowDown');field.press('Tab')
+    expect(field).to_have_value('a bu');expect(popup).to_be_hidden()
+    record('Tab moves focus without accepting a suggestion')
+    fill('a bu');field.press('Shift+ArrowLeft');expect(popup).to_be_hidden()
+    record('Standard text-selection shortcuts are not hijacked')
+    fill('a button labeled "bu');expect(popup).to_be_hidden()
+    fill('an image https://example.com/bu');expect(popup).to_be_hidden()
+    record('No suggestions inside labels or URLs')
+    fill('a /zzyyxx');expect(popup).to_be_visible();expect(rows).to_have_count(0)
+    expect(page.locator('.cs-empty')).to_be_visible()
+    record('Unknown slash query has an explicit empty state')
+    fill('a bu');page.click('#outside');expect(popup).to_be_hidden()
+    record('Clicking outside dismisses the list')
+    fill('')
+    page.get_by_role('button',name='Insert component in GIVEN',exact=True).click()
+    expect(rows).to_have_count(35)
+    record('Visible Component button browses the complete registry')
+    fill('a bu')
+    field.dispatch_event('compositionstart',{'data':'b'})
+    expect(popup).to_be_hidden()
+    field.dispatch_event('input',{'isComposing':True})
+    field.dispatch_event('keydown',{'key':'Enter','isComposing':True})
+    expect(field).to_have_value('a bu')
+    expect(popup).to_be_hidden()
+    field.dispatch_event('compositionend',{'data':'bu'})
+    expect(popup).to_be_visible()
+    record('IME composition and candidate-confirmation Enter are left untouched')
+    # Native insertion unavailable: synthetic input must still update the editor once.
+    page.evaluate('window.oldExec=document.execCommand;document.execCommand=()=>false')
+    fill('a ch');before=page.evaluate('inputCount')
+    rows.filter(has_text='Checkbox').click()
+    expect(field).to_have_value('a checkbox ')
+    assert page.evaluate('inputCount')==before+1
+    page.evaluate('()=>{document.execCommand=window.oldExec;}')
+    record('Fallback insertion triggers a single input event')
+    # Every intent block receives identical autocomplete, including freshly rendered blocks.
+    for i in range(4):
+        f=page.locator(f'#intent-step-{i}');f.fill('a sli')
+        expect(rows).to_have_count(1)
+        f.press('ArrowDown');f.press('Enter');expect(f).to_have_value('a slider ')
+    record('Works in GIVEN, WHEN, THEN, and AND')
+    page.evaluate('renderFields()')
+    expect(page.locator('[data-component-browse]')).to_have_count(4)
+    fill('a sw');expect(rows).to_have_count(1)
+    record('Editor rerenders receive autocomplete without duplicate buttons')
+    page.evaluate('DLSComponentAutocomplete.install(window)')
+    expect(page.locator('#dls-component-suggestions')).to_have_count(1)
+    record('Installation is idempotent')
+    fill('/');page.locator('#structured-editor').evaluate('(e)=>{e.style.height="260px";e.scrollTop=250;}')
+    expect(popup).to_be_hidden()
+    record('List closes if its input scrolls out of view')
+    page.locator('#structured-editor').evaluate('(e)=>{e.style.height="";e.scrollTop=0;}')
+    field.focus();fill('a ')
+    for theme in ['dark','light']:
+        page.evaluate('(t)=>document.documentElement.dataset.theme=t',theme)
+        bbox=popup.bounding_box()
+        assert bbox and bbox['x']>=0 and bbox['y']>=0 and bbox['x']+bbox['width']<=1400 and bbox['y']+bbox['height']<=940
+    record('Dropdown is positioned inside desktop viewport in both themes')
+    page.evaluate('document.documentElement.dataset.theme="dark"')
+    page.screenshot(path=str(ROOT/'autocomplete-desktop.png'))
+    # Mobile touchscreen checks, with an independently sized browser viewport.
+    mobile=browser.new_page(viewport={'width':390,'height':600},is_mobile=True,has_touch=True)
+    mobile.on('pageerror',lambda err: errors.append(str(err)))
+    setup(mobile)
+    mf=mobile.locator('#intent-step-0');mf.fill('a check')
+    mobile.get_by_role('option').first.tap()
+    expect(mf).to_have_value('a checkbox ')
+    record('Touch selection inserts the requested component')
+    mf.fill('/')
+    mobile.locator('.cs-options').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+    mobile.get_by_role('option').last.tap()
+    expect(mf).to_have_value('skeleton ')
+    record('Mobile list scrolls to and selects the last component')
+    mf.fill('a ')
+    for height in [600,440,340]:
+        mobile.set_viewport_size({'width':390,'height':height})
+        mobile.wait_for_timeout(250)
+        bbox=mobile.locator('#dls-component-suggestions').bounding_box()
+        assert bbox and bbox['x']>=0 and bbox['y']>=0 and bbox['x']+bbox['width']<=390 and bbox['y']+bbox['height']<=height+1,bbox
+    record('Dropdown stays within narrow and keyboard-reduced viewport sizes')
+    mobile.set_viewport_size({'width':390,'height':600})
+    mobile.screenshot(path=str(ROOT/'autocomplete-mobile.png'))
+    assert not errors,errors
+    record('No browser JavaScript errors')
+    browser.close()
+print(json.dumps({'passed':len(checks),'checks':checks},indent=2))

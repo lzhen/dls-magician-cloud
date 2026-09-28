@@ -1,0 +1,36 @@
+/* Portalled suggestion list: no clipping by the editor's scrollable panes. */
+.has-component-completion { position: relative; }
+.has-component-completion > label { padding-right: 106px; }
+.component-browse {
+  position: absolute; right: 12px; top: 9px; min-height: 28px; padding: 3px 8px;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--text-soft, #d4d1dd); font: 500 11px/1.4 var(--font-ui, system-ui, sans-serif); cursor: pointer;
+}
+.component-browse:hover, .component-browse[aria-expanded="true"] { background: var(--surface-3, #2b2835); border-color: var(--line, #484250); color: var(--text, #f5f3fb); }
+.component-browse:focus-visible { outline: 2px solid var(--violet, #aa96ff); outline-offset: 2px; }
+.component-suggestions {
+  --cs-bg: #202027; --cs-text: #f2f0f7; --cs-muted: #b4aebf; --cs-line: #43404d; --cs-hover: #34303f; --cs-accent: #b9a6ff;
+  position: fixed; z-index: 150; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--cs-line); border-radius: 10px; background: var(--cs-bg); color: var(--cs-text);
+  box-shadow: 0 12px 40px #0005; text-align: left; font: 13px/1.4 var(--font-ui, system-ui, sans-serif);
+  box-sizing: border-box;
+}
+.component-suggestions[hidden], .component-suggestions [hidden] { display: none !important; }
+.cs-heading { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 8px 12px; border-bottom: 1px solid var(--cs-line); }
+.cs-heading strong { font-size: 11px; letter-spacing: .055em; text-transform: uppercase; }
+.cs-count { color: var(--cs-muted); font-size: 11px; }
+.cs-options { overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; padding: 4px; }
+.cs-option { display: flex; align-items: center; gap: 9px; min-height: 46px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
+.cs-option:hover, .cs-option[aria-selected="true"] { background: var(--cs-hover); }
+.cs-option[aria-selected="true"] { outline: 1px solid var(--cs-accent); outline-offset: -1px; }
+.cs-component-mark { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 26px; border: 1px solid var(--cs-line); border-radius: 5px; color: var(--cs-accent); font-size: 17px; }
+.cs-option-copy { flex: 1; min-width: 0; }
+.cs-option-copy strong { display: block; font-size: 13px; font-weight: 600; }
+.cs-option-copy small { display: block; overflow: hidden; color: var(--cs-muted); font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.cs-category { flex-shrink: 0; color: var(--cs-muted); font-size: 10px; }
+.cs-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 3px 12px; padding: 8px 12px; border-top: 1px solid var(--cs-line); color: var(--cs-muted); font-size: 10px; }
+.cs-empty { padding: 12px; margin: 0; color: var(--cs-muted); }
+.cs-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+[data-theme="light"] .component-suggestions { --cs-bg: #fff; --cs-text: #25222d; --cs-muted: #686070; --cs-line: #ded8e5; --cs-hover: #f1ecf8; --cs-accent: #7047bd; box-shadow: 0 10px 32px #26123420; }
+@media (max-width: 600px) { .component-browse { top: 7px; right: 8px; min-height: 32px; } .cs-option { min-height: 48px; } .cs-category { font-size: 9px; } }
+@media (forced-colors: active) { .cs-option[aria-selected="true"] { outline: 2px solid Highlight; } }
