@@ -67,14 +67,15 @@
   function items(value, key = 'options|items|columns|labels') {
     const found = value.match(new RegExp('\\b(?:' + key + ')\\s*(?:are\\s+|[:=]\\s*)?([\\s\\S]+)', 'i'));
     if (!found) return [];
-    const part = found[1].split(/;|\b(?:placeholder|disabled|required|selected|value|title|label(?:ed|led)?)\b/i)[0];
+    const stop = /;|\b(?:placeholder|disabled|required|selected|value|title|label(?:ed|led)?)\b/i.exec(maskQuotes(found[1]));
+    const part = stop ? found[1].slice(0, stop.index) : found[1];
     const quotedItems = [...part.matchAll(/["'“‘`]([^"'”’`]+)["'”’`]/g)].map(m => m[1]);
     return (quotedItems.length > 1 ? quotedItems : (quotedItems[0] || part).split(/,|\||\s+and\s+/i))
       .map(s => s.trim().replace(/[.]$/, '')).filter(Boolean).slice(0, 20);
   }
   function propsFor(type, segment, alias) {
     const words = maskQuotes(segment).toLowerCase();
-    let label = quoted(segment, 'label(?:led|ed)?|text|caption|named|called|says|reads|title(?:d)?');
+    let label = quoted(segment, 'label(?:led|ed)?|(?<!helper )text|caption|named|called|says|reads|title(?:d)?');
     if (!label) {
       const before = segment.slice(0, segment.toLowerCase().indexOf(alias));
       const match = before.match(/["'“‘`]([^"'”’`]+)["'”’`]\s*$/);
