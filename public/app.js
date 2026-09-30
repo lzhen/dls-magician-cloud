@@ -936,43 +936,19 @@ function renderEditor() {
 }
 
 function renderIntentBlocks(steps) {
+  const required = ['GIVEN', 'WHEN', 'THEN'];
   const normalized = [...steps];
-  ['GIVEN', 'WHEN', 'THEN'].forEach(type => {
-    if (!normalized.some(step => step.type === type)) normalized.push({ type, text: '' });
+  required.forEach((type) => {
+    if (!normalized.some((step) => step.type === type)) normalized.push({ type, text: '' });
   });
-  const groups = [];
-  normalized.forEach((step, index) => {
-    if (step.type !== 'AND' || !groups.length) groups.push({ type: step.type === 'AND' ? 'GIVEN' : step.type, items: [] });
-    groups[groups.length - 1].items.push({ step, index });
-  });
-  const labels = { GIVEN: 'Starting context', WHEN: 'Trigger or condition', THEN: 'Expected outcome' };
-  const kinds = { GIVEN: 'Component', WHEN: 'Behavior', THEN: 'Outcome' };
-  return groups.map(group => {
-    const context = group.type;
-    const lastIndex = group.items[group.items.length - 1].index;
-    return `<section class="intent-group intent-group-${escapeHtml(context.toLowerCase())}" data-intent-group="${escapeHtml(context)}">
-      <div class="intent-group-header"><span>${escapeHtml(context)}</span><small>${labels[context] || 'Starting context'}</small></div>
-      ${group.items.map(({ step, index }) => `
-      <section class="intent-block intent-${escapeHtml(step.type.toLowerCase())}${step.type === 'AND' ? ' intent-continuation' : ''}" data-intent-type="${escapeHtml(step.type)}">
-        <div class="intent-block-rail"><span>${step.type === 'AND' ? 'AND' : escapeHtml(kinds[context] || 'Component')}</span>${step.type === 'AND' && !step.text.trim() ? `<button type="button" class="btn btn-sm btn-ghost intent-remove-and" data-action="remove-intent-and" data-intent-index="${index}" aria-label="Remove empty AND ${index + 1}">Remove</button>` : ''}</div>
-        <div class="intent-block-body">
-          <label for="intent-step-${index}">${step.type === 'AND' ? `Additional ${(kinds[context] || 'Component').toLowerCase()}` : labels[context] || 'Starting context'}</label>
-          <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" data-suggestion-context="${escapeHtml(context)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
-        </div>
-      </section>`).join('')}
-      ${context !== 'WHEN' ? `<div class="intent-group-footer"><button type="button" class="btn btn-sm btn-ghost intent-add-and" data-action="add-intent-and" data-after-index="${lastIndex}" aria-label="Add AND ${kinds[context] || 'Component'} to ${escapeHtml(context)}">+ AND · ${kinds[context] || 'Component'}</button></div>` : ''}
-    </section>`;
-  }).join('');
-}
-
-function insertIntentAnd(steps, afterIndex) {
-  const index = Math.max(0, Math.min(steps.length, afterIndex + 1));
-  return [...steps.slice(0, index), { type: 'AND', text: '' }, ...steps.slice(index)];
-}
-
-function removeEmptyIntentAnd(steps, index) {
-  if (!Number.isInteger(index) || steps[index]?.type !== 'AND' || steps[index].text.trim()) return steps;
-  return steps.filter((step, i) => i !== index);
+  return normalized.map((step, index) => `
+    <section class="intent-block intent-${escapeHtml(step.type.toLowerCase())}" data-intent-type="${escapeHtml(step.type)}">
+      <div class="intent-block-rail"><span>${escapeHtml(step.type)}</span><small>${index + 1}</small></div>
+      <div class="intent-block-body">
+        <label for="intent-step-${index}">${step.type === 'GIVEN' ? 'Starting context' : step.type === 'WHEN' ? 'Trigger or condition' : step.type === 'THEN' ? 'Expected outcome' : 'Additional behavior'}</label>
+        <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
+      </div>
+    </section>`).join('');
 }
 
 function renderLineNumbers(text) {
@@ -1782,32 +1758,6 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-modal' && event.target !== actionElement && actionElement.classList.contains('modal-backdrop')) return;
 
   switch (action) {
-    case 'add-intent-and': {
-      if (!state.activeProject) break;
-      const fields = [...document.querySelectorAll('.intent-step-input')];
-      const afterIndex = Number(actionElement.dataset.afterIndex);
-      if (!Number.isInteger(afterIndex) || afterIndex < 0 || afterIndex >= fields.length) break;
-      const steps = insertIntentAnd(fields.map(field => ({ type: field.dataset.intentType, text: field.value })), afterIndex);
-      state.editorText = steps.map(step => `${step.type}\n${step.text}`).join('\n\n');
-      state.editorDirty = true;
-      renderEditor();
-      scheduleAutosave();
-      window.requestAnimationFrame(() => document.getElementById(`intent-step-${afterIndex + 1}`)?.focus());
-      break;
-    }
-    case 'remove-intent-and': {
-      if (!state.activeProject) break;
-      const fields = [...document.querySelectorAll('.intent-step-input')];
-      const index = Number(actionElement.dataset.intentIndex);
-      if (!Number.isInteger(index) || fields[index]?.dataset.intentType !== 'AND' || fields[index].value.trim()) break;
-      const steps = removeEmptyIntentAnd(fields.map(field => ({ type: field.dataset.intentType, text: field.value })), index);
-      state.editorText = steps.map(step => `${step.type}\n${step.text}`).join('\n\n');
-      state.editorDirty = true;
-      renderEditor();
-      scheduleAutosave();
-      window.requestAnimationFrame(() => document.getElementById(`intent-step-${Math.max(0, index - 1)}`)?.focus());
-      break;
-    }
     case 'toggle-theme':
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;

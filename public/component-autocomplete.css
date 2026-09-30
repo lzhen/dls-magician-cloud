@@ -1,8 +1,8 @@
 /* Portalled suggestion list: no clipping by the editor's scrollable panes. */
 .has-component-completion { position: relative; }
-.has-component-completion > label { padding-right: 0; }
+.has-component-completion > label { padding-right: 106px; }
 .component-browse {
-  position: static; min-height: 28px; padding: 3px 8px; flex-shrink: 0;
+  position: absolute; right: 12px; top: 9px; min-height: 28px; padding: 3px 8px;
   border: 1px solid transparent; border-radius: 6px; background: transparent;
   color: var(--text-soft, #d4d1dd); font: 500 11px/1.4 var(--font-ui, system-ui, sans-serif); cursor: pointer;
 }
@@ -32,7 +32,7 @@
 .cs-empty { padding: 12px; margin: 0; color: var(--cs-muted); }
 .cs-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 [data-theme="light"] .component-suggestions { --cs-bg: #fff; --cs-text: #25222d; --cs-muted: #686070; --cs-line: #ded8e5; --cs-hover: #f1ecf8; --cs-accent: #7047bd; box-shadow: 0 10px 32px #26123420; }
-@media (max-width: 600px) { .component-browse { min-height: 32px; } .cs-option { min-height: 48px; } .cs-category { font-size: 9px; } }
+@media (max-width: 600px) { .component-browse { top: 7px; right: 8px; min-height: 32px; } .cs-option { min-height: 48px; } .cs-category { font-size: 9px; } }
 @media (forced-colors: active) { .cs-option[aria-selected="true"] { outline: 2px solid Highlight; } }
 
 /* WHEN uses the blue interaction accent and explains each trigger. */
@@ -44,6 +44,3 @@
 .then-outcome-help { display:block; margin-top:6px; font-size:11px; color:var(--text-muted, #888); line-height:1.4; }
 
 .then-outcome-help a { color: var(--accent, #aa96ff); text-decoration: underline; }
-
-/* Picker lives in the row heading, leaving authoring text unobstructed. */
-.intent-block-rail .component-browse { margin-left: auto; color: var(--intent-accent); }
