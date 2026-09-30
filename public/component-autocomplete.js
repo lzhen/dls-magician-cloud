@@ -333,23 +333,32 @@
         const button = doc.createElement('button');
         button.type = 'button'; button.className = 'component-browse'; button.dataset.componentBrowse = '';
         button.dataset.suggestionKind = kind;
-        button.textContent = kind === 'outcome' ? '+ Outcome' : kind === 'behavior' ? '+ Behavior' : '+ Component';
+        button.textContent = `Choose ${kind}`;
         button.setAttribute('aria-label', `Insert ${kind} in ${field.dataset.intentType || 'intent'}`);
         button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-controls', list.id); button.setAttribute('aria-expanded', 'false');
         field.parentElement.classList.add('has-component-completion');
-        field.parentElement.insertBefore(button, field);
-        if (kind === 'outcome') {
+        const rail = field.closest('.intent-block')?.querySelector('.intent-block-rail');
+        if (rail) rail.append(button);
+        else field.parentElement.insertBefore(button, field);
+        if (kind === 'outcome' && field.dataset.intentType === 'THEN') {
           const hint = doc.createElement('small'); hint.className = 'then-outcome-help';
           hint.textContent = 'THEN = observable result: action + target + parameters. Supported rules run in the preview; backend actions are simulated.';
           const examples = doc.createElement('a'); examples.href = '/behavior-lab.html'; examples.target = '_blank'; examples.rel = 'noopener'; examples.textContent = 'Behavior examples';
           hint.append(' ', examples);
-          field.parentElement.insertBefore(hint, field.nextSibling);
+          const footer = field.closest('.intent-group')?.querySelector('.intent-group-footer');
+          if (footer) footer.append(hint);
+          else field.parentElement.insertBefore(hint, field.nextSibling);
         }
         button.addEventListener('click' , () => { field.focus({preventScroll: true}); open(field, true); });
       });
       if (activeField && !activeField.isConnected) { close(); activeField = null; }
     }
-    doc.addEventListener('focusin', event => { if (event.target.matches(fieldSelector)) open(event.target); });
+    doc.addEventListener('focusin', event => {
+      if (!event.target.matches(fieldSelector)) return;
+      // Adding a blank continuation should keep the group controls visible.
+      if (!event.target.value.trim()) close();
+      else open(event.target);
+    });
     doc.addEventListener('input', event => {
       if (!event.target.matches(fieldSelector) || committing) return;
       if (event.isComposing || composing) { close(); return; }

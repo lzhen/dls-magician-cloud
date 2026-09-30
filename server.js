@@ -16,6 +16,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vxlwnvwijnzimjvgpeug.s
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_r3jVlTJmChdbHkJRcaBfcw_2k13Yx2A';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+require('./storage').restoreStagedDatabase(DATA_DIR);
 
 function nowIso() {
   return new Date().toISOString();

@@ -4393,3 +4393,36 @@ svg {
 [data-theme="light"] .btn.btn-primary .icon { color: #151519; }
 
 .intent-add-and { min-width: 0; min-height: 26px; padding: 3px 5px; font-size: 11px; white-space: nowrap; }
+
+/* Continuations stay with their parent context rather than forming a fourth stage. */
+.intent-block { grid-template-columns: minmax(0, 1fr); }
+.intent-block-rail { flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; padding: 9px 12px; }
+.intent-block-rail small { display: none; }
+.intent-and { margin-left: 18px; border-left: 2px solid var(--intent-accent); }
+.intent-and:has([data-suggestion-context="GIVEN"]) { --intent-accent: var(--violet); }
+.intent-and:has([data-suggestion-context="THEN"]) { --intent-accent: var(--green); }
+.intent-and:has([data-suggestion-context="WHEN"]) { --intent-accent: var(--blue); }
+[data-theme="light"] .intent-and { margin-left: 18px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--intent-accent) 35%, transparent); }
+[data-theme="light"] .intent-block-rail { align-items: center; justify-content: flex-start; gap: 10px; }
+@media (max-width: 600px) {
+  .intent-block { grid-template-columns: minmax(0, 1fr); }
+  .intent-block-rail { flex-wrap: wrap; }
+  .intent-and, [data-theme="light"] .intent-and { margin-left: 12px; }
+}
+
+.intent-group { --intent-accent: var(--violet); margin-bottom: 22px; }
+.intent-group-when { --intent-accent: var(--blue); }
+.intent-group-then { --intent-accent: var(--green); }
+.intent-group-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 10px; color: var(--intent-accent); }
+.intent-group-header strong, .intent-group-header > span { font: 700 12px/1.4 var(--font-mono); letter-spacing: .04em; }
+.intent-group-header small { color: var(--muted-2); font-size: 12px; }
+.intent-group-footer { display: flex; align-items: flex-start; flex-direction: column; gap: 6px; margin: 8px 0 0 18px; }
+.intent-group-footer .intent-add-and { color: var(--intent-accent); }
+.intent-group-footer .then-outcome-help { margin-top: 2px; }
+.intent-remove-and { margin-left: auto; }
+.intent-block-rail .intent-remove-and + .component-browse { margin-left: 0; }
+[data-theme="light"] .intent-group { margin-bottom: 24px; }
+[data-theme="light"] .intent-group .intent-block { margin-bottom: 10px; }
+
+.intent-group-header > span { color: var(--intent-accent); }
+.intent-block-body > .intent-remove-and { display: block; margin: 0 0 6px auto; min-height: 26px; }

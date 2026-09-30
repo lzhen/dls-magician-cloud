@@ -1,16 +1,16 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-and-blocks-v4';
+const CACHE_VERSION = 'dls-magician-and-groups-v5';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/styles.css?v=and-blocks-2',
-  '/app.js?v=and-blocks-2',
+  '/styles.css?v=and-groups-1',
+  '/app.js?v=and-groups-1',
   '/interaction-engine.js?v=behavior-runtime-4',
   '/component-preview.js?v=behavior-runtime-4',
   '/component-preview.css?v=behavior-runtime-4',
-  '/component-autocomplete.js?v=behavior-runtime-4',
-  '/component-autocomplete.css?v=behavior-runtime-4',
+  '/component-autocomplete.js?v=and-groups-1',
+  '/component-autocomplete.css?v=and-groups-1',
   '/logo.svg',
   '/manifest.webmanifest',
   '/icons/apple-touch-icon.png',
