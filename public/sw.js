@@ -1,11 +1,11 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-and-blocks-v3';
+const CACHE_VERSION = 'dls-magician-and-blocks-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/styles.css?v=and-blocks-1',
-  '/app.js?v=and-blocks-1',
+  '/styles.css?v=and-blocks-2',
+  '/app.js?v=and-blocks-2',
   '/interaction-engine.js?v=behavior-runtime-4',
   '/component-preview.js?v=behavior-runtime-4',
   '/component-preview.css?v=behavior-runtime-4',

@@ -946,11 +946,10 @@ function renderIntentBlocks(steps) {
     if (step.type !== 'AND') context = step.type;
     return `
     <section class="intent-block intent-${escapeHtml(step.type.toLowerCase())}" data-intent-type="${escapeHtml(step.type)}">
-      <div class="intent-block-rail"><span>${escapeHtml(step.type)}</span><small>${index + 1}</small></div>
+      <div class="intent-block-rail"><span>${escapeHtml(step.type)}</span>${context !== 'WHEN' ? `<button type="button" class="btn btn-sm btn-ghost intent-add-and" data-action="add-intent-and" data-after-index="${index}" aria-label="Add AND after ${escapeHtml(step.type)}">+ AND</button>` : ''}<small>${index + 1}</small></div>
       <div class="intent-block-body">
         <label for="intent-step-${index}">${step.type === 'GIVEN' ? 'Starting context' : step.type === 'WHEN' ? 'Trigger or condition' : step.type === 'THEN' ? 'Expected outcome' : 'Additional behavior'}</label>
         <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" data-suggestion-context="${escapeHtml(context)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
-        ${context !== 'WHEN' ? `<button type="button" class="btn btn-sm btn-ghost intent-add-and" data-action="add-intent-and" data-after-index="${index}" aria-label="Add AND after ${escapeHtml(step.type)}">+ AND</button>` : ''}
       </div>
     </section>`;
   }).join('');

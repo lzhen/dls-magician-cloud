@@ -4392,4 +4392,4 @@ svg {
 [data-theme="dark"] .btn.btn-primary .icon,
 [data-theme="light"] .btn.btn-primary .icon { color: #151519; }
 
-.intent-add-and { margin-top: 8px; }
+.intent-add-and { min-width: 0; min-height: 26px; padding: 3px 5px; font-size: 11px; white-space: nowrap; }
