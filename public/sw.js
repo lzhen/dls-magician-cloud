@@ -1,16 +1,16 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-behaviors-v2';
+const CACHE_VERSION = 'dls-magician-and-blocks-v3';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/interaction-engine.js?v=behavior-runtime-3',
-  '/component-preview.js?v=behavior-runtime-3',
-  '/component-preview.css?v=behavior-runtime-3',
-  '/component-autocomplete.js?v=behavior-runtime-3',
-  '/component-autocomplete.css?v=behavior-runtime-3',
+  '/styles.css?v=and-blocks-1',
+  '/app.js?v=and-blocks-1',
+  '/interaction-engine.js?v=behavior-runtime-4',
+  '/component-preview.js?v=behavior-runtime-4',
+  '/component-preview.css?v=behavior-runtime-4',
+  '/component-autocomplete.js?v=behavior-runtime-4',
+  '/component-autocomplete.css?v=behavior-runtime-4',
   '/logo.svg',
   '/manifest.webmanifest',
   '/icons/apple-touch-icon.png',

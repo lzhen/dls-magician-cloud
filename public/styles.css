@@ -4391,3 +4391,5 @@ svg {
 
 [data-theme="dark"] .btn.btn-primary .icon,
 [data-theme="light"] .btn.btn-primary .icon { color: #151519; }
+
+.intent-add-and { margin-top: 8px; }

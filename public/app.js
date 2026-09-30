@@ -941,14 +941,24 @@ function renderIntentBlocks(steps) {
   required.forEach((type) => {
     if (!normalized.some((step) => step.type === type)) normalized.push({ type, text: '' });
   });
-  return normalized.map((step, index) => `
+  let context = 'GIVEN';
+  return normalized.map((step, index) => {
+    if (step.type !== 'AND') context = step.type;
+    return `
     <section class="intent-block intent-${escapeHtml(step.type.toLowerCase())}" data-intent-type="${escapeHtml(step.type)}">
       <div class="intent-block-rail"><span>${escapeHtml(step.type)}</span><small>${index + 1}</small></div>
       <div class="intent-block-body">
         <label for="intent-step-${index}">${step.type === 'GIVEN' ? 'Starting context' : step.type === 'WHEN' ? 'Trigger or condition' : step.type === 'THEN' ? 'Expected outcome' : 'Additional behavior'}</label>
-        <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
+        <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" data-suggestion-context="${escapeHtml(context)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
+        ${context !== 'WHEN' ? `<button type="button" class="btn btn-sm btn-ghost intent-add-and" data-action="add-intent-and" data-after-index="${index}" aria-label="Add AND after ${escapeHtml(step.type)}">+ AND</button>` : ''}
       </div>
-    </section>`).join('');
+    </section>`;
+  }).join('');
+}
+
+function insertIntentAnd(steps, afterIndex) {
+  const index = Math.max(0, Math.min(steps.length, afterIndex + 1));
+  return [...steps.slice(0, index), { type: 'AND', text: '' }, ...steps.slice(index)];
 }
 
 function renderLineNumbers(text) {
@@ -1758,6 +1768,19 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-modal' && event.target !== actionElement && actionElement.classList.contains('modal-backdrop')) return;
 
   switch (action) {
+    case 'add-intent-and': {
+      if (!state.activeProject) break;
+      const fields = [...document.querySelectorAll('.intent-step-input')];
+      const afterIndex = Number(actionElement.dataset.afterIndex);
+      if (!Number.isInteger(afterIndex) || afterIndex < 0 || afterIndex >= fields.length) break;
+      const steps = insertIntentAnd(fields.map(field => ({ type: field.dataset.intentType, text: field.value })), afterIndex);
+      state.editorText = steps.map(step => `${step.type}\n${step.text}`).join('\n\n');
+      state.editorDirty = true;
+      renderEditor();
+      scheduleAutosave();
+      window.requestAnimationFrame(() => document.getElementById(`intent-step-${afterIndex + 1}`)?.focus());
+      break;
+    }
     case 'toggle-theme':
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;

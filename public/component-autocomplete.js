@@ -274,8 +274,8 @@
     }
     function open(field, force = false) {
       if (composing || committing || field.disabled || field.readOnly) return;
-      const kind = suggestionKind(field.dataset.intentType);
-      const choices = catalogForIntent(field.dataset.intentType, entries, behaviors);
+      const kind = suggestionKind(field.dataset.suggestionContext || field.dataset.intentType);
+      const choices = catalogForIntent(field.dataset.suggestionContext || field.dataset.intentType, entries, behaviors);
       const plural = kind === 'outcome' ? 'Outcomes' : kind === 'behavior' ? 'Behaviors' : 'Components';
       const ctx = context(field.value, field.selectionStart, field.selectionEnd, choices, force);
       if (!ctx) { close(); return; }
@@ -325,7 +325,7 @@
         // Retain native multiline textbox semantics; focus stays here while navigating the listbox.
         field.setAttribute('aria-autocomplete', 'list'); field.setAttribute('aria-haspopup', 'listbox');
         field.setAttribute('aria-controls', list.id);
-        const kind = suggestionKind(field.dataset.intentType);
+        const kind = suggestionKind(field.dataset.suggestionContext || field.dataset.intentType);
         const fieldHelp = kind === 'outcome' ? outcomeHelp : kind === 'behavior' ? behaviorHelp : help;
         field.setAttribute('aria-describedby', `${field.getAttribute('aria-describedby') || ''} ${fieldHelp.id}`.trim());
         if (kind === 'behavior') field.setAttribute('placeholder', 'Choose a behavior: click, hover, focus, type, submit…');
