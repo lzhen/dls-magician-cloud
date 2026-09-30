@@ -4391,3 +4391,16 @@ svg {
 
 [data-theme="dark"] .btn.btn-primary .icon,
 [data-theme="light"] .btn.btn-primary .icon { color: #151519; }
+
+/* Keep continuation and suggestion controls on the same header row. */
+.intent-block-body { position: relative; }
+.intent-add-and {
+  position: absolute; top: 9px; right: 12px; min-height: 28px;
+  padding: 3px 8px; border: 1px solid var(--line-strong);
+  border-radius: 6px; background: transparent; color: var(--text);
+  font: 600 11px/1.4 var(--font-mono); cursor: pointer;
+}
+.intent-add-and:hover { background: var(--surface-3); }
+.intent-add-and:focus-visible { outline: 2px solid var(--intent-accent); outline-offset: 2px; }
+.intent-block-body:has(.intent-add-and) > .component-browse { right: 78px; }
+.intent-block-body:has(.intent-add-and) > label { padding-right: 170px; }

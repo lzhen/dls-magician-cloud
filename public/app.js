@@ -937,17 +937,7 @@ function renderEditor() {
 
 function renderIntentBlocks(steps) {
   const required = ['GIVEN', 'WHEN', 'THEN'];
-  const normalized = [];
-  steps.forEach(step => {
-    if (step.type !== 'AND') {
-      normalized.push({ ...step });
-      return;
-    }
-    if (!step.text.trim()) return;
-    const previous = normalized[normalized.length - 1];
-    if (!previous) normalized.push({ type: 'GIVEN', text: step.text });
-    else previous.text = [previous.text, step.text].filter(Boolean).join(previous.type === 'THEN' ? '; ' : ' and ');
-  });
+  const normalized = steps.map(step => ({ ...step }));
   required.forEach((type) => {
     if (!normalized.some((step) => step.type === type)) normalized.push({ type, text: '' });
   });
@@ -955,6 +945,7 @@ function renderIntentBlocks(steps) {
     <section class="intent-block intent-${escapeHtml(step.type.toLowerCase())}" data-intent-type="${escapeHtml(step.type)}">
       <div class="intent-block-rail"><span>${escapeHtml(step.type)}</span><small>${index + 1}</small></div>
       <div class="intent-block-body">
+        ${required.includes(step.type) ? `<button class="intent-add-and" data-action="add-intent-and" aria-label="Add AND after ${step.type}">+ AND</button>` : ''}
         <label for="intent-step-${index}">${step.type === 'GIVEN' ? 'Starting context' : step.type === 'WHEN' ? 'Trigger or condition' : step.type === 'THEN' ? 'Expected outcome' : 'Additional behavior'}</label>
         <textarea id="intent-step-${index}" class="intent-step-input" data-intent-index="${index}" data-intent-type="${escapeHtml(step.type)}" rows="2" placeholder="Describe this step…">${escapeHtml(step.text)}</textarea>
       </div>
@@ -1768,6 +1759,21 @@ document.addEventListener('click', async (event) => {
   if (action === 'close-modal' && event.target !== actionElement && actionElement.classList.contains('modal-backdrop')) return;
 
   switch (action) {
+    case 'add-intent-and': {
+      const block = actionElement.closest('.intent-block');
+      const fields = [...document.querySelectorAll('.intent-step-input')];
+      const steps = fields.map(field => ({ type: field.dataset.intentType, text: field.value }));
+      let index = fields.indexOf(block.querySelector('.intent-step-input')) + 1;
+      while (steps[index]?.type === 'AND') index++;
+      steps.splice(index, 0, { type: 'AND', text: '' });
+      state.editorText = steps.map(step => `${step.type}\n${step.text.trim()}`).join('\n\n');
+      state.editorDirty = true;
+      document.getElementById('structured-editor').innerHTML = renderIntentBlocks(steps);
+      document.getElementById(`intent-step-${index}`)?.focus();
+      updateEditorOutputs();
+      scheduleAutosave();
+      break;
+    }
     case 'toggle-theme':
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;
