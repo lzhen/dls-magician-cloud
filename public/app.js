@@ -937,7 +937,17 @@ function renderEditor() {
 
 function renderIntentBlocks(steps) {
   const required = ['GIVEN', 'WHEN', 'THEN'];
-  const normalized = [...steps];
+  const normalized = [];
+  steps.forEach(step => {
+    if (step.type !== 'AND') {
+      normalized.push({ ...step });
+      return;
+    }
+    if (!step.text.trim()) return;
+    const previous = normalized[normalized.length - 1];
+    if (!previous) normalized.push({ type: 'GIVEN', text: step.text });
+    else previous.text = [previous.text, step.text].filter(Boolean).join(previous.type === 'THEN' ? '; ' : ' and ');
+  });
   required.forEach((type) => {
     if (!normalized.some((step) => step.type === type)) normalized.push({ type, text: '' });
   });

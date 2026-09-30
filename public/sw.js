@@ -1,16 +1,16 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-pre-and-restore-v6';
+const CACHE_VERSION = 'dls-magician-three-intent-blocks-v7';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
-  '/interaction-engine.js?v=pre-and-restore-1',
-  '/component-preview.js?v=pre-and-restore-1',
-  '/component-preview.css?v=pre-and-restore-1',
-  '/component-autocomplete.js?v=pre-and-restore-1',
-  '/component-autocomplete.css?v=pre-and-restore-1',
+  '/interaction-engine.js?v=three-intent-blocks-1',
+  '/component-preview.js?v=three-intent-blocks-1',
+  '/component-preview.css?v=three-intent-blocks-1',
+  '/component-autocomplete.js?v=three-intent-blocks-1',
+  '/component-autocomplete.css?v=three-intent-blocks-1',
   '/logo.svg',
   '/manifest.webmanifest',
   '/icons/apple-touch-icon.png',
