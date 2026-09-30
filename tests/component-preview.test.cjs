@@ -144,7 +144,7 @@ for(const bad of ['javascript:alert(1)','data:image/svg+xml,<svg/>','//evil.test
 test('expanded and inline previews have unique IDs',()=>{
  const a=api.render(generated('tabs with labels "One", "Two"'),'ant');
  const b=api.render(generated('tabs with labels "One", "Two"'),'ant',true);
- const idsA=[...a.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
- const idsB=[...b.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+ const idsA=[...a.matchAll(/(?:^|\s)id="([^"]+)"/g)].map(m=>m[1]);
+ const idsB=[...b.matchAll(/(?:^|\s)id="([^"]+)"/g)].map(m=>m[1]);
  assert.equal(new Set([...idsA,...idsB]).size,idsA.length+idsB.length);
 });

@@ -1,10 +1,11 @@
 /* Intent-sized HTML previews. Registry bindings are references, not imported UI libraries. */
 (function (root, factory) {
   'use strict';
-  const api = factory();
+  const interactions = typeof module === 'object' && module.exports ? require('./interaction-engine.js') : root.DLSInteractions;
+  const api = factory(interactions);
   if (typeof module === 'object' && module.exports) module.exports = api;
-  else { root.DLSComponentPreview = api; api.install(root); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  else { root.DLSComponentPreview = api; if (typeof root.parseStructuredLanguage === 'function') api.install(root); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (interactionEngine) {
   'use strict';
   // Longest aliases win, so "radio button" and "status card" each describe ONE component.
   const definitions = [
@@ -187,15 +188,25 @@
     if (generated && generated.previewEngine === 'components-v1') return generated;
     const steps = (Array.isArray(generated?.steps) ? generated.steps : []).map(step => ({...step, text: clean(step.text)}));
     const given = steps.filter(step => step.type === 'GIVEN').map(step => step.text).join(' ').trim();
-    const additions = steps.filter(step => step.type === 'AND' && /^(?:a |an |the |add |show |include )/i.test(step.text) && !/\b(?:when|after|clicked|clicks)\b/i.test(step.text)).map(step => step.text);
+    const additions = steps.filter(step => step.type === 'AND' && /^(?:a |an |the |add |include )/i.test(step.text) && !/\b(?:when|after|clicked|clicks)\b/i.test(step.text)).map(step => step.text);
     const result = componentsFrom([given, ...additions].join('; '));
     const persona = /^(?:a |an |the )?(?:user|advertiser|customer|admin|visitor|designer|member|person|team)\b/i.test(given);
     if (!result.nodes.length && persona) return { ...generated, steps, valid: ['GIVEN', 'WHEN', 'THEN'].every(type => steps.some(step => step.type === type && step.text)) };
+    const compiled = interactionEngine.compile(steps, result.nodes, registry);
+    result.warnings.push(...compiled.warnings);
+    const interactions = compiled.rules;
+    for (const rule of interactions.filter(rule => rule.action === 'tooltip')) {
+      const source = flat(result.nodes).find(node => node.id === rule.source);
+      if (source && source.type === 'Button') {
+        source.tooltipOutcome = rule.value;
+        if (rule.trigger === 'pointerover') source.hoverTooltip = rule.value;
+      }
+    }
     const count = flat(result.nodes).length;
     return {
       ...generated, steps, previewEngine: 'components-v1',
       scope: count ? (count === 1 ? 'component' : 'composition') : 'unrecognized',
-      components: result.nodes, componentCount: count,
+      components: result.nodes, componentCount: count, interactions,
       warnings: result.warnings.length ? result.warnings : count ? [] : [given ? 'Component not recognized. Try a supported component name; no workflow has been substituted.' : 'Describe a component in GIVEN to start.'],
       valid: count > 0 && !result.warnings.length
     };
@@ -205,20 +216,24 @@
     if (/^https?:\/\//i.test(url) || /^\/(?!\/)/.test(url)) return url;
     return !image && /^#[\w-]+$/.test(url) ? url : '';
   }
-  function renderNode(node, prefix) {
+  function renderNode(node, prefix, insideForm = false) {
     const p = node.props;
     const id = `${prefix}-${node.id}`;
     const label = escape(p.label || node.type);
     const disabled = p.disabled ? ' disabled' : '';
     const required = p.required ? ' required' : '';
     const marked = p.checked ? ' checked' : '';
-    const attrs = `data-component="${node.type}" class="cp-node cp-${node.type.toLowerCase()}"`;
-    const children = node.children.map(child => renderNode(child, prefix)).join('');
+    const attrs = `data-component="${node.type}" data-node-id="${node.id}"${node.scrollable ? ' style="max-height:160px;overflow:auto" tabindex="0"' : ''}${node.draggable ? ' draggable="true"' : ''}${node.initialHidden ? ' hidden' : ''} class="cp-node cp-${node.type.toLowerCase()}"`;
+    const children = node.children.map(child => renderNode(child, prefix, insideForm || node.type === 'Form')).join('');
     const heading = p.label ? `<h3>${label}</h3>` : '';
     const content = p.content ? `<p>${escape(p.content)}</p>` : '';
     const optionLabels = p.options.length ? p.options : [];
     switch (node.type) {
-      case 'Button': return `<button ${attrs} type="button" data-variant="${p.variant}"${disabled}${p.loading ? ' aria-busy="true"' : ''}>${p.loading ? '<span class="cp-loading-dot" aria-hidden="true"></span>' : ''}${label}</button>`;
+      case 'Button': {
+        const button = `<button ${attrs} type="${insideForm && /^submit$/i.test(p.label) ? 'submit' : insideForm && /^reset$/i.test(p.label) ? 'reset' : 'button'}" data-variant="${p.variant}"${disabled}${p.loading ? ' aria-busy="true"' : ''}>${p.loading ? '<span class="cp-loading-dot" aria-hidden="true"></span>' : ''}${label}</button>`;
+        if (node.tooltipOutcome === undefined) return button;
+        return `<span class="cp-tooltip cp-outcome-tooltip" data-node-id="${node.id}">${button.replace(`data-node-id="${node.id}"`, '').replace('type="button"', `type="button" aria-describedby="${id}-outcome"`)}<span id="${id}-outcome" role="tooltip" data-runtime-tooltip hidden>${escape(node.tooltipOutcome)}</span></span>`;
+      }
       case 'Input': case 'Textarea': case 'DatePicker': case 'Upload': {
         const tag = node.type === 'Textarea' ? 'textarea' : 'input';
         const type = node.type === 'DatePicker' ? 'date' : node.type === 'Upload' ? 'file' : p.inputType;
@@ -264,7 +279,7 @@
     const systemId = ['dls', 'material', 'ant', 'connected'].includes(system) ? system : 'dls';
     const prefix = `cp-${++renderSerial}`;
     const warnings = spec.warnings || [];
-    return `<div class="prototype-stage component-preview ds-${systemId}${expanded ? ' prototype-stage-expanded' : ''}" data-preview-scope="${escape(spec.scope)}"><div class="cp-canvas">${(spec.components || []).map(node => renderNode(node, prefix)).join('')}</div>${warnings.length ? `<div class="cp-notice" role="status">${warnings.map(escape).join('<br>')}</div>` : ''}</div>`;
+    return `<div class="prototype-stage component-preview ds-${systemId}${expanded ? ' prototype-stage-expanded' : ''}" data-preview-scope="${escape(spec.scope)}" data-interactions="${escape(JSON.stringify(spec.interactions || []))}"><div class="cp-canvas">${(spec.components || []).map(node => renderNode(node, prefix)).join('')}</div>${warnings.length ? `<div class="cp-notice" role="status">${warnings.map(escape).join('<br>')}</div>` : ''}</div>`;
   }
   function output(generated, system = 'dls', meta = {}) {
     const spec = analyze(generated);
@@ -349,6 +364,7 @@
       root[name] = function (...args) { const result = original.apply(this, args); root.queueMicrotask(syncSummary); return result; };
     }
     bindEvents(root.document);
+    interactionEngine.bind(root.document);
     root.queueMicrotask(() => {
       if (state.activeProject && root.document.getElementById('generated-preview')) root.updateEditorOutputs();
       syncSummary();

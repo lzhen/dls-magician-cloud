@@ -110,3 +110,7 @@
 @keyframes cp-pulse { to { opacity: .35; } }
 @media (max-width: 600px) { .component-preview { padding: 24px 14px; } .component-preview :is(.cp-card,.cp-surface,.cp-dialog) { padding: 18px; } }
 @media (prefers-reduced-motion: reduce) { .component-preview * { animation: none !important; transition: none !important; } }
+
+.component-preview [data-runtime-tooltip]:not([hidden]) { opacity: 1; }
+.component-preview .cp-runtime-feedback { padding: 12px; border: 1px solid var(--cp-line); border-radius: 8px; }
+.component-preview [aria-busy="true"] { cursor: progress; opacity: .65; }

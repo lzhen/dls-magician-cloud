@@ -22,7 +22,7 @@ for (const item of behaviors) {
     assert.ok(api.matches(behaviors, item.insert).some(result => result.type === item.type));
   });
 }
-for (const type of ['GIVEN', 'THEN', 'AND', undefined]) {
+for (const type of ['GIVEN', 'AND', undefined]) {
   test(`${type}: component registry remains unchanged`, () => {
     assert.strictEqual(api.catalogForIntent(type, components, behaviors), components);
     assert.equal(api.suggestionKind(type), 'component');

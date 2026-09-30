@@ -68,11 +68,54 @@
         terms: [...new Set([label, type, ...aliases].map(normalize))] };
     });
   }
+  // Outcome authoring templates; insertion does not bind runtime behavior.
+  function outcomeCatalog(components = []) {
+    const available = new Set(components.map(entry => entry.type));
+    const definitions = [
+      ['ShowTooltip', 'show a tooltip with content "Hello world"', 'Feedback', 'Tooltip', 'Executable on hover, click, or focus.'],
+      ['Hide', 'hide this component', 'Visibility', null, 'Hide the WHEN target.'],
+      ['Show', 'show this component', 'Visibility', null, 'Show the WHEN target.'],
+      ['Toggle', 'toggle this component', 'Visibility', null, 'Toggle visibility.'],
+      ['OpenDialog', 'open a dialog with content "Settings"', 'Disclosure', 'Dialog', 'Open an existing dialog, or create one in the preview.'],
+      ['CloseDialog', 'close the dialog', 'Disclosure', 'Dialog', 'Close a dialog.'],
+      ['Disable', 'disable this component', 'State', null, 'Disable a control.'],
+      ['Enable', 'enable this component', 'State', null, 'Enable a control.'],
+      ['SetSwitch', 'set this switch to on', 'State', 'Switch', 'Set on; replace on with off to turn off.'],
+      ['Check', 'check the checkbox', 'State', 'Checkbox', 'Set checked state.'],
+      ['Uncheck', 'uncheck the checkbox', 'State', 'Checkbox', 'Clear checked state.'],
+      ['UpdateInput', 'update this input value to "new value"', 'Value', 'Input', 'Change a field value.'],
+      ['UpdateText', 'update the text content to "Updated"', 'Content', 'Text', 'Change displayed text.'],
+      ['UpdateLabel', 'update the button label to "Done"', 'Content', 'Button', 'Change button text.'],
+      ['Clear', 'clear this component', 'Value', null, 'Clear a field.'],
+      ['Focus', 'focus the input', 'Focus', 'Input', 'Move keyboard focus.'],
+      ['Blur', 'blur the input', 'Focus', 'Input', 'Remove keyboard focus.'],
+      ['Reset', 'reset the form', 'Form', 'Form', 'Restore initial form values.'],
+      ['ValidateForm', 'validate the form', 'Form', 'Form', 'Check required and typed fields.'],
+      ['Validate', 'show a validation message "Required"', 'Feedback', null, 'Show a field error.'],
+      ['Toast', 'show a toast with content "Saved"', 'Feedback', null, 'Show preview feedback; this does not save data.'],
+      ['StartLoading', 'start loading', 'Feedback', null, 'Mark the target busy.'],
+      ['StopLoading', 'stop loading', 'Feedback', null, 'Clear busy state.'],
+      ['Progress', 'set the progress bar to 75%', 'Feedback', 'Progress', 'Update progress value.'],
+      ['Navigate', 'navigate to "/next"', 'Navigation · simulated', null, 'Display the destination without leaving the editor.'],
+      ...['save', 'delete', 'login', 'logout', 'upload', 'download', 'fetch', 'search', 'sort', 'filter', 'undo', 'redo'].map(action => ['Simulate'+action, 'simulate '+action, 'Backend / data · simulated', null, 'Shows simulated feedback only; no request or persistent data change.'])
+    ];
+    const generic = components.flatMap(component => {
+      const actions = ['show', 'hide', ...(['Dialog', 'Menu', 'Accordion'].includes(component.type) ? ['open', 'close'] : [])];
+      const article = ['Text', 'Tabs', 'Pagination', 'Breadcrumb'].includes(component.type) ? 'the' : /^[aeiou]/i.test(component.insert) ? 'an' : 'a';
+      return actions.map(action => [action + component.type, `${action} ${article} ${component.insert}`, action.charAt(0).toUpperCase() + action.slice(1), component.type, 'Choose the target and describe its resulting visibility.']);
+    });
+    return [...definitions, ...generic].filter(([, , , target]) => !target || available.has(target)).map(([type, insert, category, target, description]) => ({
+      type, label: insert, insert, category, description, target, kind: 'outcome', aliases: [insert],
+      terms: [normalize(insert), normalize(category), ...(target ? [normalize(target)] : [])]
+    }));
+  }
   function suggestionKind(intentType) {
-    return String(intentType || '').toUpperCase() === 'WHEN' ? 'behavior' : 'component';
+    const type = String(intentType || '').toUpperCase();
+    return type === 'THEN' ? 'outcome' : type === 'WHEN' ? 'behavior' : 'component';
   }
   function catalogForIntent(intentType, components, behaviors = behaviorCatalog()) {
-    return suggestionKind(intentType) === 'behavior' ? behaviors : components;
+    const kind = suggestionKind(intentType);
+    return kind === 'outcome' ? outcomeCatalog(components) : kind === 'behavior' ? behaviors : components;
   }
   function matches(entries, query) {
     const q = normalize(query);
@@ -103,6 +146,20 @@
     end = Math.max(start, Math.min(value.length, end));
     const left = value.slice(0, start);
     if (insideQuote(value, start) || /(?:https?:\/\/|www\.)\S*$/i.test(left)) return null;
+    if (entries[0]?.kind === 'outcome') {
+      if (end !== start) return force ? { start, end, query: '', explicit: true } : null;
+      const query = left.trim();
+      if (!query || query === '/') return { start: query === '/' ? start - 1 : start, end, query: '', explicit: force };
+      // Match the full outcome prefix so selecting a template replaces the prefix once.
+      if (matches(entries, query).length) return { start: left.search(/\S/), end, query, explicit: force };
+      const fragment = /(?:^|[;\n]\s*)(show|hide|open|close|update|set|navigate|validate)(?:\s+[^;\n]*)?$/i.exec(left);
+      if (fragment) {
+        const queryStart = fragment.index + fragment[0].indexOf(fragment[1]);
+        const q = left.slice(queryStart);
+        if (matches(entries, q).length) return { start: queryStart, end, query: q, explicit: force };
+      }
+      return force ? { start, end, query: '', explicit: true } : null;
+    }
     if (end !== start) return force ? { start, end, query: '', explicit: true } : null;
     const rightWord = value.slice(end).match(/^[\p{L}\p{N}_-]*/u)[0];
     const slash = /(?:^|[\s(,;])\/([a-z -]*)$/i.exec(left);
@@ -163,7 +220,10 @@
     const behaviorHelp = doc.createElement('div');
     behaviorHelp.id = 'dls-behavior-autocomplete-help'; behaviorHelp.className = 'cs-sr-only';
     behaviorHelp.textContent = 'WHEN defines an interaction or event. Type click, hover, focus, type, or submit; use slash or Control Space to browse behaviors. Use Up and Down, then Enter to insert. Escape closes. Tab moves to the next field. This defines the trigger; THEN describes its outcome.';
-    doc.body.append(popup, live, help, behaviorHelp);
+    const outcomeHelp = doc.createElement('div');
+    outcomeHelp.id = 'dls-outcome-autocomplete-help'; outcomeHelp.className = 'cs-sr-only';
+    outcomeHelp.textContent = 'THEN describes an observable result: action, target, and parameters. Supported WHEN and THEN combinations execute in the preview. Navigation and backend operations are simulated; unsupported rules show a notice.';
+    doc.body.append(popup, live, help, behaviorHelp, outcomeHelp);
     let activeField = null, options = [], activeIndex = -1, currentContext = null;
     let composing = false, committing = false, pointerInPopup = false, frame = 0;
     const enhanced = new WeakSet();
@@ -216,7 +276,7 @@
       if (composing || committing || field.disabled || field.readOnly) return;
       const kind = suggestionKind(field.dataset.intentType);
       const choices = catalogForIntent(field.dataset.intentType, entries, behaviors);
-      const plural = kind === 'behavior' ? 'Behaviors' : 'Components';
+      const plural = kind === 'outcome' ? 'Outcomes' : kind === 'behavior' ? 'Behaviors' : 'Components';
       const ctx = context(field.value, field.selectionStart, field.selectionEnd, choices, force);
       if (!ctx) { close(); return; }
       const found = matches(choices, ctx.query);
@@ -266,18 +326,26 @@
         field.setAttribute('aria-autocomplete', 'list'); field.setAttribute('aria-haspopup', 'listbox');
         field.setAttribute('aria-controls', list.id);
         const kind = suggestionKind(field.dataset.intentType);
-        const fieldHelp = kind === 'behavior' ? behaviorHelp : help;
+        const fieldHelp = kind === 'outcome' ? outcomeHelp : kind === 'behavior' ? behaviorHelp : help;
         field.setAttribute('aria-describedby', `${field.getAttribute('aria-describedby') || ''} ${fieldHelp.id}`.trim());
         if (kind === 'behavior') field.setAttribute('placeholder', 'Choose a behavior: click, hover, focus, type, submit…');
+        if (kind === 'outcome') field.setAttribute('placeholder', 'Describe the result: show a tooltip, open a dialog, update a value…');
         const button = doc.createElement('button');
         button.type = 'button'; button.className = 'component-browse'; button.dataset.componentBrowse = '';
         button.dataset.suggestionKind = kind;
-        button.textContent = kind === 'behavior' ? '+ Behavior' : '+ Component';
+        button.textContent = kind === 'outcome' ? '+ Outcome' : kind === 'behavior' ? '+ Behavior' : '+ Component';
         button.setAttribute('aria-label', `Insert ${kind} in ${field.dataset.intentType || 'intent'}`);
         button.setAttribute('aria-haspopup', 'listbox'); button.setAttribute('aria-controls', list.id); button.setAttribute('aria-expanded', 'false');
         field.parentElement.classList.add('has-component-completion');
         field.parentElement.insertBefore(button, field);
-        button.addEventListener('click', () => { field.focus({preventScroll: true}); open(field, true); });
+        if (kind === 'outcome') {
+          const hint = doc.createElement('small'); hint.className = 'then-outcome-help';
+          hint.textContent = 'THEN = observable result: action + target + parameters. Supported rules run in the preview; backend actions are simulated.';
+          const examples = doc.createElement('a'); examples.href = '/behavior-lab.html'; examples.target = '_blank'; examples.rel = 'noopener'; examples.textContent = 'Behavior examples';
+          hint.append(' ', examples);
+          field.parentElement.insertBefore(hint, field.nextSibling);
+        }
+        button.addEventListener('click' , () => { field.focus({preventScroll: true}); open(field, true); });
       });
       if (activeField && !activeField.isConnected) { close(); activeField = null; }
     }
@@ -336,5 +404,5 @@
     root.__dlsAutocomplete = controller;
     return controller;
   }
-  return { catalog, behaviorCatalog, suggestionKind, catalogForIntent, matches, insideQuote, context, replacement, install };
+  return { catalog, behaviorCatalog, outcomeCatalog, suggestionKind, catalogForIntent, matches, insideQuote, context, replacement, install };
 });

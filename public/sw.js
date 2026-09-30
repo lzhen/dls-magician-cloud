@@ -1,11 +1,16 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-v1';
+const CACHE_VERSION = 'dls-magician-behaviors-v2';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
+  '/interaction-engine.js?v=behavior-runtime-3',
+  '/component-preview.js?v=behavior-runtime-3',
+  '/component-preview.css?v=behavior-runtime-3',
+  '/component-autocomplete.js?v=behavior-runtime-3',
+  '/component-autocomplete.css?v=behavior-runtime-3',
   '/logo.svg',
   '/manifest.webmanifest',
   '/icons/apple-touch-icon.png',

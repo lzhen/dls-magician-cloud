@@ -40,3 +40,7 @@
 [data-theme="light"] .component-suggestions[data-suggestion-kind="behavior"] { --cs-accent: #195fbb; --cs-hover: #edf4ff; }
 .component-suggestions[data-suggestion-kind="behavior"] .cs-option-copy small { white-space: normal; overflow: visible; }
 .component-browse[data-suggestion-kind="behavior"]:focus-visible { outline-color: var(--blue, #85baff); }
+
+.then-outcome-help { display:block; margin-top:6px; font-size:11px; color:var(--text-muted, #888); line-height:1.4; }
+
+.then-outcome-help a { color: var(--accent, #aa96ff); text-decoration: underline; }
