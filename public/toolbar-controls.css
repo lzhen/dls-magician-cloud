@@ -1,0 +1,145 @@
+/* Output toolbar controls: one visual contract, native select behavior.
+   Scoped to the application chrome so generated design systems stay untouched. */
+.output-toolbar {
+  --toolbar-control-height: 32px;
+  --toolbar-control-radius: var(--radius-control, 6px);
+  --toolbar-control-bg: var(--surface);
+  --toolbar-control-hover-bg: var(--surface-2);
+  --toolbar-control-active-bg: var(--surface-3);
+  --toolbar-control-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='m3 4.5 3 3 3-3' stroke='%2386858d' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+[data-theme="light"] .output-toolbar {
+  --toolbar-control-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='m3 4.5 3 3 3-3' stroke='%23686870' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.output-toolbar .output-tools {
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.output-toolbar .output-tools .design-system-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.output-toolbar .output-tools :is(select, button) {
+  box-sizing: border-box;
+  height: var(--toolbar-control-height);
+  min-height: var(--toolbar-control-height);
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--toolbar-control-radius);
+  background-color: var(--toolbar-control-bg);
+  background-image: none;
+  color: var(--text-soft);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: normal;
+  vertical-align: middle;
+  box-shadow: none;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+/* Replace both the old CSS triangle and the browser-native arrow with the
+   same chevron. Keep real selects, accessible names and change handlers. */
+.output-toolbar .output-tools select {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: none;
+  padding-right: 32px;
+  background-image: var(--toolbar-control-chevron);
+  background-position: right 10px center;
+  background-size: 12px 12px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-toolbar .output-tools select[data-action="design-system-select"] {
+  width: 128px;
+}
+
+.output-toolbar .output-tools select[data-action="preview-viewport"] {
+  width: 88px;
+}
+
+.output-toolbar .output-tools select[data-action="preview-zoom"] {
+  width: 72px;
+}
+
+.output-toolbar .output-tools .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transform: none;
+}
+
+.output-toolbar .output-tools .btn-icon {
+  flex: 0 0 var(--toolbar-control-height);
+  width: var(--toolbar-control-height);
+  min-width: var(--toolbar-control-height);
+  max-width: var(--toolbar-control-height);
+  padding: 0;
+}
+
+.output-toolbar .output-tools .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.output-toolbar .output-tools :is(select, button):hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background-color: var(--toolbar-control-hover-bg);
+  color: var(--text);
+}
+
+.output-toolbar .output-tools :is(select, button):active:not(:disabled) {
+  background-color: var(--toolbar-control-active-bg);
+}
+
+.output-toolbar .output-tools :is(select, button):focus-visible {
+  outline: 2px solid var(--text-soft);
+  outline-offset: 2px;
+}
+
+.output-toolbar .output-tools :is(select, button):disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .output-toolbar .output-tools :is(select, button) {
+    transition: none;
+  }
+}
+
+/* Native arrows remain visible when the OS suppresses background images. */
+@media (forced-colors: active) {
+  .output-toolbar .output-tools :is(select, button) {
+    border-color: ButtonText;
+    background-color: ButtonFace;
+    color: ButtonText;
+  }
+
+  .output-toolbar .output-tools select {
+    -webkit-appearance: auto;
+    appearance: auto;
+    padding-right: 10px;
+    background-image: none;
+  }
+
+  .output-toolbar .output-tools :is(select, button):focus-visible {
+    outline-color: Highlight;
+  }
+}
