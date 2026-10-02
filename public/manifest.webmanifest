@@ -1,0 +1,10 @@
+{
+  "name": "DLS Magician",
+  "short_name": "DLS Magician",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
+  "description": "Turn structured language into working systems."
+}
