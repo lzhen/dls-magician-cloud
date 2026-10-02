@@ -437,7 +437,7 @@ function renderLogin() {
             </form>
           ` : ''}
           <div class="auth-demo-note">${icon('shield', 'icon-sm')}<span>Authentication is secured by Supabase. Your account is recorded when you sign in.</span></div>
-          <div class="auth-legal">By continuing, you agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</div>
+          <div class="auth-legal">By continuing, you agree to the <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</div>
         </div>
       </section>
     </main>
