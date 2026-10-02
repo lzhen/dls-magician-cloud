@@ -8,7 +8,9 @@
     "add:android": "npx cap add android",
     "sync": "npx cap sync",
     "open:ios": "npx cap open ios",
-    "open:android": "npx cap open android"
+    "open:android": "npx cap open android",
+    "assets": "npx capacitor-assets generate --ios --android",
+    "archive:check": "echo 'Use GitHub Actions dls-ios-release-check.yml'"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",
@@ -16,6 +18,7 @@
     "@capacitor/ios": "^8.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.0.0"
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/assets": "^3.0.5"
   }
 }
