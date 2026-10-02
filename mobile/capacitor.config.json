@@ -1,0 +1,16 @@
+{
+  "appId": "ai.empathie.dlsmagician",
+  "appName": "DLS Magician",
+  "webDir": "www",
+  "server": {
+    "url": "https://dlsmagician.empathie.ai",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false
+  }
+}
