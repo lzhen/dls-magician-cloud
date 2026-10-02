@@ -1,0 +1,32 @@
+name: DLS Magician iOS Release Check
+on:
+  push:
+    branches: [main, release/dls-ios-readiness-20261002]
+    paths: ['mobile/**', '.github/workflows/dls-ios-release-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: maxim-lobanov/setup-xcode@v1
+        with: {xcode-version: latest-stable}
+      - run: npm install --prefix mobile --no-audit --no-fund
+      - run: cd mobile && npm run add:ios && npm run assets
+      - name: Compile unsigned device archive
+        run: |
+          mkdir -p release-check
+          cd mobile
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/DLS-Magician.xcarchive" CODE_SIGNING_ALLOWED=NO archive > ../release-check/archive.log 2>&1 || { tail -120 ../release-check/archive.log; exit 1; }
+          test -d "$RUNNER_TEMP/DLS-Magician.xcarchive/Products/Applications/App.app"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dls-magician-ios-release-check
+          path: release-check/
+          retention-days: 14
