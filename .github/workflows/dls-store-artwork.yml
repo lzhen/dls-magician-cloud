@@ -1,0 +1,28 @@
+name: Build DLS Magician App Store screenshots
+on:
+  push:
+    branches: [assets/dls-store-artwork]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y imagemagick fonts-dejavu-core
+      - name: Create store-sized screenshots
+        run: |
+          mkdir -p store-artwork/iPhone_6.5 store-artwork/iPad_13
+          for src in login dashboard editor; do
+            convert screenshots/${src}.png -resize '1164x2050>' -gravity center -background '#0a0a0c' -extent 1284x2778 store-artwork/iPhone_6.5/${src}.png
+            convert screenshots/${src}.png -resize '1944x2050>' -gravity center -background '#0a0a0c' -extent 2064x2752 store-artwork/iPad_13/${src}.png
+          done
+          identify store-artwork/iPhone_6.5/*.png
+          identify store-artwork/iPad_13/*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dls-magician-app-store-screenshots
+          path: store-artwork/
+          retention-days: 14
