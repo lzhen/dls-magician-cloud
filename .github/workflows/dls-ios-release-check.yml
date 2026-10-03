@@ -1,7 +1,7 @@
 name: DLS Magician iOS Release Check
 on:
   push:
-    branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003]
+    branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003, release/dls-existing-app-record-20261003]
     paths: ['mobile/**', '.github/workflows/dls-ios-release-check.yml']
   workflow_dispatch:
 permissions:
