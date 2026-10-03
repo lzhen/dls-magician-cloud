@@ -1,7 +1,7 @@
 # DLS Magician — App Store submission metadata
 
 ## Identity
-- Bundle ID: ai.empathie.dlsmagician
+- Bundle ID: design.zhenli.dlsmagician
 - Name: DLS Magician
 - Subtitle: Turn intent into working flows
 - Support URL: https://dlsmagician.empathie.ai/
@@ -16,7 +16,7 @@
 The app is a native shell for the production DLS Magician service. App Review should be given a working review account if authentication is required. Verify sign-in, opening/creating a workflow, editing structured language, generated output, save/reload behavior, and support/privacy links.
 
 ## Manual App Store Connect completion
-- Create or confirm app record for ai.empathie.dlsmagician.
+- Create or confirm app record for design.zhenli.dlsmagician.
 - Select newest processed signed build.
 - Upload screenshots.
 - Complete age rating and App Privacy.
