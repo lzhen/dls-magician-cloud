@@ -1,0 +1,52 @@
+name: Bootstrap DLS iOS Project
+on:
+  push:
+    branches: [bootstrap/dls-ios-xcode-cloud-20261003]
+    paths:
+      - '.github/workflows/bootstrap-dls-ios.yml'
+permissions:
+  contents: write
+jobs:
+  bootstrap:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bootstrap/dls-ios-xcode-cloud-20261003
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: maxim-lobanov/setup-xcode@v1
+        with: {xcode-version: latest-stable}
+      - run: npm install --prefix mobile --no-audit --no-fund
+      - run: cd mobile && npm run add:ios && npm run assets
+      - name: Add Xcode Cloud post-clone hook
+        run: |
+          mkdir -p mobile/ios/App/ci_scripts
+          cat > mobile/ios/App/ci_scripts/ci_post_clone.sh <<'EOF'
+          #!/bin/sh
+          set -eu
+          SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+          REPOSITORY_ROOT=${CI_PRIMARY_REPOSITORY_PATH:-$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)}
+          cd "$REPOSITORY_ROOT"
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          if ! command -v node >/dev/null 2>&1; then
+            brew install node@22
+            export PATH="$(brew --prefix node@22)/bin:$PATH"
+          fi
+          npm install --prefix mobile --no-audit --no-fund
+          cd mobile
+          npx cap sync ios
+          test -s ios/App/App/capacitor.config.json
+          test -s ios/App/App/public/index.html
+          printf '\nDLS Magician Xcode Cloud preparation complete.\n'
+          EOF
+          chmod +x mobile/ios/App/ci_scripts/ci_post_clone.sh
+      - name: Commit native iOS project
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f mobile/ios/App/ci_scripts/ci_post_clone.sh
+          git add mobile/ios
+          git commit -m "Add DLS Magician iOS project for Xcode Cloud" || exit 0
+          git push origin HEAD:bootstrap/dls-ios-xcode-cloud-20261003
