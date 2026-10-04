@@ -1,7 +1,7 @@
 name: DLS Magician iOS Release Check
 on:
   push:
-    branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003, release/dls-existing-app-record-20261003]
+    branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003, release/dls-existing-app-record-20261003, bootstrap/dls-ios-xcode-cloud-20261003]
     paths: ['mobile/**', '.github/workflows/dls-ios-release-check.yml']
   workflow_dispatch:
 permissions:
@@ -17,7 +17,7 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with: {xcode-version: latest-stable}
       - run: npm install --prefix mobile --no-audit --no-fund
-      - run: cd mobile && npm run add:ios && npm run assets
+      - run: cd mobile && npx cap sync ios && npm run assets
       - name: Compile unsigned device archive
         run: |
           mkdir -p release-check
