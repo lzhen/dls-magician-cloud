@@ -1,7 +1,7 @@
 name: DLS Magician iOS Release Check
 on:
   push:
-    branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003, release/dls-existing-app-record-20261003, bootstrap/dls-ios-xcode-cloud-20261003]
+    branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003, release/dls-existing-app-record-20261003, bootstrap/dls-ios-xcode-cloud-20261003, fix/dls-xcode-cloud-readiness-20261004]
     paths: ['mobile/**', '.github/workflows/dls-ios-release-check.yml']
   workflow_dispatch:
 permissions:
@@ -22,7 +22,7 @@ jobs:
         run: |
           mkdir -p release-check
           cd mobile
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/DLS-Magician.xcarchive" CODE_SIGNING_ALLOWED=NO archive > ../release-check/archive.log 2>&1 || { tail -120 ../release-check/archive.log; exit 1; }
+          xcodebuild -project ios/App/App.xcodeproj -scheme "DLS Magician" -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/DLS-Magician.xcarchive" CODE_SIGNING_ALLOWED=NO archive > ../release-check/archive.log 2>&1 || { tail -120 ../release-check/archive.log; exit 1; }
           test -d "$RUNNER_TEMP/DLS-Magician.xcarchive/Products/Applications/App.app"
       - uses: actions/upload-artifact@v4
         if: always()
