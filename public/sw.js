@@ -1,10 +1,10 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-inline-and-v8';
+const CACHE_VERSION = 'dls-magician-icons-20261007';
 const APP_SHELL = [
   '/',
   '/index.html',
-  '/styles.css?v=inline-and-1',
+  '/styles.css?v=icons-20261007',
   '/app.js?v=inline-and-1',
   '/interaction-engine.js?v=inline-and-1',
   '/component-preview.js?v=inline-and-1',
@@ -12,6 +12,7 @@ const APP_SHELL = [
   '/component-autocomplete.js?v=inline-and-1',
   '/component-autocomplete.css?v=inline-and-1',
   '/logo.svg',
+  '/logo-light.svg',
   '/manifest.webmanifest',
   '/icons/apple-touch-icon.png',
   '/icons/icon-192.png',
@@ -61,3 +62,4 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
