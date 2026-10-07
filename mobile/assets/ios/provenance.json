@@ -8,15 +8,15 @@
     1024,
     1024
   ],
-  "background": "#ffffff",
+  "background": "#080808",
   "glyph_width_px": 656,
   "glyph_height_px": 532.7453416149068,
   "glyph_x": 184.0,
   "glyph_y": 245.6273291925466,
   "uniform_scale": 1.0186335403726707,
   "orientation": "unchanged",
-  "source_geometry_and_six_gradients": "unchanged; original SVG embedded verbatim in wrapper",
-  "packing_basis": "White background matches approved DLS light presentation; approx 64% width follows gray reference crop proportion. Native padding is technical export placement, not new artwork.",
+  "source_geometry_and_six_gradients": "Original path and gradient geometry unchanged; exact previously reviewed light-to-dark gradient-color adaptation retained.",
+  "packing_basis": "Same reviewed centered placement, now exact black-background export as the sole Any/default asset. No Dark appearance slot.",
   "source_revision": "4109b7713c740298a66952b5dcc0ebd4fb6d2583",
   "other_logos_changed": false,
   "output_file": "dls-app-icon-1024.png",
@@ -26,5 +26,10 @@
   ],
   "output_mode": "RGB",
   "output_has_alpha": false,
-  "output_sha256": "8034953ecc3ea499a564ff2fd5843328ad9586c1cb2968cbefb907caa4ba8918"
+  "output_sha256": "b5b6db3f4b1f0525a3e3834bae9d9d33859f200fb83607a72c9a6671f898dad6",
+  "contrast_source_file": "dls-magician-dark-contrast.svg",
+  "contrast_source_sha256": "04c90b6c198cbcae31dd716f8ed4fc71a245da0535be2b3f79a59e5c5027ed45",
+  "wrapper_sha256": "b7fb42a1b4fa8353bf638c0e1a770f937f404ffd04b34d4600357776f2f7a093",
+  "default_variant": "approved dark visual artwork used in Any/default",
+  "adoption_date": "2026-10-07"
 }

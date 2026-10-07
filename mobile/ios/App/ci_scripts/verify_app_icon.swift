@@ -3,8 +3,8 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
-// Approved original six-gradient DLS master rendered on an opaque 1024px white canvas.
-let approvedSHA256 = "8034953ecc3ea499a564ff2fd5843328ad9586c1cb2968cbefb907caa4ba8918"
+// Approved original six-gradient DLS master rendered on an opaque 1024px black canvas.
+let approvedSHA256 = "b5b6db3f4b1f0525a3e3834bae9d9d33859f200fb83607a72c9a6671f898dad6"
 
 func require(_ condition: Bool, _ message: String) {
     if !condition {
