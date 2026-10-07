@@ -1,0 +1,83 @@
+name: dls Native Store Screenshots
+on:
+  push:
+    branches: [draft/dls-store-screenshots-20261007]
+    paths: ['.github/workflows/dls-store-screenshots.yml']
+permissions:
+  contents: read
+jobs:
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 'c388cdc5e8428317e5747076a16a228eebd810f7'
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: maxim-lobanov/setup-xcode@v1
+        with: {xcode-version: latest-stable}
+      - run: python -m pip install --disable-pip-version-check Pillow
+      - name: Prepare unchanged production app source
+        run: |
+          npm install --prefix mobile --no-audit --no-fund
+          (cd mobile && npx cap sync ios && npm run assets:ios)
+          npm --prefix mobile run test:ios-icon
+      - name: Build unsigned simulator application
+        run: |
+          mkdir -p store-assets
+          xcodebuild -project mobile/ios/App/App.xcodeproj -scheme 'DLS Magician' -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/StoreSimulator" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > store-assets/simulator-build.log 2>&1 || { tail -100 store-assets/simulator-build.log; exit 1; }
+          test -d "$RUNNER_TEMP/StoreSimulator/Build/Products/Release-iphonesimulator/App.app"
+      - name: Capture actual iPhone and iPad screens
+        env:
+          SIMULATOR_APP: ${{ runner.temp }}/StoreSimulator/Build/Products/Release-iphonesimulator/App.app
+          BUNDLE_ID: design.zhenli.dlsmagician
+          SCREENSHOT_PRODUCT: dls
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,time
+          from PIL import Image
+          def run(*args):
+              return subprocess.check_output(args,text=True).strip()
+          out=pathlib.Path('store-assets');out.mkdir(exist_ok=True)
+          available=json.loads(run('xcrun','simctl','list','devices','available','-j'))['devices']
+          devices=[d for runtime,group in sorted(available.items(),reverse=True) if 'iOS' in runtime for d in group]
+          phone=next(d for d in devices if d['name'].startswith('iPhone') and 'Pro' in d['name'] and 'Max' not in d['name'])
+          large=next(d for d in devices if d['name'].startswith('iPhone') and 'Pro Max' in d['name'])
+          tablet=next(d for d in devices if d['name'].startswith('iPad Pro') and '13-inch' in d['name'])
+          evidence={'app':os.environ['SCREENSHOT_PRODUCT'],'sourceSha':run('git','rev-parse','HEAD'),'captureWorkflowSha':os.environ['GITHUB_SHA'],'physicalDeviceTested':False,'authenticationPerformed':False,'backendFeatureTested':False,'screenshots':[]}
+          for label,device in [('iphone-medium',phone),('iphone-large',large),('ipad-13',tablet)]:
+              uid=device['udid']
+              try:
+                  if device['state']!='Booted':run('xcrun','simctl','boot',uid)
+                  run('xcrun','simctl','bootstatus',uid,'-b')
+                  run('xcrun','simctl','ui',uid,'appearance','light')
+                  run('xcrun','simctl','status_bar',uid,'override','--time','9:41','--dataNetwork','wifi','--wifiMode','active','--wifiBars','3','--batteryState','charged','--batteryLevel','100')
+                  run('xcrun','simctl','install',uid,os.environ['SIMULATOR_APP'])
+                  run('xcrun','simctl','launch',uid,os.environ['BUNDLE_ID'])
+                  # Preserve real cold-launch state, never seed personal or authenticated data.
+                  # Two delayed captures expose any loading screen; visual QA remains required.
+                  for delay in [20,20]:
+                      time.sleep(delay)
+                      dest=out/(os.environ['SCREENSHOT_PRODUCT']+'-'+label+'.png')
+                      run('xcrun','simctl','io',uid,'screenshot',str(dest))
+                  with Image.open(dest) as im:
+                      alpha=im.getchannel('A').getextrema() if im.mode=='RGBA' else None
+                      if alpha and alpha!=(255,255):raise RuntimeError('Nonopaque screenshot: '+str(dest))
+                      rgb=im.convert('RGB');rgb.save(dest)
+                      dimensions=rgb.size
+                  evidence['screenshots'].append({'device':device['name'],'file':dest.name,'dimensions':dimensions,'mode':'RGB','sourceAlphaExtrema':alpha,'state':'Real app after 40 seconds from fresh install. No login or data entered. Visual review required.','sha256':hashlib.sha256(dest.read_bytes()).hexdigest()})
+                  (out/'evidence.json').write_text(json.dumps(evidence,indent=2))
+              finally:
+                  subprocess.run(['xcrun','simctl','shutdown',uid],check=False)
+          print(json.dumps(evidence,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dls-native-store-screenshots
+          path: store-assets/
+          retention-days: 30
