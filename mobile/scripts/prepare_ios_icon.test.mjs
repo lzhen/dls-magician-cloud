@@ -53,3 +53,28 @@ test('non-square, non-RGB or resized image headers are rejected', async () => {
     const changed = Buffer.from(data); mutate(changed); assert.throws(() => validatePNG(changed), /opaque/);
   }
 });
+test('black adaptation preserves six path and gradient geometries without flattening', async () => {
+  const original = await readFile(resolve(mobile, 'assets/ios/dls-magician-original.svg'), 'utf8');
+  const contrast = await readFile(resolve(mobile, 'assets/ios/dls-magician-dark-contrast.svg'), 'utf8');
+  const paths = xml => [...xml.matchAll(/<path\b[^>]*\bd="([^"]+)"/g)].map(match => match[1]);
+  const gradients = xml => [...xml.matchAll(/<linearGradient\b([^>]+)>/g)].map(match =>
+    Object.fromEntries([...match[1].matchAll(/([\w:]+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]])));
+  assert.equal(paths(contrast).length, 6);
+  assert.equal(gradients(contrast).length, 6);
+  assert.deepEqual(paths(contrast), paths(original));
+  assert.deepEqual(gradients(contrast), gradients(original));
+  assert.ok(new Set([...contrast.matchAll(/stop-color="([^"]+)"/g)].map(match => match[1])).size > 1);
+});
+test('contrast-source drift and additional appearance slots are rejected', async t => {
+  const root = await fixture(t);
+  const contrast = resolve(root, 'assets/ios/dls-magician-dark-contrast.svg');
+  const original = await readFile(contrast);
+  await writeFile(contrast, Buffer.concat([original, Buffer.from('\n')]));
+  await assert.rejects(prepareIOSIcon(root), /contrast gradients/);
+  await writeFile(contrast, original);
+  const catalogPath = resolve(root, target, '..', 'Contents.json');
+  const catalog = JSON.parse(await readFile(catalogPath, 'utf8'));
+  catalog.images.push({ ...catalog.images[0], appearances: [{appearance:'luminosity',value:'dark'}] });
+  await writeFile(catalogPath, JSON.stringify(catalog));
+  await assert.rejects(prepareIOSIcon(root), /catalog/);
+});
