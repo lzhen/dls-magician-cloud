@@ -1,0 +1,30 @@
+{
+  "source_file": "dls-magician-original.svg",
+  "source_git_blob_sha": "d60189f9271856a92f06c2751793fb6f30d9cf19",
+  "source_sha256": "ff93247f4d0ce66df156f4d0950d236606abd10b49f9422eabf9e7723599e09e",
+  "source_url": "https://github.com/lzhen/empathie-website/blob/4109b7713c740298a66952b5dcc0ebd4fb6d2583/homepage/assets/logos/dls-magician.svg",
+  "source_user_confirmed": true,
+  "canvas": [
+    1024,
+    1024
+  ],
+  "background": "#ffffff",
+  "glyph_width_px": 656,
+  "glyph_height_px": 532.7453416149068,
+  "glyph_x": 184.0,
+  "glyph_y": 245.6273291925466,
+  "uniform_scale": 1.0186335403726707,
+  "orientation": "unchanged",
+  "source_geometry_and_six_gradients": "unchanged; original SVG embedded verbatim in wrapper",
+  "packing_basis": "White background matches approved DLS light presentation; approx 64% width follows gray reference crop proportion. Native padding is technical export placement, not new artwork.",
+  "source_revision": "4109b7713c740298a66952b5dcc0ebd4fb6d2583",
+  "other_logos_changed": false,
+  "output_file": "dls-app-icon-1024.png",
+  "output_dimensions": [
+    1024,
+    1024
+  ],
+  "output_mode": "RGB",
+  "output_has_alpha": false,
+  "output_sha256": "8034953ecc3ea499a564ff2fd5843328ad9586c1cb2968cbefb907caa4ba8918"
+}

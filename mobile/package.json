@@ -9,8 +9,10 @@
     "sync": "npx cap sync",
     "open:ios": "npx cap open ios",
     "open:android": "npx cap open android",
-    "assets": "npx capacitor-assets generate --ios --android",
-    "archive:check": "echo 'Use GitHub Actions dls-ios-release-check.yml'"
+    "assets": "npx capacitor-assets generate --ios --android && node scripts/prepare_ios_icon.mjs",
+    "archive:check": "echo 'Use GitHub Actions dls-ios-release-check.yml'",
+    "assets:ios": "node scripts/prepare_ios_icon.mjs",
+    "test:ios-icon": "node --test scripts/prepare_ios_icon.test.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.0.0",

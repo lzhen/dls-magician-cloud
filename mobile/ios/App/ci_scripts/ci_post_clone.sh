@@ -11,6 +11,8 @@ fi
 npm install --prefix mobile --no-audit --no-fund
 cd mobile
 npx cap sync ios
+node scripts/prepare_ios_icon.mjs
 test -s ios/App/App/capacitor.config.json
 test -s ios/App/App/public/index.html
 printf '\nDLS Magician Xcode Cloud preparation complete.\n'
+
