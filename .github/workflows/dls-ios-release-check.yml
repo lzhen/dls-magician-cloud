@@ -3,6 +3,9 @@ on:
   push:
     branches: [main, release/dls-ios-readiness-20261002, release/apple-readiness-20261003, release/dls-existing-app-record-20261003, bootstrap/dls-ios-xcode-cloud-20261003, fix/dls-xcode-cloud-readiness-20261004]
     paths: ['mobile/**', '.github/workflows/dls-ios-release-check.yml']
+  pull_request:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/dls-ios-release-check.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,15 +21,25 @@ jobs:
         with: {xcode-version: latest-stable}
       - run: npm install --prefix mobile --no-audit --no-fund
       - run: cd mobile && npx cap sync ios && npm run assets
+      - run: npm --prefix mobile run test:ios-icon
+      - run: mobile/ios/App/ci_scripts/ci_pre_xcodebuild.sh
       - name: Compile unsigned device archive
         run: |
           mkdir -p release-check
           cd mobile
           xcodebuild -project ios/App/App.xcodeproj -scheme "DLS Magician" -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/DLS-Magician.xcarchive" CODE_SIGNING_ALLOWED=NO archive > ../release-check/archive.log 2>&1 || { tail -120 ../release-check/archive.log; exit 1; }
-          test -d "$RUNNER_TEMP/DLS-Magician.xcarchive/Products/Applications/App.app"
+          APP="$RUNNER_TEMP/DLS-Magician.xcarchive/Products/Applications/App.app"
+          test -d "$APP"
+          swift ios/App/ci_scripts/verify_app_icon.swift ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png "$APP" > ../release-check/app-icon-result.txt
+          cat ../release-check/app-icon-result.txt
+          cp "$APP"/AppIcon*.png ../release-check/
+          plutil -convert json -o ../release-check/built-info.json "$APP/Info.plist"
+          shasum -a 256 "$APP/Assets.car" > ../release-check/compiled-assets-sha256.txt
+          ditto -c -k --sequesterRsrc --keepParent "$APP" ../release-check/dls-unsigned-device-app.zip
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: dls-magician-ios-release-check
           path: release-check/
           retention-days: 14
+
