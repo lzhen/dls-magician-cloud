@@ -6,26 +6,33 @@
   "start_url": "/#dashboard",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "orientation": "portrait-primary",
   "background_color": "#08080a",
   "theme_color": "#08080a",
-  "categories": ["productivity", "design", "developer tools"],
+  "categories": [
+    "productivity",
+    "design",
+    "developer tools"
+  ],
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "/icons/dls-192-20261008.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "/icons/dls-512-20261008.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-maskable-512.png",
+      "src": "/icons/dls-512-20261008.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -36,13 +43,23 @@
       "name": "Workspace",
       "short_name": "Workspace",
       "url": "/#dashboard",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/dls-192-20261008.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Projects",
       "short_name": "Projects",
       "url": "/#projects",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icons/dls-192-20261008.png",
+          "sizes": "192x192"
+        }
+      ]
     }
   ]
 }

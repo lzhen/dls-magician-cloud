@@ -1,10 +1,15 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-icons-20261007';
+const CACHE_VERSION = 'dls-magician-black-icons-20261008';
 const APP_SHELL = [
+  '/icons/dls-32-20261008.png',
+  '/icons/dls-180-20261008.png',
+  '/icons/dls-192-20261008.png',
+  '/icons/dls-512-20261008.png',
+  '/icons/dls-1024-20261008.png',
   '/',
   '/index.html',
-  '/styles.css?v=icons-20261007',
+  '/styles.css?v=black-icons-20261008',
   '/app.js?v=inline-and-1',
   '/interaction-engine.js?v=inline-and-1',
   '/component-preview.js?v=inline-and-1',

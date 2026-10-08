@@ -4409,3 +4409,6 @@ svg {
 .intent-block-body:has(.intent-add-and) > .component-browse { right: 78px; }
 .intent-block-body:has(.intent-add-and) > label { padding-right: 170px; }
 
+
+/* Approved black-background App Icon in both appearances. */
+.brand-symbol,[data-theme="light"] .brand-symbol{width:28px;height:28px;background:#000 url("/icons/dls-1024-20261008.png") center/contain no-repeat;border-radius:6px;filter:none}
