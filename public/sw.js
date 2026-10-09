@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-black-icons-20261008';
+const CACHE_VERSION = 'dls-magician-brand-20261009';
 const APP_SHELL = [
   '/icons/dls-32-20261008.png',
   '/icons/dls-180-20261008.png',

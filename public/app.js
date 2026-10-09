@@ -244,7 +244,7 @@ function providerMark(provider) {
 }
 
 function brandLockup() {
-  return `<span class="brand-lockup"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">MAGICIAN</span></span></span>`;
+  return `<span class="brand-lockup" role="img" aria-label="DLS Magician Cloud"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">Magician</span></span></span>`;
 }
 
 function themeToggle(className = '') {

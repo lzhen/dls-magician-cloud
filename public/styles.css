@@ -4412,3 +4412,7 @@ svg {
 
 /* Approved black-background App Icon in both appearances. */
 .brand-symbol,[data-theme="light"] .brand-symbol{width:28px;height:28px;background:#000 url("/icons/dls-1024-20261008.png") center/contain no-repeat;border-radius:6px;filter:none}
+
+/* Shared Empathie product brand lockup. */
+.brand-lockup{gap:12px;min-height:44px}.brand-lockup .brand-symbol,[data-theme="light"] .brand-lockup .brand-symbol{width:32px;height:32px;border-radius:8px;flex-shrink:0;filter:none}.brand-name,[data-theme="light"] .brand-name{font-family:Inter,"Helvetica Neue",Arial,sans-serif;font-size:20px;font-weight:600;line-height:1.2;letter-spacing:-.02em;white-space:nowrap}.brand-prefix,.brand-product,[data-theme="light"] .brand-prefix,[data-theme="light"] .brand-product{color:inherit}
+@media(max-width:640px){.brand-name,[data-theme="light"] .brand-name{font-size:18px}}
