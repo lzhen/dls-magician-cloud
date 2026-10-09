@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "DLS Magician",
+  "version": "1.0.0",
+  "description": "Open DLS Magician from Chrome.",
+  "action": {
+    "default_title": "DLS Magician",
+    "default_popup": "popup.html"
+  },
+  "permissions": []
+}
