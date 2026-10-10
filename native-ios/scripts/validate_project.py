@@ -11,7 +11,47 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def parse_openstep(text):
+    """Parse the dictionary/array/scalar grammar emitted by our project generator."""
+    tokens = re.findall(r'//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|[{}()=;,]|[^\s{}()=;,]+', text)
+    tokens = [token for token in tokens if not token.startswith(('//', '/*'))]
+    index = 0
+    def take(expected=None):
+        nonlocal index
+        if index >= len(tokens): raise ValueError('Unexpected end of OpenStep data')
+        token = tokens[index]; index += 1
+        if expected is not None and token != expected: raise ValueError(f'Expected {expected}, got {token}')
+        return token
+    def value():
+        token = take()
+        if token == '{':
+            result = {}
+            while index < len(tokens) and tokens[index] != '}':
+                key = take()
+                if key in result: raise ValueError('Duplicate dictionary key: ' + key)
+                take('='); result[key] = value(); take(';')
+            take('}'); return result
+        if token == '(':
+            result = []
+            while index < len(tokens) and tokens[index] != ')':
+                result.append(value())
+                if tokens[index] != ')': take(',')
+            take(')'); return result
+        if token in '}),;=': raise ValueError('Unexpected structural token: ' + token)
+        return json.loads(token) if token.startswith('"') else token
+    result = value()
+    if index != len(tokens): raise ValueError('Extra tokens after root dictionary')
+    return result
+
 class ProjectChecks(unittest.TestCase):
+    def test_openstep_project_dictionary_structure(self):
+        parsed = parse_openstep((ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text())
+        project = parsed['objects'][parsed['rootObject']]
+        self.assertEqual(project['isa'], 'PBXProject')
+        self.assertIn('TargetAttributes', project['attributes'])
+        self.assertNotIn('buildConfigurationList', project['attributes'])
+        self.assertIn(project['buildConfigurationList'], parsed['objects'])
+        self.assertEqual(len(project['targets']), 3)
     def test_every_swift_file_is_in_sources_build_phase(self):
         project = (ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text()
         for directory in ['DLSMagician','DLSMagicianTests','DLSMagicianUITests']:
