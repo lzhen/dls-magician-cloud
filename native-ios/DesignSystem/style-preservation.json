@@ -1,0 +1,41 @@
+{
+  "protectedSources": {
+    "AuthService.swift": {
+      "baselineSha256": "9bac41e92ccda84c95415798f8475661539d32ff85de575f962b6281c6d132da",
+      "status": "byte-identical"
+    },
+    "AuthenticationBrowser.swift": {
+      "baselineSha256": "10bafef2b612dfffa617efd9a0a1f788a5c4d09c0b522e157a7db4e55ea5d308",
+      "status": "byte-identical"
+    },
+    "SecureStore.swift": {
+      "baselineSha256": "90e09ea7e6e43b7ddd597b243977c618fb4239b4653eb328fda543bce85e79bd",
+      "status": "byte-identical"
+    },
+    "APIClient.swift": {
+      "baselineSha256": "3864481e97e2e64b74649f7de2de8d1ee9e26de191ba83bcd21a715f14452410",
+      "status": "byte-identical"
+    },
+    "Models.swift": {
+      "baselineSha256": "03496e52de28de83734520f9007ed6543c1d213619ed0e633244deb42551662d",
+      "status": "unchanged after removing optional visual project accent and user color fields"
+    },
+    "DraftStore.swift": {
+      "baselineSha256": "6bdb4c02501a38112b65cd9a9128994e2f0647963d87288dfa0ecca3cbc95ee0",
+      "status": "byte-identical"
+    },
+    "AppModel.swift": {
+      "baselineSha256": "409387a6f5407c25ff0cc3d9498067267b94bec628cac658264abf12a5de2ee2",
+      "status": "byte-identical"
+    },
+    "AppConfiguration.swift": {
+      "baselineSha256": "9b150e5e9951a2a5a9d4029a36465cd84ff31271020b9c4b626b9930fae55aac",
+      "status": "byte-identical"
+    }
+  },
+  "canonicalTokensSha256": "c6c25f546c5a2f01271f32e91d356c0103c695e8b9ed4ef41038508d3471f5b2",
+  "sourceCssSha256": "68c58a97d7adf59af11cb54457fb7257a9a1ca360b24f86f966cff08276bd5f4",
+  "runtimeVisualValidation": "not run; no Xcode/iOS runtime",
+  "gradientUpdate": "Responsive auth layers and project gradients/glow restored from canonical tokens; security behavior unchanged.",
+  "accountUpdate": "Serif title, actual user color/initials gradient avatar, white primary sign-out; sign-out operation unchanged."
+}

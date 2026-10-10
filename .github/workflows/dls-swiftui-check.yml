@@ -1,0 +1,76 @@
+name: DLS SwiftUI simulator check
+
+on:
+  push:
+    branches: [native/dls-swiftui-20261010]
+    paths:
+      - 'native-ios/**'
+      - '.github/workflows/dls-swiftui-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dls-swiftui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    if: github.repository == 'lzhen/dls-magician-cloud' && github.ref == 'refs/heads/native/dls-swiftui-20261010'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify Xcode and available iPhone simulator
+        id: simulator
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          xcrun swift --version
+          mkdir -p native-ios/build/logs
+          python3 - <<'PY'
+          import json, os, subprocess
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '--json']))['devices']
+          phones = [device for runtime, values in devices.items() if runtime.endswith('iOS-18-5') for device in values if device.get('isAvailable') and device['name'].startswith('iPhone')]
+          if not phones:
+              raise SystemExit('The Xcode 16.4 iOS 18.5 simulator runtime is unavailable.')
+          selected = next((device for device in phones if device['name'] == 'iPhone 16'), phones[0])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('udid=' + selected['udid'] + '\n')
+          print('Selected simulator: ' + selected['name'] + ' / iOS 18.5')
+          PY
+      - name: Resolve pinned Supabase SDK
+        run: |
+          xcodebuild -resolvePackageDependencies -project native-ios/DLSMagician.xcodeproj -scheme DLSMagician -clonedSourcePackagesDirPath native-ios/build/SourcePackages 2>&1 | tee native-ios/build/logs/resolve.log
+      - name: Build simulator application without signing
+        run: |
+          xcodebuild -project native-ios/DLSMagician.xcodeproj -scheme DLSMagician -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' -derivedDataPath native-ios/build/DerivedData -clonedSourcePackagesDirPath native-ios/build/SourcePackages -disableAutomaticPackageResolution build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee native-ios/build/logs/build.log
+      - name: Run contract and real login UI tests
+        run: |
+          xcodebuild -project native-ios/DLSMagician.xcodeproj -scheme DLSMagician -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' -derivedDataPath native-ios/build/DerivedData -clonedSourcePackagesDirPath native-ios/build/SourcePackages -disableAutomaticPackageResolution -resultBundlePath native-ios/build/TestResults.xcresult -parallel-testing-enabled NO test CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee native-ios/build/logs/test.log
+      - name: Export genuine UI test captures
+        if: always()
+        run: |
+          if test -d native-ios/build/TestResults.xcresult; then
+            xcrun xcresulttool export attachments --path native-ios/build/TestResults.xcresult --output-path native-ios/build/screenshots
+          fi
+      - name: Preserve build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dls-swiftui-simulator-${{ github.sha }}
+          path: |
+            native-ios/build/logs
+            native-ios/build/TestResults.xcresult
+            native-ios/build/screenshots
+            native-ios/DLSMagician.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          if-no-files-found: warn
+          retention-days: 7

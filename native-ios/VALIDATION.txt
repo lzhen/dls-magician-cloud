@@ -1,0 +1,44 @@
+$ python scripts/generate_theme.py --check
+SwiftUI adapter matches canonical tokens byte for byte.
+Exit: 0
+
+$ python scripts/validate_project.py
+test_approved_brand_asset_is_exact_original (__main__.ProjectChecks.test_approved_brand_asset_is_exact_original) ... ok
+test_every_swift_file_is_in_sources_build_phase (__main__.ProjectChecks.test_every_swift_file_is_in_sources_build_phase) ... ok
+test_native_target_scheme_and_registered_callback (__main__.ProjectChecks.test_native_target_scheme_and_registered_callback) ... ok
+test_production_source_snapshot_has_verified_git_blob_hashes (__main__.ProjectChecks.test_production_source_snapshot_has_verified_git_blob_hashes) ... ok
+test_xcode_object_references_resolve_and_ids_are_unique (__main__.ProjectChecks.test_xcode_object_references_resolve_and_ids_are_unique) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.004s
+
+OK
+Exit: 0
+
+$ python scripts/validate_theme.py
+test_generated_adapter_preserves_canonical_layers (__main__.ThemeChecks.test_generated_adapter_preserves_canonical_layers) ... ok
+test_gradient_surfaces_are_connected_to_real_views (__main__.ThemeChecks.test_gradient_surfaces_are_connected_to_real_views) ... ok
+test_gradients_and_glow_have_verified_web_source_values (__main__.ThemeChecks.test_gradients_and_glow_have_verified_web_source_values) ... ok
+test_protected_behavior_sources_are_unchanged (__main__.ThemeChecks.test_protected_behavior_sources_are_unchanged) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.004s
+
+OK
+Exit: 0
+
+$ node --test scripts/api-contract.test.cjs
+✔ native DTO and save contract against actual production server source (128.052057ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 205.753286
+Exit: 0
+
+Workflow YAML parsed and constrained to exact branch/repository; contents:read, macos-15, timeout30, no secrets/signing/deployment; CI commands need only published native-ios/.
+Not run locally: Swift/Xcode build, nine unit XCTest methods, one genuine login UI smoke test, package resolution, simulator, device OAuth, signing, deployment. GitHub compile result pending publication.
+No deletion module is included in this compile foundation.
