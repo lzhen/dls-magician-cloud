@@ -53,20 +53,31 @@ jobs:
       - name: Build simulator application without signing
         run: |
           xcodebuild -project native-ios/DLSMagician.xcodeproj -scheme DLSMagician -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' -derivedDataPath native-ios/build/DerivedData -clonedSourcePackagesDirPath native-ios/build/SourcePackages -disableAutomaticPackageResolution build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee native-ios/build/logs/build.log
-      - name: Run contract and real login UI tests
+      - name: Retain unsigned simulator application
+        if: success()
         run: |
-          xcodebuild -project native-ios/DLSMagician.xcodeproj -scheme DLSMagician -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' -derivedDataPath native-ios/build/DerivedData -clonedSourcePackagesDirPath native-ios/build/SourcePackages -disableAutomaticPackageResolution -resultBundlePath native-ios/build/TestResults.xcresult -parallel-testing-enabled NO test CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee native-ios/build/logs/test.log
+          if test -d native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app; then
+            ditto -c -k --sequesterRsrc --keepParent native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app native-ios/build/DLSMagician-iOS-Simulator.zip
+          fi
+      - name: Run contract and real login UI tests with local simulator signing
+        run: |
+          xcodebuild -project native-ios/DLSMagician.xcodeproj -scheme DLSMagician -configuration Debug -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' -derivedDataPath native-ios/build/DerivedData -clonedSourcePackagesDirPath native-ios/build/SourcePackages -disableAutomaticPackageResolution -resultBundlePath native-ios/build/TestResults.xcresult -parallel-testing-enabled NO test CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= CODE_SIGN_STYLE=Automatic PROVISIONING_PROFILE= PROVISIONING_PROFILE_SPECIFIER= 2>&1 | tee native-ios/build/logs/test.log
+      - name: Inspect simulator entitlements and retain tested application
+        if: always()
+        run: |
+          # A local ad-hoc seal supplies simulator entitlements without an Apple identity.
+          # No certificate, team, provisioning profile, or provisioning update is used.
+          app=native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app
+          if test -d "$app"; then
+            codesign --display --verbose=2 "$app" 2>&1 | tee native-ios/build/logs/simulator-signature.log
+            codesign --display --entitlements :- "$app" > native-ios/build/logs/simulator-entitlements.plist 2> native-ios/build/logs/simulator-entitlements.log
+            ditto -c -k --sequesterRsrc --keepParent "$app" native-ios/build/DLSMagician-iOS-Simulator-Test.zip
+          fi
       - name: Export genuine UI test captures
         if: always()
         run: |
           if test -d native-ios/build/TestResults.xcresult; then
             xcrun xcresulttool export attachments --path native-ios/build/TestResults.xcresult --output-path native-ios/build/screenshots
-          fi
-      - name: Retain unsigned simulator application
-        if: always()
-        run: |
-          if test -d native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app; then
-            ditto -c -k --sequesterRsrc --keepParent native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app native-ios/build/DLSMagician-iOS-Simulator.zip
           fi
       - name: Preserve build evidence
         if: always()
@@ -78,6 +89,7 @@ jobs:
             native-ios/build/TestResults.xcresult
             native-ios/build/screenshots
             native-ios/build/DLSMagician-iOS-Simulator.zip
+            native-ios/build/DLSMagician-iOS-Simulator-Test.zip
             native-ios/DLSMagician.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           if-no-files-found: warn
           retention-days: 7
