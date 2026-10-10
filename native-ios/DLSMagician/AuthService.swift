@@ -41,6 +41,18 @@ final class AuthService {
     }
     var hasStoredSession: Bool { auth?.currentSession != nil }
     var hasPendingAttempt: Bool { (try? storage.pending()?.isValid()) == true }
+    var hasActiveSignIn: Bool { activeAttempt != nil || exchangeInFlight || hasPendingAttempt }
+    var currentSubject: String? {
+        guard let session = auth?.currentSession else { return nil }
+        return String(describing: session.user.id).lowercased()
+    }
+    func hasPersistedSession() throws -> Bool { try storage.retrieve(key: AppConfiguration.authStorageKey) != nil }
+
+    func deletionSession() async throws -> (bearer: String, subject: String) {
+        guard let auth else { throw AppFailure.configuration }
+        let session = try await auth.session
+        return (session.accessToken, String(describing: session.user.id).lowercased())
+    }
 
     func token() async throws -> String {
         guard let auth else { throw AppFailure.configuration }

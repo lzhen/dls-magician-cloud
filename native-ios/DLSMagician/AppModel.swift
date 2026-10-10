@@ -4,12 +4,14 @@ import Auth
 
 @MainActor
 final class AppModel: ObservableObject {
-    enum Phase: Equatable { case launching, signedOut, workspace, unavailable }
+    enum Phase: Equatable { case launching, signedOut, workspace, unavailable, deletionRecovery }
     @Published var phase: Phase = .launching
     @Published var notice: String?
     @Published var busy = false
     @Published private(set) var bootstrap: Bootstrap?
     @Published var workspaceID = ""
+    @Published private(set) var authenticationRevision = UUID()
+    @Published private(set) var deletionReceipt: AccountDeletionReceipt?
     let api = APIClient()
     let auth = AuthService()
     private var configured = false
@@ -37,6 +39,11 @@ final class AppModel: ObservableObject {
         phase = .launching
         notice = nil
         do {
+            if let receipt = try AccountDeletionReceiptStore().load() {
+                deletionReceipt = receipt
+                phase = .deletionRecovery
+                return
+            }
             if !configured {
                 try auth.configure(try await api.configuration())
                 configured = true
@@ -98,6 +105,7 @@ final class AppModel: ObservableObject {
         bootstrap = data
         if !workspaceID.isEmpty && !data.workspaces.contains(where: { $0.id == workspaceID }) { workspaceID = "" }
         phase = .workspace
+        authenticationRevision = UUID()
         notice = nil
     }
     func refresh() async {
@@ -118,5 +126,50 @@ final class AppModel: ObservableObject {
         bootstrap = nil
         workspaceID = ""
         phase = .signedOut
+    }
+
+    func resumeAfterUnstartedDeletion() async {
+        deletionReceipt = nil
+        if phase == .deletionRecovery { await start() }
+    }
+
+    func finishAccountDeletion(_ receipt: AccountDeletionReceipt) async throws {
+        guard receipt.confirmedDeleted else { throw AppFailure.invalidResponse }
+        try AccountDeletionReceiptStore().requireMatching(receipt)
+        let wasBusy = busy
+        busy = true
+        defer { busy = wasBusy }
+        // Let a newly started sign-in finish or be cancelled explicitly before cleanup.
+        guard !auth.hasActiveSignIn else { throw AppFailure.storage }
+        if !configured {
+            try auth.configure(try await api.configuration())
+            configured = true
+        }
+        let currentSubject = auth.currentSubject
+        if let currentSubject, let user,
+           (currentSubject == receipt.authSubject) != (user.id == receipt.userID) { throw AppFailure.storage }
+        // A malformed/unknown secure session must not be erased as if its owner were known.
+        if currentSubject == nil, try auth.hasPersistedSession() { throw AppFailure.storage }
+        let clearCurrent = AccountDeletionCleanupPolicy.mayClearSession(receipt: receipt,
+            currentSubject: currentSubject, currentUserID: user?.id)
+        sessionGeneration = UUID()
+        try AccountDeletionLocalData.removeDrafts(userID: receipt.userID)
+        if clearCurrent { _ = try await auth.signOut() }
+        try AccountDeletionReceiptStore().remove(matching: receipt)
+        deletionReceipt = nil
+        if clearCurrent || currentSubject == nil {
+            bootstrap = nil; workspaceID = ""; phase = .signedOut
+            notice = "Your account was deleted and its saved data was cleared from this device."
+        } else {
+            // Completion for an old account must never log out a newly authenticated account.
+            if bootstrap?.user.id == receipt.userID { bootstrap = nil; workspaceID = "" }
+            do {
+                try await hydrate()
+                notice = "The previously requested account deletion completed. Your current account is still signed in."
+            } catch {
+                phase = .unavailable
+                notice = "The previous account was deleted. Your current session is preserved, but its workspace could not open. Try again."
+            }
+        }
     }
 }

@@ -6,11 +6,12 @@ $ python scripts/validate_project.py
 test_approved_brand_asset_is_exact_original (__main__.ProjectChecks.test_approved_brand_asset_is_exact_original) ... ok
 test_every_swift_file_is_in_sources_build_phase (__main__.ProjectChecks.test_every_swift_file_is_in_sources_build_phase) ... ok
 test_native_target_scheme_and_registered_callback (__main__.ProjectChecks.test_native_target_scheme_and_registered_callback) ... ok
+test_openstep_project_dictionary_structure (__main__.ProjectChecks.test_openstep_project_dictionary_structure) ... ok
 test_production_source_snapshot_has_verified_git_blob_hashes (__main__.ProjectChecks.test_production_source_snapshot_has_verified_git_blob_hashes) ... ok
 test_xcode_object_references_resolve_and_ids_are_unique (__main__.ProjectChecks.test_xcode_object_references_resolve_and_ids_are_unique) ... ok
 
 ----------------------------------------------------------------------
-Ran 5 tests in 0.004s
+Ran 6 tests in 0.005s
 
 OK
 Exit: 0
@@ -19,7 +20,7 @@ $ python scripts/validate_theme.py
 test_generated_adapter_preserves_canonical_layers (__main__.ThemeChecks.test_generated_adapter_preserves_canonical_layers) ... ok
 test_gradient_surfaces_are_connected_to_real_views (__main__.ThemeChecks.test_gradient_surfaces_are_connected_to_real_views) ... ok
 test_gradients_and_glow_have_verified_web_source_values (__main__.ThemeChecks.test_gradients_and_glow_have_verified_web_source_values) ... ok
-test_protected_behavior_sources_are_unchanged (__main__.ThemeChecks.test_protected_behavior_sources_are_unchanged) ... ok
+test_reviewed_behavior_source_hashes (__main__.ThemeChecks.test_reviewed_behavior_source_hashes) ... ok
 
 ----------------------------------------------------------------------
 Ran 4 tests in 0.004s
@@ -28,7 +29,7 @@ OK
 Exit: 0
 
 $ node --test scripts/api-contract.test.cjs
-✔ native DTO and save contract against actual production server source (128.052057ms)
+✔ native DTO and save contract against actual production server source (136.907956ms)
 ℹ tests 1
 ℹ suites 0
 ℹ pass 1
@@ -36,9 +37,11 @@ $ node --test scripts/api-contract.test.cjs
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 205.753286
+ℹ duration_ms 221.565479
 Exit: 0
 
-Workflow YAML parsed and constrained to exact branch/repository; contents:read, macos-15, timeout30, no secrets/signing/deployment; CI commands need only published native-ios/.
-Not run locally: Swift/Xcode build, nine unit XCTest methods, one genuine login UI smoke test, package resolution, simulator, device OAuth, signing, deployment. GitHub compile result pending publication.
-No deletion module is included in this compile foundation.
+Workflow YAML parsed; exact branch/repository guard, contents:read, macos-15, timeout30, no signing/secrets/deploy. Simulator .app is zipped for artifact retention.
+Real CI: run38090769450 found malformed project delimiter (fixed); run38090975516 resolved Supabase2.55.3 and reached arm64 compiler, then failed extra x86_64 architecture (Debug ONLY_ACTIVE_ARCH correction prepared).
+Actual CI Package.resolved copied byte for byte. Full deletion integration has not been compiled.
+AUTHORED, NOT RUN: sixteen unit XCTest methods (nine foundation + seven deletion); one real-login UI smoke test. No real OAuth, deletion, device test, signing or deployment performed.
+Backend deletion is a separate undeployed candidate; this client follows the final four-state recovery contract. Verified support contact remains a release gate.

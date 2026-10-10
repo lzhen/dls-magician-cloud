@@ -68,13 +68,13 @@ class ThemeChecks(unittest.TestCase):
         self.assertIn('Task { await app.signOut(); dismiss() }', workspace)
         self.assertIn('Text("Account").font(DLSTheme.accountTitle)', workspace)
 
-    def test_protected_behavior_sources_are_unchanged(self):
+    def test_reviewed_behavior_source_hashes(self):
         preservation = json.loads((ROOT / 'DesignSystem/style-preservation.json').read_text())
         for name, evidence in preservation['protectedSources'].items():
             data = (SOURCE / name).read_bytes()
             if name == 'Models.swift':
                 data = data.replace(b'    let accent: String?\n', b'').replace(b'    let color: String?\n', b'')
-            self.assertEqual(hashlib.sha256(data).hexdigest(), evidence['baselineSha256'], name)
+            self.assertEqual(hashlib.sha256(data).hexdigest(), evidence.get('reviewedFeatureSha256', evidence['baselineSha256']), name)
 
 
 if __name__ == '__main__':

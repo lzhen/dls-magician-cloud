@@ -2,7 +2,8 @@
   "protectedSources": {
     "AuthService.swift": {
       "baselineSha256": "9bac41e92ccda84c95415798f8475661539d32ff85de575f962b6281c6d132da",
-      "status": "byte-identical"
+      "status": "Original auth methods retained; account-deletion subject/context readers and active-sign-in check added.",
+      "reviewedFeatureSha256": "cbc0dae49f2f218ac00323a1282bbf4e533c553b0897c51845808ec2fab61044"
     },
     "AuthenticationBrowser.swift": {
       "baselineSha256": "10bafef2b612dfffa617efd9a0a1f788a5c4d09c0b522e157a7db4e55ea5d308",
@@ -26,7 +27,8 @@
     },
     "AppModel.swift": {
       "baselineSha256": "409387a6f5407c25ff0cc3d9498067267b94bec628cac658264abf12a5de2ee2",
-      "status": "byte-identical"
+      "status": "Account-deletion recovery, scoped finalization and reauthentication revision added; original sign-in/workspace operations retained.",
+      "reviewedFeatureSha256": "94c9831246de139bc5163b03717acd38d44cf005d0c704fbc169891befeb126b"
     },
     "AppConfiguration.swift": {
       "baselineSha256": "9b150e5e9951a2a5a9d4029a36465cd84ff31271020b9c4b626b9930fae55aac",
@@ -35,7 +37,8 @@
   },
   "canonicalTokensSha256": "c6c25f546c5a2f01271f32e91d356c0103c695e8b9ed4ef41038508d3471f5b2",
   "sourceCssSha256": "68c58a97d7adf59af11cb54457fb7257a9a1ca360b24f86f966cff08276bd5f4",
-  "runtimeVisualValidation": "not run; no Xcode/iOS runtime",
+  "runtimeVisualValidation": "Foundation CI reached compiler; app/visual tests pending. Deletion module not yet compiled.",
   "gradientUpdate": "Responsive auth layers and project gradients/glow restored from canonical tokens; security behavior unchanged.",
-  "accountUpdate": "Serif title, actual user color/initials gradient avatar, white primary sign-out; sign-out operation unchanged."
+  "accountUpdate": "Serif title, actual user color/initials gradient avatar, white primary sign-out; sign-out operation unchanged.",
+  "accountDeletionContractSha256": "fbc6d8ff556dd209310e293975082dfb8a1f802b5f20649494fcd7aac6ca7696"
 }

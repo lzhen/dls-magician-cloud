@@ -25,6 +25,10 @@ struct RootView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .signedOut: LoginView()
         case .workspace: WorkspaceView()
+        case .deletionRecovery:
+            if let receipt = app.deletionReceipt {
+                NavigationStack { AccountDeletionView(userID: receipt.userID, receipt: receipt, isRecoveryRoot: true) }
+            }
         case .unavailable:
             VStack(spacing: 20) {
                 BrandMark()

@@ -62,6 +62,12 @@ jobs:
           if test -d native-ios/build/TestResults.xcresult; then
             xcrun xcresulttool export attachments --path native-ios/build/TestResults.xcresult --output-path native-ios/build/screenshots
           fi
+      - name: Retain unsigned simulator application
+        if: always()
+        run: |
+          if test -d native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app; then
+            ditto -c -k --sequesterRsrc --keepParent native-ios/build/DerivedData/Build/Products/Debug-iphonesimulator/DLSMagician.app native-ios/build/DLSMagician-iOS-Simulator.zip
+          fi
       - name: Preserve build evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -71,6 +77,7 @@ jobs:
             native-ios/build/logs
             native-ios/build/TestResults.xcresult
             native-ios/build/screenshots
+            native-ios/build/DLSMagician-iOS-Simulator.zip
             native-ios/DLSMagician.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
           if-no-files-found: warn
           retention-days: 7

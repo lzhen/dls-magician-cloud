@@ -121,6 +121,7 @@ struct DLSProjectCard: View {
 struct AccountView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var deletionPresented = false
     var body: some View {
         NavigationStack {
             Form {
@@ -138,7 +139,7 @@ struct AccountView: View {
                 }
                 Section {
                     Link("Privacy", destination: AppConfiguration.apiOrigin.appendingPathComponent("privacy.html"))
-                    Link("Help and account support", destination: AppConfiguration.apiOrigin.appendingPathComponent("help.html"))
+                    Link("Help", destination: AppConfiguration.apiOrigin.appendingPathComponent("help.html"))
                 }.listRowBackground(DLSTheme.surface)
                 Section {
                     Button(role: .destructive) {
@@ -148,7 +149,13 @@ struct AccountView: View {
                             .frame(maxWidth: .infinity)
                     }.buttonStyle(DLSPrimaryButtonStyle()).disabled(app.busy)
                 } footer: {
-                    Text("Your saved projects stay in your workspace. Account deletion is not available in this preview.")
+                    Text("Your saved projects stay in your workspace when you sign out.")
+                }.listRowBackground(DLSTheme.surface)
+                Section {
+                    Button("Review account deletion", role: .destructive) { deletionPresented = true }
+                        .disabled(app.busy)
+                } footer: {
+                    Text("Review the server’s deletion policy and affected data. Deletion stays unavailable until server support is enabled.")
                 }.listRowBackground(DLSTheme.surface)
             }.scrollContentBackground(.hidden).background(DLSTheme.background)
                 .foregroundStyle(DLSTheme.text)
@@ -159,7 +166,10 @@ struct AccountView: View {
                         Text("Account").font(DLSTheme.accountTitle).foregroundStyle(DLSTheme.text)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } }
+                    ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.disabled(app.busy || deletionPresented) }
+                }
+                .navigationDestination(isPresented: $deletionPresented) {
+                    if let user = app.user { AccountDeletionView(userID: user.id) }
                 }
         }
     }
