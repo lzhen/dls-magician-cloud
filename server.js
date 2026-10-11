@@ -11,13 +11,13 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
-const DB_PATH = path.join(DATA_DIR, 'db.json');
+const DATA_DIR = process.env.DLS_DATA_DIR || path.join(ROOT, 'data');
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vxlwnvwijnzimjvgpeug.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_r3jVlTJmChdbHkJRcaBfcw_2k13Yx2A';
-
-fs.mkdirSync(DATA_DIR, { recursive: true });
-require('./storage').restoreStagedDatabase(DATA_DIR);
+const requestGuard = require('./request-security.cjs').createRequestGuard({
+  trustedProxy: process.env.RAILWAY_ENVIRONMENT_ID !== undefined,
+  origins: (process.env.DLS_ALLOWED_ORIGINS || `https://dlsmagician.empathie.ai,https://dls-magician-cloud-production.up.railway.app,http://localhost:${PORT},http://127.0.0.1:${PORT}`).split(',').map(value => value.trim()).filter(Boolean)
+});
 
 function nowIso() {
   return new Date().toISOString();
@@ -204,18 +204,17 @@ function seedDatabase() {
   };
 }
 
-if (!fs.existsSync(DB_PATH)) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(seedDatabase(), null, 2));
-}
-
-let db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+const storage = require('./storage').openDatabase(DATA_DIR, seedDatabase);
+let { snapshot: db, revision: dbRevision } = storage.read();
 const sseClients = new Set();
 const presence = new Map();
 
 function saveDb() {
-  const tmp = `${DB_PATH}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_PATH);
+  try { dbRevision = storage.save(db, dbRevision); }
+  catch (error) {
+    ({ snapshot: db, revision: dbRevision } = storage.read());
+    throw error;
+  }
 }
 
 function getUser(userId) {
@@ -863,13 +862,15 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'dls-magician-cloud' });
     if (url.pathname.startsWith('/api/')) {
+      const denied = requestGuard(req);
+      if (denied) return sendJson(res, denied.status, { error: denied.error }, denied.retryAfter ? { 'Retry-After': String(denied.retryAfter) } : {});
       await handleApi(req, res, url);
     } else {
       serveStatic(req, res, url);
     }
   } catch (error) {
     console.error(error);
-    if (!res.headersSent) sendError(res, 500, error.message || 'Unexpected server error.');
+    if (!res.headersSent) sendError(res, error.status || 500, error.status === 409 ? error.message : 'Unexpected server error.');
     else res.end();
   }
 });
@@ -882,7 +883,7 @@ function shutdown() {
   for (const client of sseClients) {
     try { client.res.end(); } catch (_) { /* noop */ }
   }
-  server.close(() => process.exit(0));
+  server.close(() => { storage.close(); process.exit(0); });
   setTimeout(() => process.exit(1), 3000).unref();
 }
 
