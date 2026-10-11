@@ -12,11 +12,11 @@ function clientHarness() {
   const timers = [];
   const elements = new Map();
   const context = vm.createContext({
-    console, URL, AbortController,
+    console, URL, AbortController, clearTimeout() {},
     localStorage: { getItem() { return null; }, setItem() {} },
     navigator: {},
     window: { location: { hash: '#dashboard' }, addEventListener() {}, setTimeout(fn) { timers.push(fn); } },
-    document: { documentElement: { dataset: {} }, addEventListener() {}, getElementById(id) { if (!elements.has(id)) elements.set(id, { innerHTML: '', textContent: '' }); return elements.get(id); } }
+    document: { documentElement: { dataset: {} }, addEventListener() {}, getElementById(id) { if (!elements.has(id)) elements.set(id, { innerHTML: '', textContent: '', setAttribute() {} }); return elements.get(id); } }
   });
   vm.runInContext(source.replace(/\nboot\(\);\s*$/, '\n'), context, { filename: 'public/app.js' });
   const state = vm.runInContext('state', context);
@@ -138,4 +138,62 @@ test('token refresh reconnects after the Auth callback using the current route, 
   authCallback('SIGNED_OUT', null);
   h.timers.shift()();
   assert.equal(h.context.calls.length, 1);
+});
+
+function savingHarness() {
+  const h = clientHarness();
+  h.state.user = { id: 'fixture-user' };
+  h.state.activeProject = { id: 'qa', updatedAt: 'A', structuredLanguage: 'original', presence: [] };
+  h.state.editorText = 'draft B'; h.state.editorDirty = true;
+  h.run(`globalThis.toasts = []; showToast = (text) => toasts.push(text);`);
+  return h;
+}
+test('web saves send read revision and adopt acknowledged revision', async () => {
+  const h = savingHarness();
+  h.run(`globalThis.sent = []; api = async (url, options) => { sent.push(options.body); return { id: 'qa', updatedAt: 'B', structuredLanguage: options.body.structuredLanguage }; };`);
+  assert.equal(await h.run('saveEditor()'), true);
+  assert.equal(h.context.sent[0].expectedUpdatedAt, 'A');
+  assert.equal(h.context.sent[0].structuredLanguage, 'draft B');
+  assert.equal(h.state.activeProject.updatedAt, 'B'); assert.equal(h.state.editorDirty, false);
+});
+test('409 retains draft and read revision and pauses subsequent saves', async () => {
+  const h = savingHarness();
+  h.run(`globalThis.requests = 0; api = async () => { requests++; throw Object.assign(new Error('conflict'), { status: 409 }); };`);
+  assert.equal(await h.run('saveEditor()'), false);
+  assert.equal(h.state.editorText, 'draft B'); assert.equal(h.state.activeProject.updatedAt, 'A');
+  assert.equal(h.state.editorDirty, true); assert.equal(h.state.editorConflict, true);
+  h.state.editorText = 'continued draft';
+  assert.equal(await h.run('saveEditor()'), false); assert.equal(h.context.requests, 1);
+  assert.match(h.context.toasts[0], /Copy it before reloading/);
+});
+test('realtime cannot replace dirty draft regardless of focused child', async () => {
+  const h = savingHarness();
+  h.run(`renderEditor = () => { throw Error('must not replace draft DOM'); };`);
+  await h.run(`handleRealtimeMessage({type:'project_updated',projectId:'qa',payload:{project:{id:'qa',updatedAt:'B',structuredLanguage:'remote'}}})`);
+  assert.equal(h.state.editorText, 'draft B'); assert.equal(h.state.activeProject.updatedAt, 'A');
+});
+test('overlapping saves serialize and preserve typing during a request', async () => {
+  const h = savingHarness(), pending = [];
+  h.context.fixtureApi = (url, options) => new Promise(resolve => pending.push({resolve,body:options.body}));
+  h.run('api = fixtureApi;');
+  const first = h.run('saveEditor()'); h.state.editorText = 'draft C';
+  const second = h.run('saveEditor()'); assert.equal(pending.length, 1);
+  pending[0].resolve({id:'qa',updatedAt:'B',structuredLanguage:'draft B'});
+  await first; await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pending.length, 2); assert.equal(pending[1].body.expectedUpdatedAt, 'B');
+  assert.equal(pending[1].body.structuredLanguage, 'draft C');
+  pending[1].resolve({id:'qa',updatedAt:'C',structuredLanguage:'draft C'});
+  assert.equal(await second, true); assert.equal(h.state.editorText, 'draft C'); assert.equal(h.state.editorDirty, false);
+});
+test('late save response cannot replace another project', async () => {
+  const h = savingHarness(); let finish;
+  h.context.fixtureApi = () => new Promise(resolve => {finish=resolve;}); h.run('api = fixtureApi;');
+  const save = h.run('saveEditor()'); h.state.activeProject = {id:'different',updatedAt:'X'}; h.state.editorText = 'different draft';
+  finish({id:'qa',updatedAt:'B',structuredLanguage:'draft B'});
+  assert.equal(await save, false); assert.equal(h.state.activeProject.id, 'different'); assert.equal(h.state.editorText, 'different draft');
+});
+test('missing read version never sends unconditional PATCH', async () => {
+  const h = savingHarness(); delete h.state.activeProject.updatedAt;
+  h.run(`api = async () => { throw Error('must not send'); };`);
+  assert.equal(await h.run('saveEditor()'), false); assert.equal(h.state.editorDirty, true);
 });

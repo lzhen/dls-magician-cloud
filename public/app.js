@@ -82,6 +82,8 @@ const state = {
   projectLoadRevision: 0,
   editorText: '',
   editorDirty: false,
+  editorConflict: false,
+  editorSaveRequest: null,
   autosaveTimer: null,
   streamController: null,
   presenceTimer: null,
@@ -397,6 +399,7 @@ async function loadProject(projectId, { silent = false } = {}) {
     state.activeProject = project;
     state.editorText = project.structuredLanguage || '';
     state.editorDirty = false;
+    state.editorConflict = false;
     if (!state.selectedVersionId) state.selectedVersionId = project.versions?.[0]?.id || null;
     return true;
   } catch (error) {
@@ -924,7 +927,7 @@ function renderEditor() {
           <button class="editor-brand-button" data-action="back-dashboard" aria-label="Back to workspace"><span class="brand-symbol" style="transform:scale(.75)"></span></button>
           <div class="editor-project-meta">
             <div class="editor-project-name"><h1>${escapeHtml(project.name)}</h1><span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span></div>
-            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">Saved ${relativeTime(project.updatedAt)}</div>
+            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">${state.editorConflict ? escapeHtml(editorConflictMessage) : state.editorDirty ? 'Unsaved changes…' : `Saved ${relativeTime(project.updatedAt)}`}</div>
           </div>
         </div>
         <div class="editor-collaborators">
@@ -1094,32 +1097,73 @@ function updateEditorOutputs() {
     validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'Valid' : 'Needs input'}`;
   }
   if (lineNumbers) lineNumbers.innerHTML = renderLineNumbers(state.editorText);
-  if (saveState) saveState.textContent = 'Unsaved changes…';
+  if (saveState) saveState.textContent = state.editorConflict ? editorConflictMessage : 'Unsaved changes…';
 }
+
+const editorConflictMessage = 'Save conflict: your draft is kept here. Copy it before reloading the latest version, then merge your changes. Autosave is paused.';
 
 function scheduleAutosave() {
   clearTimeout(state.autosaveTimer);
-  state.autosaveTimer = window.setTimeout(saveEditor, 900);
+  if (!state.editorConflict) state.autosaveTimer = window.setTimeout(saveEditor, 900);
 }
 
 async function saveEditor() {
-  if (!state.activeProject || !state.editorDirty) return;
-  const saveState = document.getElementById('editor-save-state');
-  if (saveState) saveState.textContent = 'Saving…';
-  try {
-    const updated = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}`, {
-      method: 'PATCH',
-      body: { structuredLanguage: state.editorText }
-    });
-    state.activeProject = { ...updated, presence: state.activeProject.presence || [] };
-    state.editorDirty = false;
-    if (saveState) saveState.textContent = 'Saved just now';
-    const summary = state.projects.find((project) => project.id === updated.id);
-    if (summary) summary.updatedAt = updated.updatedAt;
-  } catch (error) {
-    if (saveState) saveState.textContent = 'Save failed';
-    showToast(error.message, 'error');
+  if (!state.activeProject) return false;
+  if (state.editorConflict) return false;
+  if (state.editorSaveRequest) {
+    const previous = state.editorSaveRequest;
+    const ok = await previous.promise;
+    if (!ok || state.activeProject?.id !== previous.projectId) return false;
+    return saveEditor();
   }
+  if (!state.editorDirty) return true;
+  const projectId = state.activeProject.id;
+  const userId = state.user?.id;
+  const loadRevision = state.projectLoadRevision;
+  const text = state.editorText;
+  const expectedUpdatedAt = state.activeProject.updatedAt;
+  const isCurrent = () => state.activeProject?.id === projectId && state.user?.id === userId && state.projectLoadRevision === loadRevision;
+  const saveState = document.getElementById('editor-save-state');
+  if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
+    if (saveState) saveState.textContent = 'Save unavailable: copy your draft, then reload the project.';
+    return false;
+  }
+  if (saveState) saveState.textContent = 'Saving…';
+  const request = { projectId, promise: null };
+  state.editorSaveRequest = request;
+  request.promise = (async () => {
+    try {
+      const updated = await api(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: 'PATCH', body: { structuredLanguage: text, expectedUpdatedAt }
+      });
+      if (!isCurrent()) return false;
+      state.activeProject = { ...updated, presence: state.activeProject.presence || [] };
+      state.editorDirty = state.editorText !== text;
+      if (saveState) saveState.textContent = state.editorDirty ? 'Unsaved changes…' : 'Saved just now';
+      const summary = state.projects.find((project) => project.id === updated.id);
+      if (summary) summary.updatedAt = updated.updatedAt;
+      return true;
+    } catch (error) {
+      if (!isCurrent()) return false;
+      if (error.status === 409) {
+        state.editorConflict = true;
+        clearTimeout(state.autosaveTimer);
+        if (saveState) {
+          saveState.textContent = editorConflictMessage;
+          saveState.setAttribute('data-http-status', '409');
+        }
+        showToast(editorConflictMessage, 'error', 10000);
+      } else {
+        if (saveState) saveState.textContent = 'Save failed — your draft is kept here.';
+        showToast(error.message, 'error');
+      }
+      return false;
+    } finally {
+      if (state.editorSaveRequest === request) state.editorSaveRequest = null;
+      if (isCurrent() && state.editorDirty && !state.editorConflict && state.activeProject.updatedAt !== expectedUpdatedAt) scheduleAutosave();
+    }
+  })();
+  return request.promise;
 }
 
 function renderModal() {
@@ -1506,8 +1550,7 @@ async function handleRealtimeMessage(message) {
   }
 
   if (message.type === 'project_updated' && state.activeProject && message.projectId === state.activeProject.id) {
-    const editor = document.getElementById('structured-editor');
-    if (editor && document.activeElement === editor && state.editorDirty) {
+    if (state.editorDirty || state.editorConflict || state.editorSaveRequest) {
       showToast(`${payload.actor?.name || 'A collaborator'} updated this project. Your local changes are still active.`, 'info', 5200);
     } else {
       state.activeProject = { ...payload.project, presence: state.activeProject.presence || [] };
@@ -1686,7 +1729,7 @@ async function resolveComment(commentId, resolved) {
 
 async function createVersion() {
   if (!state.activeProject) return;
-  await saveEditor();
+  if (!await saveEditor()) return;
   const message = window.prompt('Name this version:', 'Review checkpoint');
   if (message === null) return;
   try {
@@ -1831,7 +1874,7 @@ document.addEventListener('click', async (event) => {
       closeModal();
       break;
     case 'share':
-      await saveEditor();
+      if (!await saveEditor()) break;
       state.shareTab = 'invite';
       state.modal = { type: 'share' };
       renderModal();
@@ -1854,7 +1897,7 @@ document.addEventListener('click', async (event) => {
       break;
     }
     case 'comments':
-      await saveEditor();
+      if (!await saveEditor()) break;
       state.modal = { type: 'comments' };
       renderModal();
       break;
@@ -1862,7 +1905,7 @@ document.addEventListener('click', async (event) => {
       await resolveComment(actionElement.dataset.commentId, actionElement.dataset.resolved === 'true');
       break;
     case 'versions':
-      await saveEditor();
+      if (!await saveEditor()) break;
       state.selectedVersionId = state.activeProject?.versions?.[0]?.id || null;
       state.modal = { type: 'versions' };
       renderModal();
@@ -1888,7 +1931,7 @@ document.addEventListener('click', async (event) => {
       window.requestAnimationFrame(() => document.getElementById(`output-tab-${state.previewMode}`)?.focus());
       break;
     case 'publish-prototype':
-      await saveEditor();
+      if (!await saveEditor()) break;
       showToast(`Prototype published with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
       break;
     case 'copy-generated-json': {
@@ -1909,7 +1952,7 @@ document.addEventListener('click', async (event) => {
     }
     case 'back-dashboard':
     case 'mobile-home':
-      await saveEditor();
+      if (!await saveEditor()) break;
       window.location.hash = '#dashboard';
       break;
     case 'settings-tab':
@@ -2060,7 +2103,7 @@ document.addEventListener('keydown', (event) => {
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
-    if (state.activeProject) saveEditor().then(() => showToast('Project saved'));
+    if (state.activeProject) saveEditor().then((ok) => { if (ok && !state.editorDirty) showToast('Project saved'); });
   }
   if (event.key === 'Escape' && state.modal) closeModal();
   if (event.key === 'Enter' && event.target.closest('[data-action="open-project"]')) {
@@ -2108,8 +2151,12 @@ window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
   showToast('DLS Magician was added to your home screen.', 'success');
 });
-window.addEventListener('beforeunload', () => {
-  if (state.editorDirty) saveEditor();
+window.addEventListener('beforeunload', (event) => {
+  if (state.editorDirty) {
+    event.preventDefault();
+    event.returnValue = '';
+    return;
+  }
   disconnectStream();
   stopPresence();
 });
