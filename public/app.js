@@ -79,6 +79,7 @@ const state = {
   activities: [],
   templates: [],
   activeProject: null,
+  projectLoadRevision: 0,
   editorText: '',
   editorDirty: false,
   autosaveTimer: null,
@@ -320,6 +321,12 @@ async function boot() {
     });
     supabaseClient.auth.onAuthStateChange((_event, session) => {
       if (!session && state.user) logout(false);
+      if (_event === 'TOKEN_REFRESHED' && session && state.user) {
+        // Leave the Auth callback before calling getSession in streamEvents.
+        window.setTimeout(() => {
+          if (state.user) connectStream(state.activeProject?.id || null);
+        }, 0);
+      }
     });
     const { data: authData } = await supabaseClient.auth.getSession();
     if (authData.session) {
@@ -362,7 +369,7 @@ async function handleRoute() {
   }
 
   if (route.page === 'project' && route.id) {
-    await loadProject(route.id);
+    if (!await loadProject(route.id)) return;
     renderEditor();
     connectStream(route.id);
     startPresence(route.id);
@@ -377,16 +384,32 @@ async function handleRoute() {
 }
 
 async function loadProject(projectId, { silent = false } = {}) {
+  const revision = ++state.projectLoadRevision;
+  const userId = state.user?.id;
+  const isCurrent = () => {
+    const route = parseRoute();
+    return state.user?.id === userId && revision === state.projectLoadRevision && route.page === 'project' && route.id === projectId;
+  };
   if (!silent) renderLoading();
   try {
     const project = await api(`/api/projects/${encodeURIComponent(projectId)}`);
+    if (!isCurrent()) return false;
     state.activeProject = project;
     state.editorText = project.structuredLanguage || '';
     state.editorDirty = false;
     if (!state.selectedVersionId) state.selectedVersionId = project.versions?.[0]?.id || null;
+    return true;
   } catch (error) {
+    if (!isCurrent()) return false;
+    disconnectStream();
+    stopPresence();
+    state.activeProject = null;
+    state.editorText = '';
+    state.editorDirty = false;
+    state.selectedVersionId = null;
     showToast(error.message, 'error');
     window.location.hash = '#dashboard';
+    return false;
   }
 }
 
@@ -1567,6 +1590,7 @@ async function authenticate(provider, email = '') {
 }
 
 async function logout(signOut = true) {
+  state.projectLoadRevision += 1;
   if (signOut && supabaseClient) await supabaseClient.auth.signOut();
   disconnectStream();
   stopPresence();

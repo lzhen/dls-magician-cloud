@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const { ROLES, projectRole, canProject, canWorkspace, canReadActivity, canReceiveEvent, findBoundUser, claimPendingProjectInvitation } = require('./authorization.cjs');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -225,6 +226,12 @@ function getWorkspace(workspaceId) {
   return db.workspaces.find((workspace) => workspace.id === workspaceId) || null;
 }
 
+// Monotonic within this single-process JSON store, including same-millisecond writes.
+function nextProjectUpdatedAt(project) {
+  const previous = Date.parse(project.updatedAt);
+  return new Date(Math.max(Date.now(), Number.isFinite(previous) ? previous + 1 : 0)).toISOString();
+}
+
 function getProject(projectId) {
   return db.projects.find((project) => project.id === projectId) || null;
 }
@@ -242,7 +249,7 @@ function publicUser(user) {
 }
 
 function ensureLocalUser(authUser) {
-  let user = getUser(authUser.id) || db.users.find((candidate) => candidate.email?.toLowerCase() === authUser.email?.toLowerCase());
+  let user = findBoundUser(db, authUser);
   const metadata = authUser.user_metadata || {};
   const name = metadata.full_name || metadata.name || authUser.email?.split('@')[0] || 'Workspace user';
   if (!user) {
@@ -255,11 +262,15 @@ function ensureLocalUser(authUser) {
       color: 'violet'
     };
     db.users.push(user);
-    db.workspaces[0]?.members.push({ userId: user.id, role: 'Editor', joinedAt: nowIso() });
+    // Authentication creates a profile, never workspace or project membership.
   } else {
     user.name = name;
     user.email = authUser.email || user.email;
   }
+  claimPendingProjectInvitation(db, user, authUser);
+  user.authUserId = authUser.id;
+  user.emailVerified = Boolean(authUser.email_confirmed_at);
+  delete user.invited;
   saveDb();
   return user;
 }
@@ -273,8 +284,13 @@ async function getSession(req, url = null) {
   });
   if (!response.ok) return null;
   const authUser = await response.json();
+  if (typeof authUser.id !== 'string' || !authUser.id) return null;
+  // The upstream verification above authenticates the JWT. Its expiry also bounds SSE.
+  let expiresAt;
+  try { expiresAt = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).exp * 1000; } catch (_) { return null; }
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
   const user = ensureLocalUser(authUser);
-  return { sid: authUser.id, userId: user.id, provider: authUser.app_metadata?.provider || 'email', authUser };
+  return { sid: authUser.id, userId: user.id, provider: authUser.app_metadata?.provider || 'email', authUser, expiresAt };
 }
 
 function parseStructuredLanguage(text, name = 'Untitled workflow') {
@@ -407,17 +423,38 @@ function readBody(req, limit = 1_000_000) {
   });
 }
 
-function broadcast(type, payload, projectId = null, excludeSid = null) {
+function broadcast(type, payload, projectId = null, excludeSid = null, workspaceId = null) {
   const packet = JSON.stringify({ type, payload, projectId, sentAt: nowIso() });
   for (const client of sseClients) {
     if (excludeSid && client.sid === excludeSid) continue;
-    if (projectId && client.projectId && client.projectId !== projectId) continue;
+    if (!canReceiveEvent(db, client, { projectId, workspaceId }, Date.now())) continue;
     try {
       client.res.write(`data: ${packet}\n\n`);
     } catch (_) {
       sseClients.delete(client);
     }
   }
+}
+
+function requireLiveSession(res, session) {
+  if (session.expiresAt <= Date.now() || !getUser(session.userId)) {
+    sendError(res, 401, 'Authentication required');
+    return false;
+  }
+  return true;
+}
+
+function authorizeProject(res, project, session, permission = 'read') {
+  if (!requireLiveSession(res, session)) return false;
+  if (!canProject(db, project, session.userId)) {
+    sendError(res, 404, 'Project not found.');
+    return false;
+  }
+  if (!canProject(db, project, session.userId, permission)) {
+    sendError(res, 403, 'Your project role does not allow this action.');
+    return false;
+  }
+  return true;
 }
 
 async function requireAuth(req, res, url) {
@@ -441,7 +478,7 @@ function activePresence(projectId) {
   const cutoff = Date.now() - 45_000;
   const users = [];
   for (const [userId, timestamp] of projectPresence.entries()) {
-    if (timestamp < cutoff) {
+    if (timestamp < cutoff || !canProject(db, getProject(projectId), userId)) {
       projectPresence.delete(userId);
       continue;
     }
@@ -472,6 +509,7 @@ async function handleApi(req, res, url) {
     const session = await requireAuth(req, res, url);
     if (!session) return;
     const projectId = url.searchParams.get('projectId') || null;
+    if (projectId && !authorizeProject(res, getProject(projectId), session)) return;
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -481,9 +519,15 @@ async function handleApi(req, res, url) {
     });
     res.write(`data: ${JSON.stringify({ type: 'connected', payload: { userId: session.userId }, sentAt: nowIso() })}\n\n`);
 
-    const client = { res, sid: session.sid, userId: session.userId, projectId };
+    const client = { res, sid: session.sid, userId: session.userId, projectId, expiresAt: session.expiresAt };
     sseClients.add(client);
     const heartbeat = setInterval(() => {
+      if (client.expiresAt <= Date.now() || !getUser(client.userId) || (projectId && !canProject(db, getProject(projectId), client.userId))) {
+        clearInterval(heartbeat);
+        sseClients.delete(client);
+        res.end();
+        return;
+      }
       try {
         res.write(': heartbeat\n\n');
       } catch (_) {
@@ -503,7 +547,7 @@ async function handleApi(req, res, url) {
   const currentUser = getUser(session.userId);
 
   if (req.method === 'GET' && pathname === '/api/bootstrap') {
-    const workspaces = db.workspaces.map((workspace) => ({
+    const workspaces = db.workspaces.filter((workspace) => canWorkspace(db, workspace, session.userId)).map((workspace) => ({
       ...workspace,
       members: workspace.members.map((member) => ({ ...member, user: publicUser(getUser(member.userId)) }))
     }));
@@ -511,10 +555,10 @@ async function handleApi(req, res, url) {
       user: publicUser(currentUser),
       workspaces,
       projects: db.projects
-        .slice()
+        .filter((project) => canProject(db, project, session.userId))
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
         .map(projectSummary),
-      activities: db.activities.slice(0, 20).map(activityPayload),
+      activities: db.activities.filter((activity) => canReadActivity(db, activity, session.userId)).slice(0, 20).map(activityPayload),
       templates: [
         { id: 't-omni', name: 'Omnichannel Campaign', category: 'Advertising', description: 'End-to-end omnichannel campaign workflow.', accent: 'violet' },
         { id: 't-intent', name: 'Intent Classification', category: 'AI', description: 'Classify user intent and route actions.', accent: 'green' },
@@ -526,13 +570,17 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && pathname === '/api/projects') {
     const body = await readBody(req);
+    if (!requireLiveSession(res, session)) return;
     const name = String(body.name || '').trim();
     if (!name) return sendError(res, 400, 'Project name is required.');
+    const workspace = getWorkspace(body.workspaceId || db.settings.defaultWorkspaceId);
+    if (!workspace || !canWorkspace(db, workspace, session.userId)) return sendError(res, 404, 'Workspace not found.');
+    if (!canWorkspace(db, workspace, session.userId, 'edit')) return sendError(res, 403, 'Your workspace role cannot create projects.');
     const project = {
       id: `p-${crypto.randomUUID()}`,
       name,
       description: String(body.description || 'A collaborative DLS workflow project.').trim(),
-      workspaceId: body.workspaceId || db.settings.defaultWorkspaceId,
+      workspaceId: workspace.id,
       ownerId: session.userId,
       status: 'Draft',
       category: body.category || 'Workflow',
@@ -547,26 +595,33 @@ async function handleApi(req, res, url) {
     db.projects.unshift(project);
     recordActivity(session.userId, project.id, 'create', `created ${project.name}`);
     saveDb();
-    broadcast('project_created', projectSummary(project), null, session.sid);
+    broadcast('project_created', projectSummary(project), project.id, session.sid);
     return sendJson(res, 201, projectPayload(project));
   }
 
   const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
   if (projectMatch && req.method === 'GET') {
     const project = getProject(decodeURIComponent(projectMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     return sendJson(res, 200, { ...projectPayload(project), presence: activePresence(project.id) });
   }
 
   if (projectMatch && req.method === 'PATCH') {
     const project = getProject(decodeURIComponent(projectMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     const body = await readBody(req);
+    if (!authorizeProject(res, project, session, 'edit')) return;
+    // Optional for old clients; native clients send the version they actually edited.
+    // Comparison and mutation remain synchronous after body parsing/authorization.
+    if (Object.prototype.hasOwnProperty.call(body, 'expectedUpdatedAt')) {
+      if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt) return sendError(res, 400, 'Invalid expectedUpdatedAt.');
+      if (body.expectedUpdatedAt !== project.updatedAt) return sendError(res, 409, 'Project changed. Reload before saving your draft.');
+    }
     const editable = ['name', 'description', 'status', 'structuredLanguage', 'category'];
     for (const key of editable) {
       if (Object.prototype.hasOwnProperty.call(body, key)) project[key] = String(body[key]);
     }
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'edit', `updated ${project.name}`);
     saveDb();
     broadcast('project_updated', {
@@ -580,8 +635,9 @@ async function handleApi(req, res, url) {
   const commentMatch = pathname.match(/^\/api\/projects\/([^/]+)\/comments$/);
   if (commentMatch && req.method === 'POST') {
     const project = getProject(decodeURIComponent(commentMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     const body = await readBody(req);
+    if (!authorizeProject(res, project, session, 'comment')) return;
     const commentBody = String(body.body || '').trim();
     if (!commentBody) return sendError(res, 400, 'Comment cannot be empty.');
     const comment = {
@@ -593,7 +649,7 @@ async function handleApi(req, res, url) {
       createdAt: nowIso()
     };
     project.comments.unshift(comment);
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'comment', `commented on ${comment.anchor}`);
     saveDb();
     broadcast('comment_added', {
@@ -606,12 +662,13 @@ async function handleApi(req, res, url) {
   const resolveCommentMatch = pathname.match(/^\/api\/projects\/([^/]+)\/comments\/([^/]+)$/);
   if (resolveCommentMatch && req.method === 'PATCH') {
     const project = getProject(decodeURIComponent(resolveCommentMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     const comment = project.comments.find((item) => item.id === decodeURIComponent(resolveCommentMatch[2]));
     if (!comment) return sendError(res, 404, 'Comment not found.');
     const body = await readBody(req);
+    if (!authorizeProject(res, project, session, 'comment')) return;
     comment.resolved = Boolean(body.resolved);
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
     broadcast('comment_updated', { comment: { ...comment, user: publicUser(getUser(comment.userId)) } }, project.id, session.sid);
     return sendJson(res, 200, { ...comment, user: publicUser(getUser(comment.userId)) });
@@ -620,13 +677,24 @@ async function handleApi(req, res, url) {
   const shareMatch = pathname.match(/^\/api\/projects\/([^/]+)\/share$/);
   if (shareMatch && req.method === 'POST') {
     const project = getProject(decodeURIComponent(shareMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     const body = await readBody(req);
+    if (!authorizeProject(res, project, session, 'invite')) return;
     const email = String(body.email || '').trim().toLowerCase();
-    const role = ['Admin', 'Editor', 'Commenter', 'Viewer'].includes(body.role) ? body.role : 'Editor';
+    const role = body.role === undefined ? 'Editor' : body.role;
+    if (!ROLES.includes(role)) return sendError(res, 400, 'Invalid role.');
     if (!email || !email.includes('@')) return sendError(res, 400, 'Enter a valid email address.');
 
-    let user = db.users.find((candidate) => candidate.email.toLowerCase() === email);
+    const emailMatches = db.users.filter((candidate) => candidate.email?.toLowerCase() === email);
+    const matches = emailMatches.filter((candidate) => candidate.emailVerified === true || (candidate.invited === true && !candidate.authUserId));
+    const hasLegacyMapping = emailMatches.some((candidate) => candidate.emailVerified === undefined && candidate.invited !== true);
+    if (matches.length > 1 || hasLegacyMapping) return sendError(res, 409, 'This email needs an account identity review.');
+    let user = matches[0];
+    const existing = user && project.members.find((member) => member.userId === user.id);
+    const isAdmin = projectRole(db, project, session.userId) === 'Admin';
+    // Editors can invite new collaborators, but cannot grant Admin or alter permissions.
+    if (!isAdmin && (role === 'Admin' || existing)) return sendError(res, 403, 'Only project administrators can change permissions.');
+    if (user?.id === project.ownerId && role !== 'Admin') return sendError(res, 409, 'The project owner must remain an administrator.');
     if (!user) {
       const local = email.split('@')[0].replace(/[._-]+/g, ' ').trim();
       const name = local.split(' ').filter(Boolean).map((part) => part[0].toUpperCase() + part.slice(1)).join(' ') || 'Invited User';
@@ -636,15 +704,15 @@ async function handleApi(req, res, url) {
         email,
         initials: name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(),
         title: 'Invited collaborator',
-        color: 'cyan'
+        color: 'cyan',
+        invited: true
       };
       db.users.push(user);
     }
 
-    const existing = project.members.find((member) => member.userId === user.id);
     if (existing) existing.role = role;
     else project.members.push({ userId: user.id, role });
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'share', `invited ${user.name} as ${role}`);
     saveDb();
     broadcast('member_invited', {
@@ -657,13 +725,15 @@ async function handleApi(req, res, url) {
   const memberMatch = pathname.match(/^\/api\/projects\/([^/]+)\/members\/([^/]+)$/);
   if (memberMatch && req.method === 'PATCH') {
     const project = getProject(decodeURIComponent(memberMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     const member = project.members.find((item) => item.userId === decodeURIComponent(memberMatch[2]));
     if (!member) return sendError(res, 404, 'Member not found.');
     const body = await readBody(req);
-    if (!['Admin', 'Editor', 'Commenter', 'Viewer'].includes(body.role)) return sendError(res, 400, 'Invalid role.');
+    if (!authorizeProject(res, project, session, 'administer')) return;
+    if (!ROLES.includes(body.role)) return sendError(res, 400, 'Invalid role.');
+    if (member.userId === project.ownerId && body.role !== 'Admin') return sendError(res, 409, 'The project owner must remain an administrator.');
     member.role = body.role;
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
     broadcast('member_updated', { member: { ...member, user: publicUser(getUser(member.userId)) } }, project.id, session.sid);
     return sendJson(res, 200, { ...member, user: publicUser(getUser(member.userId)) });
@@ -672,8 +742,9 @@ async function handleApi(req, res, url) {
   const versionMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions$/);
   if (versionMatch && req.method === 'POST') {
     const project = getProject(decodeURIComponent(versionMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
     const body = await readBody(req);
+    if (!authorizeProject(res, project, session, 'edit')) return;
     const version = {
       id: `v-${crypto.randomUUID()}`,
       number: versionNumber(project),
@@ -683,7 +754,7 @@ async function handleApi(req, res, url) {
       content: project.structuredLanguage
     };
     project.versions.unshift(version);
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'version', `saved version ${version.number}`);
     saveDb();
     broadcast('version_created', {
@@ -696,11 +767,12 @@ async function handleApi(req, res, url) {
   const restoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
   if (restoreMatch && req.method === 'POST') {
     const project = getProject(decodeURIComponent(restoreMatch[1]));
-    if (!project) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, project, session)) return;
+    if (!authorizeProject(res, project, session, 'edit')) return;
     const version = project.versions.find((item) => item.id === decodeURIComponent(restoreMatch[2]));
     if (!version) return sendError(res, 404, 'Version not found.');
     project.structuredLanguage = version.content;
-    project.updatedAt = nowIso();
+    project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'restore', `restored version ${version.number}`);
     saveDb();
     broadcast('project_updated', {
@@ -714,7 +786,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && pathname === '/api/presence') {
     const body = await readBody(req);
     const projectId = String(body.projectId || '');
-    if (!getProject(projectId)) return sendError(res, 404, 'Project not found.');
+    if (!authorizeProject(res, getProject(projectId), session)) return;
     if (!presence.has(projectId)) presence.set(projectId, new Map());
     presence.get(projectId).set(session.userId, Date.now());
     const users = activePresence(projectId);
@@ -725,8 +797,10 @@ async function handleApi(req, res, url) {
   const workspaceSettingsMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/settings$/);
   if (workspaceSettingsMatch && req.method === 'PATCH') {
     const workspace = getWorkspace(decodeURIComponent(workspaceSettingsMatch[1]));
-    if (!workspace) return sendError(res, 404, 'Workspace not found.');
+    if (!workspace || !canWorkspace(db, workspace, session.userId)) return sendError(res, 404, 'Workspace not found.');
     const body = await readBody(req);
+    if (!requireLiveSession(res, session)) return;
+    if (!canWorkspace(db, workspace, session.userId, 'administer')) return sendError(res, 403, 'Only workspace administrators can change settings.');
     const allowed = ['microsoft', 'google', 'companySso', 'magicLink', 'ssoRequired', 'mfaRequired'];
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(body, key)) workspace.authProviders[key] = Boolean(body[key]);
@@ -734,7 +808,7 @@ async function handleApi(req, res, url) {
     if (typeof body.name === 'string' && body.name.trim()) workspace.name = body.name.trim();
     if (typeof body.domain === 'string') workspace.domain = body.domain.trim();
     saveDb();
-    broadcast('workspace_updated', { workspaceId: workspace.id }, null, session.sid);
+    broadcast('workspace_updated', { workspaceId: workspace.id }, null, session.sid, workspace.id);
     return sendJson(res, 200, workspace);
   }
 
