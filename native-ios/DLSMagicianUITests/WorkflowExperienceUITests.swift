@@ -1,0 +1,135 @@
+import XCTest
+
+final class WorkflowExperienceUITests: XCTestCase {
+    override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() { XCUIDevice.shared.orientation = .portrait; super.tearDown() }
+    private func launch(_ args: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication(); app.launchArguments = ["--uitest-editor"] + args; app.launch()
+        XCTAssertTrue(app.segmentedControls["editor.tabs"].waitForExistence(timeout: 12))
+        return app
+    }
+    private func capture(_ app: XCUIApplication, _ name: String) {
+        let item = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); item.name = name; item.lifetime = .keepAlways; add(item)
+    }
+    private func open(_ name: String, _ app: XCUIApplication) {
+        app.buttons["editor.collaboration"].tap(); app.buttons[name].tap()
+        XCTAssertTrue(app.buttons["collaboration.done"].waitForExistence(timeout: 8))
+    }
+    func testIntentPreviewInteractionFlowJSONAndLocalDesignSystem() {
+        let app = launch()
+        XCTAssertTrue(app.textViews["intent.0"].exists)
+        capture(app, "Native structured intent")
+        app.segmentedControls["editor.tabs"].buttons["Preview"].tap()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
+        let open = app.webViews.buttons["Open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+        XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5))
+        capture(app, "Native interactive preview — dialog opened")
+        app.buttons["preview.system"].tap(); app.buttons["Ant Design"].tap()
+        XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 5))
+        app.segmentedControls["preview.output"].buttons["Flow"].tap()
+        XCTAssertTrue(app.scrollViews["preview.flow"].exists)
+        capture(app, "Native flow output")
+        app.segmentedControls["preview.output"].buttons["JSON"].tap()
+        app.buttons["preview.copyJSON"].tap()
+        XCTAssertTrue(app.buttons["JSON copied"].exists)
+        app.segmentedControls["editor.tabs"].buttons["Intent"].tap()
+        XCTAssertTrue((app.textViews["intent.0"].value as? String ?? "").contains("Open"))
+    }
+    func testKeyboardCancelShareAddMemberCommentsResolveReopenAndNextSave() {
+        let app = launch()
+        let given = app.textViews["intent.0"]
+        given.tap(); given.typeText(" ")
+        XCTAssertTrue(app.buttons["editor.keyboardDone"].waitForExistence(timeout: 4))
+        capture(app, "Native keyboard and safe area")
+        app.buttons["editor.keyboardDone"].tap()
+        app.buttons["editor.save"].tap()
+        XCTAssertTrue(app.staticTexts["Saved source"].waitForExistence(timeout: 8))
+        open("Share", app)
+        XCTAssertTrue(app.buttons["share.copy"].exists)
+        app.textFields["share.email"].tap(); app.textFields["share.email"].typeText("collaborator@example.invalid")
+        app.buttons["Hide keyboard"].tap(); app.buttons["share.add"].tap()
+        XCTAssertTrue(app.staticTexts["Membership added. No invitation email was sent by this action."].waitForExistence(timeout: 8))
+        capture(app, "Native share — isolated membership fixture")
+        app.buttons["collaboration.done"].tap()
+        open("Comments", app)
+        app.textViews["comments.body"].tap(); app.textViews["comments.body"].typeText("Review note")
+        XCTAssertTrue((app.textViews["comments.body"].value as? String ?? "").contains("Review note"))
+        app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
+        XCTAssertTrue(app.staticTexts["Review note"].waitForExistence(timeout: 8))
+        app.swipeUp()
+        app.buttons["Resolve"].tap()
+        XCTAssertTrue(app.buttons["Reopen"].waitForExistence(timeout: 8))
+        app.buttons["Reopen"].tap()
+        XCTAssertTrue(app.buttons["Resolve"].waitForExistence(timeout: 8))
+        capture(app, "Native flat comments — resolve and reopen")
+        app.buttons["collaboration.done"].tap()
+        app.textViews["intent.0"].tap(); app.textViews["intent.0"].typeText(" ")
+        app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
+        XCTAssertTrue(app.staticTexts["Saved source"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["editor.recover"].exists)
+    }
+    func testViewerCannotEditInviteOrCommentAndSheetCancellationReturnsToProject() {
+        let app = launch(["--viewer"])
+        XCTAssertFalse(app.buttons["editor.save"].exists)
+        XCTAssertFalse(app.textViews["intent.0"].isEnabled)
+        open("Share", app); XCTAssertFalse(app.buttons["share.add"].exists)
+        capture(app, "Native Viewer share permissions")
+        app.buttons["collaboration.done"].tap()
+        open("Comments", app); XCTAssertFalse(app.buttons["comments.add"].exists)
+        XCTAssertTrue(app.staticTexts["Viewer access: comments are read-only."].exists)
+        app.buttons["collaboration.done"].tap()
+        XCTAssertTrue(app.textViews["intent.0"].exists)
+    }
+    func test409RetainsDraftAndBlocksCollaborationUntilManualReview() {
+        let app = launch(["--conflict"])
+        let field = app.textViews["intent.0"]; field.tap(); field.typeText(" local")
+        app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
+        XCTAssertTrue(app.buttons["editor.recover"].waitForExistence(timeout: 8))
+        app.buttons["editor.collaboration"].tap(); app.buttons["Share"].tap()
+        XCTAssertFalse(app.buttons["collaboration.done"].exists)
+        app.buttons["editor.recover"].tap()
+        XCTAssertTrue(app.buttons["recovery.reviewed"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Copy my draft"].exists)
+        capture(app, "Native conflict — manual recovery and preserved draft")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue((field.value as? String ?? "").contains("local"))
+    }
+    func testLargeTextLandscapeSafeAreasAndCommenterPermissions() {
+        let app = launch(["--commenter", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.buttons["editor.collaboration"].isHittable)
+        capture(app, "Native accessibility text size portrait")
+        app.segmentedControls["editor.tabs"].buttons["Preview"].tap()
+        let output = app.segmentedControls["preview.output"]
+        XCTAssertTrue(output.buttons["Flow"].waitForExistence(timeout: 5))
+        output.buttons["Flow"].tap()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let rotated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.frame.width > app.frame.height }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
+        XCTAssertTrue(app.scrollViews["preview.flow"].waitForExistence(timeout: 5))
+        app.scrollViews["preview.scroll"].swipeUp()
+        capture(app, "Native accessibility text size landscape flow")
+        XCUIDevice.shared.orientation = .portrait
+        let portrait = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.frame.height > app.frame.width && app.buttons["editor.collaboration"].frame.maxX <= app.frame.width
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [portrait], timeout: 5), .completed)
+        capture(app, "Native accessibility return to portrait")
+        open("Comments", app)
+        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
+        app.buttons["collaboration.done"].tap()
+        XCTAssertTrue(app.segmentedControls["editor.tabs"].buttons["Preview"].isSelected)
+    }
+    func testOfflineSaveRetainsDraftAcrossRelaunch() {
+        let app = launch(["--offline"])
+        let field = app.textViews["intent.0"]; field.tap(); field.typeText(" offline")
+        app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
+        XCTAssertTrue(app.staticTexts["editor.error"].waitForExistence(timeout: 8))
+        app.terminate(); app.launchArguments.append("--restore-draft"); app.launch()
+        XCTAssertTrue(app.staticTexts["editor.restored"].waitForExistence(timeout: 10))
+        XCTAssertTrue((app.textViews["intent.0"].value as? String ?? "").contains("offline"))
+        capture(app, "Native offline draft restored")
+    }
+}

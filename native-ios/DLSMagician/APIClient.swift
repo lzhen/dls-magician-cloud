@@ -75,6 +75,36 @@ actor APIClient {
         // Never retry POST automatically: the server may have committed after a lost response.
         return try await request("/api/projects", token: token, method: "POST", body: JSONEncoder().encode(input))
     }
+    func invite(projectID: String, email: String, role: String, userID: String, token: String) async throws -> WorkspaceMember {
+        let project = try await collaborationAccess(projectID, userID: userID, token: token)
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard email.contains("@"), CollaborationPolicy.canInvite(project: project, userID: userID, email: email, role: role) else { throw AppFailure.forbidden }
+        return try await request(projectPath(projectID) + "/share", token: token, method: "POST", body: JSONEncoder().encode(InviteRequest(email: email, role: role)))
+    }
+    func changeRole(projectID: String, memberID: String, role: String, userID: String, token: String) async throws -> WorkspaceMember {
+        let project = try await collaborationAccess(projectID, userID: userID, token: token)
+        guard CollaborationPolicy.canChangeRole(project: project, userID: userID, memberID: memberID, role: role) else { throw AppFailure.forbidden }
+        return try await request(projectPath(projectID) + "/members/" + safeID(memberID), token: token, method: "PATCH", body: JSONEncoder().encode(RoleRequest(role: role)))
+    }
+    func addComment(projectID: String, body: String, anchor: String, userID: String, token: String) async throws -> ProjectComment {
+        let project = try await collaborationAccess(projectID, userID: userID, token: token)
+        let body = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard CollaborationPolicy.canComment(project: project, userID: userID), !body.isEmpty, ProjectComment.anchors.contains(anchor) else { throw AppFailure.forbidden }
+        return try await request(projectPath(projectID) + "/comments", token: token, method: "POST", body: JSONEncoder().encode(CommentRequest(body: body, anchor: anchor)))
+    }
+    func resolveComment(projectID: String, commentID: String, resolved: Bool, userID: String, token: String) async throws -> ProjectComment {
+        let project = try await collaborationAccess(projectID, userID: userID, token: token)
+        guard CollaborationPolicy.canComment(project: project, userID: userID) else { throw AppFailure.forbidden }
+        return try await request(projectPath(projectID) + "/comments/" + safeID(commentID), token: token, method: "PATCH", body: JSONEncoder().encode(ResolveRequest(resolved: resolved)))
+    }
+    private func collaborationAccess(_ id: String, userID: String, token: String) async throws -> ProjectDetail {
+        guard try await bootstrap(token: token).user.id == userID else { throw AppFailure.unauthorized }
+        return try await project(id, token: token)
+    }
+    private func safeID(_ id: String) throws -> String {
+        _ = try projectPath(id)
+        return id
+    }
     private func projectPath(_ id: String) throws -> String {
         guard !id.isEmpty, id.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95 }) else {
             throw AppFailure.invalidResponse

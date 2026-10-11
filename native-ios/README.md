@@ -1,113 +1,23 @@
-# DLS Magician: native iOS first slice
+# DLS Magician native iOS
 
-This is an isolated SwiftUI app, not a website wrapper. Open `DLSMagician.xcodeproj`; the existing Capacitor project and deployed web files were not edited. The application bundle ID remains `design.zhenli.dlsmagician`.
+SwiftUI owns authentication, workspace navigation, project creation, structured GIVEN/WHEN/THEN editing, raw source, saving/recovery, sharing and comments. Bundle ID is `design.zhenli.dlsmagician`; minimum iOS is 16. Existing gradient theme and hat assets are preserved.
 
-## Current web UI alignment
+## Prototype workflow
 
-The native views now reuse the current web design system from the verified `a401210` CSS, including its final overrides. `DesignSystem/tokens.json` is a byte-identical copy of the shared canonical cross-platform tokens. `scripts/generate_theme.py` generates `DLSTheme.swift`; use `--check` to reject token/adapter drift. Project generation also derives the accent asset from these tokens.
+Intent and Preview operate on one draft. Interface, Flow and JSON use the same compiled snapshot. DLS, Material and Ant are built-in HTML style mappings, not imports of the original component libraries. System selection is local to this device, user and project; it is not sent in the source-save API. Changing it resets temporary preview interaction state.
 
-Implemented mappings include charcoal/warm-light surfaces, off-white primary actions in both themes, neutral Microsoft-before-Google provider rows, centered 30-point Georgia welcome text, the black hat tile and sans-serif brand lockup, 14-point-radius project cards, real status/accent metadata, and a bordered monospaced workflow pane. Email expands beneath the same magic-link row used by the website. Existing unsupported functions were not added as inert buttons.
+Only the interactive prototype canvas uses WKWebView. It renders bundled local assets, uses nonpersistent storage, receives no authentication token and cannot navigate to remote pages. CSP denies network requests, external images and form submissions. Native navigation never loads the website. Asset origin and hashes are recorded in `DLSMagician/PreviewAssets/provenance.json`.
 
-The gradient correction restores the web’s responsive sign-in background (violet radial glow at mobile dark widths, the later warm light override), exact translucent auth-card stops, and project-card gradient with the correct per-accent glow colors, 160-point circle, offsets, blur and opacity. Reusable gold-action, dashboard-hero and avatar gradient definitions are generated from the same tokens; they do not add new product features. Neutral providers and generic primary actions retain their original source treatment. Account uses the source 22-point regular Georgia heading in the native navigation bar, a circular gradient avatar with the signed-in user’s actual initials/color, and the white full-width sign-out style. Its existing sign-out operation and support links are unchanged.
-
-CSS layer order, stop locations and angles are preserved. The adapter computes linear endpoints and farthest-corner radial sizes from each rendered rectangle; width <= 760 selects the source mobile auth role. SwiftUI color interpolation, blur and compositing still need side-by-side device validation. The desktop two-column auth panel and shell lighting are outside this single-card native slice.
-
-Native adaptations are explicit: scalable system UI fonts, 44-point minimum touch targets, native navigation/search/keyboard, a single column at accessibility text sizes, and the canonical stronger editable-field outline. Native status text uses readable semantic text with the original accent dot/border. The source CSS includes very small desktop text; these native adaptations do not change the public website. No pixel-perfect or simulator-rendered result is claimed without an Xcode/device run.
-
-The original styling pass preserved authentication and storage behavior. The subsequent account-deletion feature adds subject/context readers to AuthService and receipt recovery/finalization to AppModel. AuthenticationBrowser, SecureStore, existing workspace APIClient, DraftStore, callback validation, roles and conditional-save logic remain unchanged; the preservation manifest records both the original baseline and the reviewed feature hashes. The only model additions are optional `ProjectSummary.accent` and `WorkspaceUser.color`, read from existing API fields to preserve project-card and account-avatar colors. No permission, session or save field changed.
-
-## What is implemented
-
-- Native sign-in screen with the exact approved DLS hat asset and adaptive gold accent.
-- Google and Microsoft OAuth through Apple's `ASWebAuthenticationSession`, with Supabase's official Swift Auth SDK pinned to 2.55.3. Email links use the same PKCE callback and must be opened on the originating device within the app's ten-minute attempt window.
-- Keychain persistence for session, PKCE verifier and pending attempt. Data uses `AfterFirstUnlockThisDeviceOnly`, with no cross-app access group. Credentials and callback URLs are never logged.
-- Callback scheme, host and path validation; authorization starts only at the existing Supabase project's HTTPS authorize endpoint. Token fragments and token query values are rejected. Duplicate callbacks, expired attempts, cancelled-session callbacks and exchange/sign-out races are guarded.
-- Restored sessions are refreshed by the SDK, then checked against the real `/api/session` and `/api/bootstrap` before showing a workspace. An unavailable backend never becomes a simulated login.
-- Native workspace/project list, search, pull-to-refresh, project-only invitation support and an honest empty-access state.
-- Native workflow editor with role-aware editing, explicit Save, recoverable on-device drafts, confirmation before leaving with edits, and server-generated output. PATCH is only sent after re-reading the project and current access. Drafts remain after errors.
-  Editing requires project ownership or exactly one explicit project Admin/Editor membership. Workspace-admin-only access remains read-only; unknown or duplicate project roles never grant editing.
-- Account view, external privacy/help links and device sign-out. External pages use the system browser; app screens use SwiftUI.
-
-## Source provenance
-
-- Production API/web source: `lzhen/dls-magician-cloud` branch `supabase-auth-protected-routes`, commit `a401210ff9339ae1109afb17a4dc630ddfe20dcd`.
-- Installed build's wrapper/branding baseline: commit `11462f3d290aeca3f338c5919ff0e628f3cff42d`.
-- Approved 1024px hat PNG Git blob: `ae2c562a2dc73bc5c0d8bdd72a876c3492593993`.
-- Actual live `app.js` Git blob: `06a2e97387c5653fc92460912566efa4e7b09611`; SHA-256 `e1b95f965a399f3f8b26e79da0a6edeb2d4c31165b822ef1ed8499de13addfbc`.
-- Supabase Swift 2.55.3: commit `9c8c9d283b13a369f52cc78d8639648d8a17f5d3`. Only its `Auth` product is linked.
-- The project generator, not a hand-maintained hidden setup, lists all source files and targets. Running `python scripts/generate_project.py` regenerates the project and asset catalogs deterministically.
-
-## Simulator compile workflow
-
-The isolated `.github/workflows/dls-swiftui-check.yml` runs only for `lzhen/dls-magician-cloud` on `native/dls-swiftui-20261010`, using the standard `macos-15` runner, Xcode 16.4, read-only repository permissions and a 30-minute limit. It resolves the pinned SDK, builds an unsigned simulator app, runs unit/UI tests, and retains logs, the genuine package resolution, real test captures and an unsigned simulator .app ZIP. It does not sign, archive or deploy. The runner versions were checked against the [official runner image inventory](https://github.com/actions/runner-images/blob/main/images/macos/macos-15-Readme.md).
-
-`DLSMagicianUITests/LoginSmokeTests.swift` launches the actual app on a fresh simulator, requires the real public configuration request to reach login, captures the login view, then expands the empty email form. It performs no OAuth, sends no email and injects no authenticated state. A network/configuration outage is a test failure, not a simulated pass. CI needs only `native-ios/` and the new workflow, not this investigation’s sibling source snapshots. The first real CI run found an OpenStep project delimiter error; the second resolved Supabase and compiled the arm64 source, but failed because Debug requested an extra x86_64 architecture. Both generator issues are corrected. Full app build, XCTest and UI outcomes remain pending the next approved publication/run.
-
-## Account deletion candidate
-
-`AccountDeletion.swift` and `AccountDeletionView.swift` implement the frozen [API contract](ACCOUNT_DELETION_CONTRACT.md). The UI loads real counts, ownership blockers and retention text, requires typed DELETE followed by a destructive confirmation, and sends the exact bearer used for that preview. A newer token or expired review must be reviewed again. Refreshing tokens alone does not satisfy recent authentication; the existing supported login flow is offered when the server requires it.
-
-Before POST, the app stores a 256-bit recovery receipt in Keychain with the original local user ID and Auth subject. It never logs the receipt, puts it in a URL, or automatically retries destructive execution. On interrupted/unknown responses, read-only status recovery handles awaiting_confirmation, not_started, pending and deleted. Only authoritative not_started retires an unexecuted receipt; an unknown404 never proves success. A stored receipt restores recovery on cold launch, even if the provider identity is gone.
-
-Only deleted:true or state:deleted allows local cleanup. Draft cleanup checks each file’s user ID. Session cleanup additionally checks the current Auth subject/local identity, so completion for an old account cannot sign out a newly active account. Existing receipt updates/removal must match the original token/context. Storage failures keep a recovery path and do not falsely claim device cleanup completed. One unresolved receipt blocks a new deletion request until its outcome is verified. Pending operations can require server operator recovery; the client offers status/support rather than a blind retry.
-
-Production has no deployed deletion capability yet. This native UI therefore fails closed on absent/disabled endpoints. No real account was deleted, no provider settings/credentials were changed, and no account deletion end-to-end pass is claimed. Staging, backend deployment, receipt recovery, Keychain failure, account switching and disposable-account deletion must be verified before release.
-
-## Required configuration, not changed here
-
-1. Approve and add exactly `design.zhenli.dlsmagician://auth/callback` to the existing Supabase project's Auth Redirect URLs. Existing web redirect URLs stay in place. No wildcard is needed.
-2. Verify the already-configured Google and Azure providers remain enabled. Their provider-console callback remains the Supabase callback, `https://vxlwnvwijnzimjvgpeug.supabase.co/auth/v1/callback`; this native scheme is a Supabase redirect destination, not a replacement provider-console callback.
-3. Verify the existing email template follows the Supabase redirect so PKCE email links return to this scheme. No template or provider configuration was changed.
-4. On a Mac, resolve the pinned Swift package, compile and run simulator/device tests, then choose the authorized signing/build settings. This candidate uses the existing team ID from the prior project but creates no signing credentials or profiles.
-
-Universal Links could further improve link ownership and email handoff, but require associated-domain configuration and a verified AASA file. This first slice uses an exact registered custom scheme with PKCE and the system authentication session. Another app intercepting a custom-scheme code cannot redeem it without this app's verifier.
+Incomplete drafts can be saved. Local drafts preserve their original server revision. A 409 retains the local text and requires explicit manual reconciliation; there is no automatic merge. Share/Comments first save unsaved source and refresh permissions. Existing server endpoints remain authoritative. Copying a project link grants no access. Adding membership sends no email. Comments are flat, position-labeled entries with Resolve/Reopen, not threaded replies. Unknown write results require refresh before retry.
 
 ## Validation
 
-Executed on Linux:
+Generate the Xcode project with `python3 scripts/generate_project.py`. Run `python3 scripts/validate_project.py` and `python3 scripts/generate_theme.py --check`. The exact Supabase dependency resolution is retained. Use existing cached packages when available.
 
-- `node --test scripts/api-contract.test.cjs`: passed. Runs the inspected production server in a temporary directory, with an explicitly local test identity fixture. Covers unauthenticated rejection, real session/bootstrap/detail shapes, PATCH persistence and parsed output, and the absent deletion endpoint. It does not authenticate a real user or mutate production.
-- `python scripts/validate_project.py`: six checks passed. Parses the generated OpenStep structure and verifies source inclusion/build-phase references, target/scheme/callback configuration, exact approved icon, and Git blob hashes for the production snapshot.
-- `python scripts/generate_theme.py --check`: passed. The SwiftUI theme matches the canonical design tokens.
-- `python scripts/validate_theme.py`: four source checks passed for generated gradient fidelity, source CSS values, actual view placement and protected behavior hashes. These are source checks, not rendered native tests.
+Build and test using Xcode with an available iPhone simulator. Simulator Keychain tests require ad-hoc signing (`CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM=`). The DEBUG-only editor fixture intercepts every API request and uses synthetic identities; Release excludes its implementation and activation route. Unit tests cover source preservation, deterministic preview output, API payloads, roles, draft recovery and collaboration revisions. UI tests cover interactive preview, source save, sharing/comments, denied Viewer actions, 409 recovery, offline restoration and largest-text landscape layout.
 
-Not executed here:
+## Distribution boundaries
 
-- Complete Xcode/Swift app build, sixteen unit XCTest methods (nine existing contracts plus seven deletion contracts), and one UI smoke test. Supabase package resolution did succeed in real CI; the new deletion module is not yet compiled.
-- ASWebAuthenticationSession on device, Google/Microsoft/email success, cancel/retry, background/cold launch, token refresh, Keychain failure and sign-out during exchange.
-- VoiceOver, Dynamic Type, keyboard/safe-area/iPad runtime checks or signed archive/TestFlight upload.
+Local simulator tests do not prove real-provider login, installation on a physical iPhone or production writes. The existing Xcode Cloud workflow on `native/dls-swiftui-20261010` archives this native project and distributes to the existing internal TestFlight group. Never substitute old Capacitor build 4.
 
-The cloud environment has no Swift toolchain, Xcode or iOS SDK. Static checks are not a compiled-app pass. The SPM version is exact, and `Package.resolved` is the unmodified output from real GitHub run 38090975516. It pins the actual resolved transitive versions. Final privacy-manifest and encryption/export declarations must inspect linked products in the actual archive; no previous wrapper declaration is reused. The retained simulator .app cannot be installed on a physical iPhone without a separately authorized supported signing route.
-
-Suggested Mac checks from this directory:
-
-```
-xcodebuild -resolvePackageDependencies -project DLSMagician.xcodeproj -scheme DLSMagician
-xcodebuild -project DLSMagician.xcodeproj -scheme DLSMagician -destination 'generic/platform=iOS Simulator' build CODE_SIGNING_ALLOWED=NO
-xcodebuild -showdestinations -project DLSMagician.xcodeproj -scheme DLSMagician
-# Select an available simulator ID from the previous command:
-xcodebuild -project DLSMagician.xcodeproj -scheme DLSMagician -destination 'platform=iOS Simulator,id=SIMULATOR_ID' test CODE_SIGNING_ALLOWED=NO
-```
-
-Minimum OS is iOS 16 because this implementation uses native `NavigationStack` and the current Auth SDK. The earlier wrapper targeted iOS 15. The user accepted the iOS 16 minimum on 2026-10-10. Current Supabase Swift requires Swift 6.1-capable Xcode; the app itself is compiled in Swift 5 language mode.
-
-## Release gates and limits
-
-- The existing production API had insufficient project authorization. The separate reviewed authorization candidate must be resolved before exposing this client to users. UI role checks do not secure a backend.
-- A verified DLS account-support contact remains a release gate. Existing help.html is labeled Open help and is not presented as a contact channel.
-- Native account deletion is implemented as a client candidate. The reviewed backend, durable journal/single-writer deployment, server-only provider permission, staging recovery checks and real device validation remain release gates.
-- Supabase custom-scheme allowlisting and real-provider/device validation are still pending. A native source candidate does not prove sign-in works in TestFlight.
-- Save sends `expectedUpdatedAt` along with the workflow. The separate reviewed backend candidate checks it atomically and returns 409 without changing the project when it is stale. Current production `a401210` ignores this extra field, so until that backend patch is deployed the native GET-before-PATCH check is only best effort and no lost-update guarantee is claimed. A 409 keeps the local draft.
-- Comments, version history, sharing/member management, project creation and the web component-preview/editor feature set are outside this first slice. No new AI/LLM behavior was invented: generated workflow output comes from the existing deterministic API parser.
-- The first slice refreshes the list on demand. It does not yet implement the web app's event stream/presence UI.
-- Upgrading from the remote-origin wrapper requires signing in again. Browser/WebView sessions are not extracted or silently transferred to the native Keychain.
-- API host, project issuer and callback are deliberately fixed to the verified existing service. A future backend move requires an explicit reviewed code/config update.
-
-## Primary references
-
-- [Supabase Swift OAuth](https://supabase.com/docs/reference/swift/auth-signinwithoauth)
-- [Supabase Swift PKCE exchange](https://supabase.com/docs/reference/swift/auth-exchangecodeforsession)
-- [Supabase PKCE](https://supabase.com/docs/guides/auth/sessions/pkce-flow)
-- [Supabase native deep linking](https://supabase.com/docs/guides/auth/native-mobile-deep-linking)
-- [Apple ASWebAuthenticationSession](https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession)
-- [Supabase Swift 2.55.3 source](https://github.com/supabase/supabase-swift/tree/v2.55.3)
+Public App Store submission still requires verified account-deletion backend availability, login-policy compliance, applicable UGC safeguards, accurate privacy disclosures, reviewer access and approved screenshots/contact details. The client deletion candidate is not proof its backend is deployed. This change does not modify production services, authentication providers, credentials, membership data or spending limits.

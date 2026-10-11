@@ -50,6 +50,7 @@ struct ProjectDetail: Codable, Identifiable {
     let updatedAt: String
     let generated: GeneratedWorkflow
     let members: [WorkspaceMember]
+    var comments: [ProjectComment]? = nil
 
     func role(for userID: String) -> String {
         if ownerId == userID { return "Admin" }

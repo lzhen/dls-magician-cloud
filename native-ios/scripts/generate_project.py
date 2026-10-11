@@ -24,8 +24,9 @@ for f in app_files + test_files + ui_test_files:
     name = str(f.relative_to(root))
     add(name, f'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = {quote(name)}; sourceTree = SOURCE_ROOT;')
     add('build:' + name, f'isa = PBXBuildFile; fileRef = {uid(name)};')
-for name, kind in [('DLSMagician/Assets.xcassets', 'folder.assetcatalog'), ('DLSMagician/Info.plist', 'text.plist.xml')]:
+for name, kind in [('DLSMagician/Assets.xcassets', 'folder.assetcatalog'), ('DLSMagician/Info.plist', 'text.plist.xml'), ('DLSMagician/PreviewAssets', 'folder')]:
     add(name, f'isa = PBXFileReference; lastKnownFileType = {kind}; path = {quote(name)}; sourceTree = SOURCE_ROOT;')
+add('build:preview', f'isa = PBXBuildFile; fileRef = {uid("DLSMagician/PreviewAssets")};')
 add('build:assets', f'isa = PBXBuildFile; fileRef = {uid("DLSMagician/Assets.xcassets")};')
 add('app-product', 'isa = PBXFileReference; explicitFileType = wrapper.application; path = DLSMagician.app; sourceTree = BUILT_PRODUCTS_DIR;')
 add('test-product', 'isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = DLSMagicianTests.xctest; sourceTree = BUILT_PRODUCTS_DIR;')
@@ -41,7 +42,7 @@ add('build:auth', f'isa = PBXBuildFile; productRef = {uid("auth-product")};')
 for target, files in [('app', app_files), ('test', test_files), ('ui', ui_test_files)]:
     add(target + '-sources', f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["build:" + str(f.relative_to(root)) for f in files])}; runOnlyForDeploymentPostprocessing = 0;')
     add(target + '-frameworks', f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {refs(["build:auth"] if target == "app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
-    add(target + '-resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["build:assets"] if target == "app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
+    add(target + '-resources', f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {refs(["build:assets", "build:preview"] if target == "app" else [])}; runOnlyForDeploymentPostprocessing = 0;')
 add('test-proxy', f'isa = PBXContainerItemProxy; containerPortal = {uid("project")}; proxyType = 1; remoteGlobalIDString = {uid("app-target")}; remoteInfo = DLSMagician;')
 add('test-dependency', f'isa = PBXTargetDependency; target = {uid("app-target")}; targetProxy = {uid("test-proxy")};')
 add('app-target', f'isa = PBXNativeTarget; buildConfigurationList = {uid("app-config-list")}; buildPhases = {refs(["app-sources", "app-frameworks", "app-resources"])}; buildRules = (); dependencies = (); name = DLSMagician; packageProductDependencies = {refs(["auth-product"])}; productName = DLSMagician; productReference = {uid("app-product")}; productType = "com.apple.product-type.application";')
@@ -49,7 +50,7 @@ add('test-target', f'isa = PBXNativeTarget; buildConfigurationList = {uid("test-
 add('ui-target', f'isa = PBXNativeTarget; buildConfigurationList = {uid("ui-config-list")}; buildPhases = {refs(["ui-sources", "ui-frameworks", "ui-resources"])}; buildRules = (); dependencies = {refs(["test-dependency"])}; name = DLSMagicianUITests; productName = DLSMagicianUITests; productReference = {uid("ui-product")}; productType = "com.apple.product-type.bundle.ui-testing";')
 common = 'CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2";'
 for name in ['Debug', 'Release']:
-    add('project-' + name, f'isa = XCBuildConfiguration; name = {name}; buildSettings = {{ {common} CLANG_ENABLE_OBJC_ARC = YES; ONLY_ACTIVE_ARCH = {"YES" if name == "Debug" else "NO"}; SWIFT_OPTIMIZATION_LEVEL = {quote("-Onone" if name == "Debug" else "-O")}; ENABLE_TESTABILITY = {"YES" if name == "Debug" else "NO"}; }};')
+    add('project-' + name, f'isa = XCBuildConfiguration; name = {name}; buildSettings = {{ {common} CLANG_ENABLE_OBJC_ARC = YES; ONLY_ACTIVE_ARCH = {"YES" if name == "Debug" else "NO"}; SWIFT_OPTIMIZATION_LEVEL = {quote("-Onone" if name == "Debug" else "-O")}; ENABLE_TESTABILITY = {"YES" if name == "Debug" else "NO"}; SWIFT_ACTIVE_COMPILATION_CONDITIONS = {"DEBUG" if name == "Debug" else chr(34)+chr(34)}; }};')
     app = 'ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_STYLE = Automatic; DEVELOPMENT_TEAM = CRFM39M63R; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = design.zhenli.dlsmagician; PRODUCT_NAME = "$(TARGET_NAME)"; INFOPLIST_FILE = DLSMagician/Info.plist; GENERATE_INFOPLIST_FILE = NO; SWIFT_EMIT_LOC_STRINGS = YES;'
     add('app-' + name, f'isa = XCBuildConfiguration; name = {name}; buildSettings = {{ {common} {app} }};')
     test = 'GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = design.zhenli.dlsmagician.tests; PRODUCT_NAME = "$(TARGET_NAME)"; BUNDLE_LOADER = "$(TEST_HOST)"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DLSMagician.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DLSMagician";'
@@ -80,7 +81,7 @@ ET.indent(scheme)
 ET.ElementTree(scheme).write(schemes/'DLSMagician.xcscheme',encoding='utf-8',xml_declaration=True)
 workspace=project/'project.xcworkspace';workspace.mkdir(exist_ok=True)
 (workspace/'contents.xcworkspacedata').write_text('<?xml version="1.0" encoding="UTF-8"?><Workspace version="1.0"><FileRef location="self:"></FileRef></Workspace>\n')
-info = {'CFBundleDevelopmentRegion':'en','CFBundleDisplayName':'DLS Magician','CFBundleExecutable':'$(EXECUTABLE_NAME)','CFBundleIdentifier':'$(PRODUCT_BUNDLE_IDENTIFIER)','CFBundleInfoDictionaryVersion':'6.0','CFBundleName':'$(PRODUCT_NAME)','CFBundlePackageType':'APPL','CFBundleShortVersionString':'$(MARKETING_VERSION)','CFBundleVersion':'$(CURRENT_PROJECT_VERSION)','LSRequiresIPhoneOS':True,'UILaunchScreen':{},'UIApplicationSceneManifest':{'UIApplicationSupportsMultipleScenes':False},'UISupportedInterfaceOrientations':['UIInterfaceOrientationPortrait','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight'],'CFBundleURLTypes':[{'CFBundleURLName':'design.zhenli.dlsmagician.auth','CFBundleURLSchemes':['design.zhenli.dlsmagician']} ]}
+info = {'CFBundleDevelopmentRegion':'en','CFBundleDisplayName':'DLS Magician','CFBundleExecutable':'$(EXECUTABLE_NAME)','CFBundleIdentifier':'$(PRODUCT_BUNDLE_IDENTIFIER)','CFBundleInfoDictionaryVersion':'6.0','CFBundleName':'$(PRODUCT_NAME)','CFBundlePackageType':'APPL','CFBundleShortVersionString':'$(MARKETING_VERSION)','CFBundleVersion':'$(CURRENT_PROJECT_VERSION)','LSRequiresIPhoneOS':True,'UILaunchScreen':{},'UIApplicationSceneManifest':{'UIApplicationSupportsMultipleScenes':False},'UISupportedInterfaceOrientations':['UIInterfaceOrientationPortrait','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight'],'UISupportedInterfaceOrientations~ipad':['UIInterfaceOrientationPortrait','UIInterfaceOrientationPortraitUpsideDown','UIInterfaceOrientationLandscapeLeft','UIInterfaceOrientationLandscapeRight'],'CFBundleURLTypes':[{'CFBundleURLName':'design.zhenli.dlsmagician.auth','CFBundleURLSchemes':['design.zhenli.dlsmagician']} ]}
 (root/'DLSMagician/Info.plist').write_bytes(plistlib.dumps(info,sort_keys=False))
 assets=root/'DLSMagician/Assets.xcassets'
 (assets/'Contents.json').write_text(json.dumps({'info':{'author':'xcode','version':1}},indent=2)+'\n')

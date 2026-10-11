@@ -13,7 +13,23 @@ final class AppModel: ObservableObject {
     @Published private(set) var projectLoadFailed = false
     @Published private(set) var authenticationRevision = UUID()
     @Published private(set) var deletionReceipt: AccountDeletionReceipt?
-    let api = APIClient()
+    let api: APIClient
+    init(api: APIClient? = nil) {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--uitest-editor") {
+            let fixture = LocalWorkflowFixture()
+            self.api = APIClient(transport: { try await fixture.respond($0) })
+        } else { self.api = api ?? APIClient() }
+        #else
+        self.api = api ?? APIClient()
+        #endif
+    }
+    func workspaceToken() async throws -> String {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--uitest-editor") { return "synthetic-local-only" }
+        #endif
+        return try await auth.token()
+    }
     let auth = AuthService()
     private var configured = false
     private var starting = false
@@ -29,6 +45,14 @@ final class AppModel: ObservableObject {
 
     func start() async {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--uitest-editor") {
+            if !ProcessInfo.processInfo.arguments.contains("--restore-draft") {
+                try? DraftStore().remove(userID: "synthetic", projectID: "synthetic-project")
+            }
+            bootstrap = try? await api.bootstrap(token: "synthetic-local-only")
+            phase = .workspace
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--uitest-projects") {
             let fixture = #"{"user":{"id":"synthetic","name":"Synthetic","email":"synthetic@example.invalid"},"workspaces":[{"id":"workspace","name":"Test workspace","members":[{"userId":"synthetic","role":"Editor"}]}],"projects":[]}"#
             bootstrap = try? JSONDecoder().decode(Bootstrap.self, from: Data(fixture.utf8))

@@ -1,0 +1,9 @@
+{
+  "source_commit": "9ce9f9f29095fd2163ad9c08a9dbc63df244b8e0",
+  "source": "lzhen/dls-magician-cloud/public",
+  "sha256": {
+    "component-preview.css": "cc53fc479dd3aee096bcf1b647bdac694511a51eb051554ebe0a79bf30391312",
+    "component-preview.js": "d3aa1658cacb08c15131b91d5b74e9054094375b662c022be7a3492d30feeb7b",
+    "interaction-engine.js": "4d7bbaa45ebcc9ce829e24ec810be51c84f6bcac856a55236d7570f160a16a77"
+  }
+}

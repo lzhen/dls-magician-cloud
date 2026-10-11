@@ -79,12 +79,16 @@ class ProjectChecks(unittest.TestCase):
         self.assertIn('kind = exactVersion; version = 2.55.3;',project)
         self.assertNotIn('Capacitor',project)
         source='\n'.join(p.read_text() for p in (ROOT/'DLSMagician').glob('*.swift'))
-        self.assertNotIn('WKWebView',source)
+        for file in (ROOT/'DLSMagician').glob('*.swift'):
+            if file.name != 'PrototypePreview.swift': self.assertNotIn('WKWebView', file.read_text())
+        canvas=(ROOT/'DLSMagician/PrototypePreview.swift').read_text()
+        self.assertIn('config.websiteDataStore = .nonPersistent()',canvas)
+        self.assertIn("connect-src 'none'",canvas)
+        self.assertIn('loadHTMLString',canvas)
+        self.assertNotIn('load(URLRequest',canvas)
         self.assertNotIn('.topBar',source)
     def test_approved_brand_asset_is_exact_original(self):
-        original=ROOT.parent/'base-tree.json'
-        tree=json.loads(original.read_text())['tree']
-        expected=next(f['sha'] for f in tree if f['path']=='mobile/assets/ios/dls-app-icon-1024.png')
+        expected='ae2c562a2dc73bc5c0d8bdd72a876c3492593993'
         for folder in ['BrandMark.imageset','AppIcon.appiconset']:
             file=ROOT/f'DLSMagician/Assets.xcassets/{folder}/DLSMark.png'
             data=file.read_bytes()
@@ -92,15 +96,14 @@ class ProjectChecks(unittest.TestCase):
             self.assertEqual(actual,expected)
             self.assertEqual(data[:8], b'\x89PNG\r\n\x1a\n')
             self.assertEqual(struct.unpack('>II', data[16:24]),(1024,1024))
-    def test_production_source_snapshot_has_verified_git_blob_hashes(self):
-        tree=json.loads((ROOT.parent/'production-tree.json').read_text())['tree']
-        verified=0
-        for entry in tree:
-            file=ROOT.parent/'production'/entry['path']
-            if entry['type']!='blob' or not file.is_file(): continue
-            data=file.read_bytes()
-            self.assertEqual(hashlib.sha1(f'blob {len(data)}\0'.encode()+data).hexdigest(),entry['sha'],entry['path'])
-            verified+=1
-        self.assertGreaterEqual(verified,20)
+    def test_bundled_preview_source_has_recorded_hashes(self):
+        assets=ROOT/'DLSMagician/PreviewAssets'
+        manifest=json.loads((assets/'provenance.json').read_text())
+        self.assertEqual(manifest['source_commit'],'9ce9f9f29095fd2163ad9c08a9dbc63df244b8e0')
+        self.assertEqual(len(manifest['sha256']),3)
+        for name,digest in manifest['sha256'].items():
+            self.assertEqual(hashlib.sha256((assets/name).read_bytes()).hexdigest(),digest,name)
+        project=(ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text()
+        self.assertIn('DLSMagician/PreviewAssets',project)
 
 if __name__ == '__main__': unittest.main(verbosity=2)

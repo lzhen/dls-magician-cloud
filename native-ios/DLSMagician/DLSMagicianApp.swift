@@ -24,7 +24,14 @@ struct RootView: View {
                 ProgressView("Opening your workspace…")
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .signedOut: LoginView()
-        case .workspace: WorkspaceView()
+        case .workspace:
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--uitest-editor") {
+                NavigationStack { ProjectEditorView(projectID: "synthetic-project", userID: "synthetic") }
+            } else { WorkspaceView() }
+            #else
+            WorkspaceView()
+            #endif
         case .deletionRecovery:
             if let receipt = app.deletionReceipt {
                 NavigationStack { AccountDeletionView(userID: receipt.userID, receipt: receipt, isRecoveryRoot: true) }
