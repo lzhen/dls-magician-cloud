@@ -4,6 +4,7 @@ import Combine
 
 struct DraftStore {
     var rootOverride: URL? = nil
+    var memory: SampleDraftMemory? = nil
     private func file(userID: String, projectID: String) throws -> URL {
         var root = try rootOverride ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("WorkflowDrafts", isDirectory: true)
@@ -16,6 +17,7 @@ struct DraftStore {
         return root.appendingPathComponent(key + ".json")
     }
     func load(userID: String, projectID: String) throws -> WorkflowDraft? {
+        if let memory { return try memory.load(userID: userID, projectID: projectID) }
         let url = try file(userID: userID, projectID: projectID)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let draft = try JSONDecoder().decode(WorkflowDraft.self, from: Data(contentsOf: url))
@@ -23,10 +25,12 @@ struct DraftStore {
         return draft
     }
     func save(_ draft: WorkflowDraft) throws {
+        if let memory { try memory.save(draft); return }
         try JSONEncoder().encode(draft).write(to: file(userID: draft.userID, projectID: draft.projectID),
                                                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
     func remove(userID: String, projectID: String) throws {
+        if let memory { try memory.remove(userID: userID, projectID: projectID); return }
         let url = try file(userID: userID, projectID: projectID)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
@@ -191,4 +195,30 @@ final class EditorModel: ObservableObject {
     private func verify(_ app: AppModel) throws {
         guard app.user?.id == userID, app.phase == .workspace else { throw AppFailure.unauthorized }
     }
+}
+
+// Sample drafts never touch disk. Closing also fences late editor writes.
+final class SampleDraftMemory {
+    private let lock = NSLock()
+    private var closed = false
+    private var values: [String: WorkflowDraft] = [:]
+    func load(userID: String, projectID: String) throws -> WorkflowDraft? {
+        try lock.withLock {
+            guard !closed else { throw AppFailure.storage }
+            return values[userID + ":" + projectID]
+        }
+    }
+    func save(_ draft: WorkflowDraft) throws {
+        try lock.withLock {
+            guard !closed else { throw AppFailure.storage }
+            values[draft.userID + ":" + draft.projectID] = draft
+        }
+    }
+    func remove(userID: String, projectID: String) throws {
+        try lock.withLock {
+            guard !closed else { throw AppFailure.storage }
+            values.removeValue(forKey: userID + ":" + projectID)
+        }
+    }
+    func close() { lock.withLock { closed = true; values.removeAll() } }
 }

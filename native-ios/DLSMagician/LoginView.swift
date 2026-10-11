@@ -1,9 +1,11 @@
 import SwiftUI
+import AuthenticationServices
 
 struct LoginView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.colorScheme) private var scheme
     @State private var email = ""
+    @State private var demoPresented = false
     @State private var magicOpen = false
     @FocusState private var emailFocused: Bool
     var body: some View {
@@ -24,6 +26,11 @@ struct LoginView: View {
                                     .multilineTextAlignment(.center)
                             }.padding(.bottom, 4)
                             VStack(spacing: 10) {
+                                SignInWithAppleButton(.continue, onRequest: { app.beginApple($0) }, onCompletion: { result in
+                                    Task { await app.completeApple(result) }
+                                }).signInWithAppleButtonStyle(scheme == .dark ? .white : .black)
+                                    .frame(height: 50).clipShape(RoundedRectangle(cornerRadius: DLSTheme.radiusControl))
+                                    .accessibilityIdentifier("auth.apple")
                                 Button { emailFocused = false; Task { await app.signIn(.azure) } } label: {
                                     DLSProviderRow(kind: .microsoft, label: "Continue with Microsoft")
                                 }.accessibilityIdentifier("auth.microsoft")
@@ -68,6 +75,9 @@ struct LoginView: View {
                                 .font(.footnote).foregroundStyle(DLSTheme.muted).padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(DLSTheme.surface2, in: RoundedRectangle(cornerRadius: 8))
+                            Button("Explore sample workspace") { demoPresented = true }
+                                .disabled(app.busy).accessibilityIdentifier("demo.open")
+                            Text("No account needed. Sample data stays on this device.").font(.caption).foregroundStyle(DLSTheme.muted)
                             VStack(spacing: 6) {
                                 Text("By continuing, you agree to the").foregroundStyle(DLSTheme.muted)
                                 ViewThatFits(in: .horizontal) {
@@ -91,6 +101,7 @@ struct LoginView: View {
             }
             .toolbarBackground(DLSTheme.background, for: .navigationBar)
             .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(isPresented: $demoPresented) { ReviewDemoView() }
         }
     }
     @ViewBuilder private var legalLinks: some View {

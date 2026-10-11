@@ -218,3 +218,86 @@ final class WorkflowCreationTests: XCTestCase {
         XCTAssertThrowsError(try CreateWorkflowRequest(name:"  ",description:"",workspaceId:"w"))
     }
 }
+
+final class AppleAndDemoTests: XCTestCase {
+    func testSampleDraftsAreMemoryOnlyAndLateWritesFailAfterClose() throws {
+        let memory = SampleDraftMemory()
+        let store = DraftStore(memory: memory)
+        let draft = WorkflowDraft(projectID: "project", userID: "sample-user", baseUpdatedAt: "revision", text: "Sample text")
+        XCTAssertNil(store.rootOverride)
+        try store.save(draft)
+        XCTAssertEqual(try store.load(userID: draft.userID, projectID: draft.projectID)?.text, draft.text)
+        XCTAssertNil(try store.load(userID: "another-user", projectID: draft.projectID))
+        memory.close()
+        XCTAssertThrowsError(try store.save(draft))
+        XCTAssertThrowsError(try store.load(userID: draft.userID, projectID: draft.projectID))
+        let fresh = DraftStore(memory: SampleDraftMemory())
+        XCTAssertNil(try fresh.load(userID: draft.userID, projectID: draft.projectID))
+    }
+
+    func testAppleNonceIsRandomBoundExpiringAndOneShot() throws {
+        let now = Date()
+        var attempt = try AppleSignInAttempt(createdAt: now)
+        XCTAssertEqual(attempt.nonce.count, 64)
+        XCTAssertEqual(attempt.hashedNonce.count, 64)
+        XCTAssertNotEqual(attempt.nonce, attempt.hashedNonce)
+        XCTAssertNotEqual(attempt.nonce, try AppleSignInAttempt().nonce)
+        XCTAssertThrowsError(try attempt.consume(state: UUID().uuidString, at: now))
+        XCTAssertFalse(attempt.consumed)
+        XCTAssertThrowsError(try attempt.consume(state: attempt.id.uuidString, at: now.addingTimeInterval(-1)))
+        XCTAssertThrowsError(try attempt.consume(state: attempt.id.uuidString, at: now.addingTimeInterval(600)))
+        XCTAssertEqual(try attempt.consume(state: attempt.id.uuidString, at: now), attempt.nonce)
+        XCTAssertThrowsError(try attempt.consume(state: attempt.id.uuidString, at: now))
+    }
+    func testDemoCRUDCollaborationConflictAndResetAreIsolated() async throws {
+        let demo = ReviewDemoStore()
+        let api = APIClient(transport: { try await demo.respond($0) })
+        let initial = try await api.bootstrap(token: demo.token)
+        XCTAssertEqual(initial.projects.count, 1)
+        XCTAssertEqual(initial.user.id, demo.userID)
+        let created = try await api.create(.init(name: "Local workflow", description: "Sample", workspaceId: "demo-workspace"), userID: demo.userID, token: demo.token)
+        let saved = try await api.save(created, text: created.structuredLanguage + "\n", userID: demo.userID, token: demo.token)
+        XCTAssertNotEqual(created.updatedAt, saved.updatedAt)
+        do { _ = try await api.save(created, text: "stale", userID: demo.userID, token: demo.token); XCTFail("Stale write accepted") } catch { XCTAssertEqual(error as? AppFailure, .conflict) }
+        let member = try await api.invite(projectID: created.id, email: "teammate@example.invalid", role: "Editor", userID: demo.userID, token: demo.token)
+        _ = try await api.changeRole(projectID: created.id, memberID: member.userId, role: "Viewer", userID: demo.userID, token: demo.token)
+        do { _ = try await api.invite(projectID: created.id, email: "person@example.com", role: "Editor", userID: demo.userID, token: demo.token); XCTFail("Real email accepted") } catch { XCTAssertEqual(error as? AppFailure, .forbidden) }
+        let comment = try await api.addComment(projectID: created.id, body: "Sample note", anchor: "General", userID: demo.userID, token: demo.token)
+        let resolved = try await api.resolveComment(projectID: created.id, commentID: comment.id, resolved: true, userID: demo.userID, token: demo.token)
+        XCTAssertTrue(resolved.resolved)
+        let reopened = try await api.resolveComment(projectID: created.id, commentID: comment.id, resolved: false, userID: demo.userID, token: demo.token)
+        XCTAssertFalse(reopened.resolved)
+        let fresh = try await api.project(created.id, token: demo.token)
+        XCTAssertEqual(fresh.comments?.count, 1)
+        await demo.close()
+        do { _ = try await api.bootstrap(token: demo.token); XCTFail("Closed demo accepted") } catch { XCTAssertEqual(error as? AppFailure, .unauthorized) }
+        let next = ReviewDemoStore()
+        let nextAPI = APIClient(transport: { try await next.respond($0) })
+        let reset = try await nextAPI.bootstrap(token: next.token)
+        XCTAssertEqual(reset.projects.count, 1)
+        XCTAssertNotEqual(reset.user.id, initial.user.id)
+    }
+    func testDemoRejectsForeignCredentialsRoutesAndOriginWithoutFallback() async throws {
+        let demo = ReviewDemoStore()
+        for (url, token) in [(AppConfiguration.apiOrigin.appendingPathComponent("api/bootstrap"), "foreign"), (URL(string:"https://example.invalid/api/bootstrap")!, demo.token), (AppConfiguration.apiOrigin.appendingPathComponent("api/account/delete"), demo.token)] {
+            var request = URLRequest(url: url); request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            do { _ = try await demo.respond(request); XCTFail("Unsafe request accepted") } catch { XCTAssertTrue(error is AppFailure) }
+        }
+    }
+    @MainActor func testDemoAppClosesWithoutChangingNormalPreferences() async throws {
+        let normal = AppModel()
+        let demo = AppModel(demo: ReviewDemoStore())
+        XCTAssertFalse(normal.isDemo); XCTAssertTrue(demo.isDemo)
+        XCTAssertFalse(normal.preferences === demo.preferences)
+        await demo.start(); XCTAssertEqual(demo.phase, .workspace)
+        await demo.receive(URL(string: "design.zhenli.dlsmagician://auth/callback?code=synthetic")!)
+        XCTAssertEqual(demo.phase, .workspace)
+        XCTAssertNil(demo.notice)
+        XCTAssertFalse(demo.auth.hasStoredSession)
+        demo.preferences.set("sample", forKey: "demo-test")
+        await demo.closeDemo()
+        XCTAssertNil(demo.bootstrap)
+        XCTAssertNil(demo.preferences.string(forKey: "demo-test"))
+        XCTAssertEqual(normal.phase, .launching)
+    }
+}

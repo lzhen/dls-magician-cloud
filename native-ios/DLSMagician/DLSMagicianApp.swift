@@ -15,6 +15,7 @@ struct DLSMagicianApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
+    @State private var demoPresented = false
     var body: some View {
         Group {
         switch app.phase {
@@ -22,6 +23,7 @@ struct RootView: View {
             VStack(spacing: 20) {
                 BrandMark()
                 ProgressView("Opening your workspace…")
+                Button("Explore sample workspace") { demoPresented = true }.accessibilityIdentifier("demo.open")
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
         case .signedOut: LoginView()
         case .workspace:
@@ -41,6 +43,7 @@ struct RootView: View {
                 BrandMark()
                 Text("Your workspace couldn’t open").font(.custom("Georgia", size: 28, relativeTo: .title))
                 Text(app.notice ?? "Check your connection and try again.").foregroundStyle(DLSTheme.soft).multilineTextAlignment(.center)
+                Button("Explore sample workspace") { demoPresented = true }.accessibilityIdentifier("demo.open")
                 Button("Try again") { Task { await app.start() } }.buttonStyle(DLSPrimaryButtonStyle())
                 Button("Sign out on this device") { Task { await app.signOut() } }.disabled(app.busy)
             }.padding(28)
@@ -48,6 +51,7 @@ struct RootView: View {
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DLSTheme.background.ignoresSafeArea())
             .foregroundStyle(DLSTheme.text)
+            .fullScreenCover(isPresented: $demoPresented) { ReviewDemoView() }
     }
 }
 

@@ -154,3 +154,55 @@ final class WorkflowExperienceUITests: XCTestCase {
         capture(app, "Native offline draft restored")
     }
 }
+
+final class ReviewDemoUITests: XCTestCase {
+    func testDemoCreatesWorkflowAndAddsOnlySampleTeammate() {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
+        XCTAssertTrue(app.buttons["demo.open"].waitForExistence(timeout: 10))
+        for _ in 0..<3 { if app.buttons["demo.open"].isHittable { break }; app.swipeUp() }
+        app.buttons["demo.open"].tap()
+        XCTAssertTrue(app.buttons["workflow.create"].waitForExistence(timeout: 8)); app.buttons["workflow.create"].tap()
+        app.textFields["workflow.name"].tap(); app.textFields["workflow.name"].typeText("Review sample")
+        app.buttons["workflow.submit"].tap()
+        XCTAssertTrue(app.buttons["editor.collaboration"].waitForExistence(timeout: 8))
+        app.buttons["editor.collaboration"].tap(); app.buttons["Share"].tap()
+        XCTAssertTrue(app.textFields["share.email"].waitForExistence(timeout: 8))
+        app.textFields["share.email"].tap(); app.textFields["share.email"].typeText("teammate@example.invalid")
+        app.buttons["Hide keyboard"].tap(); app.buttons["share.add"].tap()
+        XCTAssertTrue(app.staticTexts["Sample teammate added on this device. No invitation was sent."].waitForExistence(timeout: 8))
+        let proof = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); proof.name = "Sample collaboration with no cloud invitation"; proof.lifetime = .keepAlways; add(proof)
+    }
+    func testVisibleDemoCanEditPreviewCollaborateExitAndReset() {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
+        XCTAssertTrue(app.buttons["auth.apple"].waitForExistence(timeout: 10))
+        for _ in 0..<3 { if app.buttons["demo.open"].isHittable { break }; app.swipeUp() }
+        app.buttons["demo.open"].tap()
+        XCTAssertTrue(app.buttons["workflow.create"].waitForExistence(timeout: 10))
+        app.staticTexts["Sample interaction"].tap()
+        XCTAssertTrue(app.textViews["intent.0"].waitForExistence(timeout: 8))
+        app.textViews["intent.0"].tap(); app.textViews["intent.0"].typeText(" ")
+        app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
+        XCTAssertTrue(app.staticTexts["Saved source"].waitForExistence(timeout: 8))
+        app.segmentedControls["editor.tabs"].buttons["Preview"].tap()
+        XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 10))
+        app.webViews.buttons["Open"].tap()
+        XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5))
+        app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
+        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
+        app.textViews["comments.body"].tap(); app.textViews["comments.body"].typeText("Sample local comment")
+        app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
+        XCTAssertTrue(app.staticTexts["Sample local comment"].waitForExistence(timeout: 8))
+        app.buttons["collaboration.done"].tap()
+        let proof = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); proof.name = "Visible sample workspace"; proof.lifetime = .keepAlways; add(proof)
+        app.buttons["demo.exit"].tap(); app.buttons["demo.confirmExit"].tap()
+        XCTAssertTrue(app.buttons["demo.open"].waitForExistence(timeout: 8))
+        app.buttons["demo.open"].tap()
+        XCTAssertTrue(app.staticTexts["Sample interaction"].waitForExistence(timeout: 8)); app.staticTexts["Sample interaction"].tap()
+        XCTAssertTrue(app.buttons["editor.collaboration"].waitForExistence(timeout: 8))
+        app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
+        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Sample local comment"].exists)
+    }
+}

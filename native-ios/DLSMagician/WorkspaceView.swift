@@ -67,14 +67,14 @@ struct WorkspaceView: View {
                 }
             }
             .navigationDestination(for: ProjectSummary.self) { project in
-                if let user = app.user { ProjectEditorView(projectID: project.id, userID: user.id) }
+                if let user = app.user { ProjectEditorView(projectID: project.id, userID: user.id, drafts: app.draftStore, preferences: app.preferences) }
             }
             .sheet(isPresented: $accountPresented) { AccountView() }
             .sheet(isPresented: $createPresented) {
                 CreateWorkflowView { project in search = ""; createdProject = project }
             }
             .navigationDestination(isPresented: Binding(get: { createdProject != nil }, set: { if !$0 { createdProject = nil } })) {
-                if let project = createdProject, let user = app.user { ProjectEditorView(projectID: project.id, userID: user.id) }
+                if let project = createdProject, let user = app.user { ProjectEditorView(projectID: project.id, userID: user.id, drafts: app.draftStore, preferences: app.preferences) }
             }
         }
     }
@@ -154,7 +154,6 @@ struct DLSProjectCard: View {
 struct AccountView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var deletionPresented = false
     var body: some View {
         NavigationStack {
             Form {
@@ -174,6 +173,7 @@ struct AccountView: View {
                     Link("Privacy", destination: AppConfiguration.apiOrigin.appendingPathComponent("privacy.html"))
                     Link("Help", destination: AppConfiguration.apiOrigin.appendingPathComponent("help.html"))
                 }.listRowBackground(DLSTheme.surface)
+                if !app.isDemo {
                 Section {
                     Button(role: .destructive) {
                         Task { await app.signOut(); dismiss() }
@@ -184,12 +184,9 @@ struct AccountView: View {
                 } footer: {
                     Text("Your saved projects stay in your workspace when you sign out.")
                 }.listRowBackground(DLSTheme.surface)
-                Section {
-                    Button("Review account deletion", role: .destructive) { deletionPresented = true }
-                        .disabled(app.busy)
-                } footer: {
-                    Text("Review the server’s deletion policy and affected data. Deletion stays unavailable until server support is enabled.")
-                }.listRowBackground(DLSTheme.surface)
+                } else {
+                    Section("Sample account") { Text("This is a local sample identity. No cloud account was created. Use Exit to reset the sample workspace.") }
+                }
             }.scrollContentBackground(.hidden).background(DLSTheme.background)
                 .foregroundStyle(DLSTheme.text)
                 .navigationTitle("Account").navigationBarTitleDisplayMode(.inline)
@@ -199,11 +196,9 @@ struct AccountView: View {
                         Text("Account").font(DLSTheme.accountTitle).foregroundStyle(DLSTheme.text)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.disabled(app.busy || deletionPresented) }
+                    ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.disabled(app.busy) }
                 }
-                .navigationDestination(isPresented: $deletionPresented) {
-                    if let user = app.user { AccountDeletionView(userID: user.id) }
-                }
+
         }
     }
 }

@@ -56,14 +56,15 @@ struct CollaborationView: View {
     }
     @ViewBuilder private var shareContent: some View {
         Section("Restricted project link") {
-            Button(copied ? "Link copied" : "Copy restricted link") {
-                guard let url = CollaborationPolicy.link(projectID: editor.projectID) else { return }
+            Button(copied ? "Link copied" : (app.isDemo ? "Copy sample link" : "Copy restricted link")) {
+                guard let url = app.isDemo ? URL(string: "https://example.invalid/demo/" + editor.projectID) : CollaborationPolicy.link(projectID: editor.projectID) else { return }
                 UIPasteboard.general.url = url; copied = true
             }.accessibilityIdentifier("share.copy")
-            Text("Recipients must sign in and already have project access. Copying this link grants no permissions.").font(.caption)
+            Text(app.isDemo ? "This example.invalid link is a sample only and cannot open a cloud project." : "Recipients must sign in and already have project access. Copying this link grants no permissions.").font(.caption)
         }
         if editor.editable {
             Section("Invite people") {
+                if app.isDemo { Text("Sample only: use teammate@example.invalid. No invitation or cloud access is created.").font(.caption) }
                 TextField("Email address", text: $email).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .keyboardType(.emailAddress).focused($focused).accessibilityIdentifier("share.email")
                 Picker("Role", selection: $role) {
@@ -75,7 +76,7 @@ struct CollaborationView: View {
                         let ok = await editor.mutate(using: app) { api, token in
                             _ = try await api.invite(projectID: editor.projectID, email: email, role: role, userID: editor.userID, token: token)
                         }
-                        if ok { email = ""; notice = "Membership added. No invitation email was sent by this action." }
+                        if ok { email = ""; notice = app.isDemo ? "Sample teammate added on this device. No invitation was sent." : "Membership added. No invitation email was sent by this action." }
                     }
                 }.disabled(disabled || !email.contains("@") || !(editor.project.map { CollaborationPolicy.canInvite(project: $0, userID: editor.userID, email: email.trimmingCharacters(in: .whitespacesAndNewlines), role: role) } ?? false))
                     .accessibilityIdentifier("share.add")

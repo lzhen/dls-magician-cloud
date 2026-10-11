@@ -18,8 +18,8 @@ struct ProjectEditorView: View {
     @FocusState private var focus: String?
     enum EditorSheet: String, Identifiable { case share, comments, recovery; var id: String { rawValue } }
 
-    init(projectID: String, userID: String) {
-        _editor = StateObject(wrappedValue: EditorModel(projectID: projectID, userID: userID))
+    init(projectID: String, userID: String, drafts: DraftStore = DraftStore(), preferences: UserDefaults = .standard) {
+        _editor = StateObject(wrappedValue: EditorModel(projectID: projectID, userID: userID, drafts: drafts, preferences: preferences))
     }
     var body: some View {
         VStack(spacing: 0) {

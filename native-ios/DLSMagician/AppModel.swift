@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Auth
+import AuthenticationServices
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -14,7 +15,22 @@ final class AppModel: ObservableObject {
     @Published private(set) var authenticationRevision = UUID()
     @Published private(set) var deletionReceipt: AccountDeletionReceipt?
     let api: APIClient
-    init(api: APIClient? = nil) {
+    let demo: ReviewDemoStore?
+    var isDemo: Bool { demo != nil }
+    let draftStore: DraftStore
+    let preferences: UserDefaults
+    private let demoPreferencesName: String?
+    init(api: APIClient? = nil, demo: ReviewDemoStore? = nil) {
+        self.demo = demo
+        if let demo {
+            let name = "DLSReviewDemo." + demo.userID
+            demoPreferencesName = name
+            preferences = UserDefaults(suiteName: name)!
+            draftStore = DraftStore(memory: SampleDraftMemory())
+            self.api = APIClient(transport: { try await demo.respond($0) })
+            return
+        }
+        draftStore = DraftStore(); preferences = .standard; demoPreferencesName = nil
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--uitest-editor") {
             let fixture = LocalWorkflowFixture()
@@ -25,6 +41,7 @@ final class AppModel: ObservableObject {
         #endif
     }
     func workspaceToken() async throws -> String {
+        if let demo { return demo.token }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--uitest-editor") { return "synthetic-local-only" }
         #endif
@@ -44,7 +61,9 @@ final class AppModel: ObservableObject {
     }
 
     func start() async {
+        if isDemo { do { try await hydrate() } catch { notice = userMessage(error); phase = .unavailable }; return }
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--uitest-login") { phase = .signedOut; return }
         if ProcessInfo.processInfo.arguments.contains("--uitest-editor") {
             if !ProcessInfo.processInfo.arguments.contains("--restore-draft") {
                 try? DraftStore().remove(userID: "synthetic", projectID: "synthetic-project")
@@ -106,6 +125,16 @@ final class AppModel: ObservableObject {
             phase = auth.hasStoredSession ? .unavailable : .signedOut
         }
     }
+    func beginApple(_ request: ASAuthorizationAppleIDRequest) {
+        guard !busy, configured else { return }
+        do { try auth.beginApple(request); busy = true; notice = nil }
+        catch { notice = userMessage(error) }
+    }
+    func completeApple(_ result: Result<ASAuthorization, Error>) async {
+        defer { busy = false }
+        do { if try await auth.completeApple(result) { try await hydrate() } }
+        catch { notice = userMessage(error); phase = auth.hasStoredSession ? .unavailable : .signedOut }
+    }
     func sendMagicLink(_ email: String) async {
         guard !busy, configured else { return }
         busy = true
@@ -117,6 +146,7 @@ final class AppModel: ObservableObject {
         } catch { notice = userMessage(error) }
     }
     func receive(_ url: URL) async {
+        guard !isDemo else { return }
         if !configured || starting { queuedCallback = url; return }
         // The system can deliver one successful callback through both native paths.
         if phase == .workspace && !auth.hasPendingAttempt { return }
@@ -129,6 +159,11 @@ final class AppModel: ObservableObject {
         catch { notice = userMessage(error) }
     }
     func hydrate() async throws {
+        if let demo {
+            bootstrap = try await api.bootstrap(token: demo.token)
+            phase = .workspace; projectLoadFailed = false; notice = nil
+            return
+        }
         let generation = sessionGeneration
         let token = try await auth.token()
         let session = try await api.workspaceSession(token: token)
@@ -154,7 +189,7 @@ final class AppModel: ObservableObject {
         let generation = sessionGeneration
         busy = true
         defer { busy = false }
-        let created = try await api.create(input, userID: user.id, token: try await auth.token())
+        let created = try await api.create(input, userID: user.id, token: try await workspaceToken())
         guard generation == sessionGeneration, self.user?.id == user.id else { throw AppFailure.unauthorized }
         workspaceID = input.workspaceId
         // The create succeeded even if a later refresh fails; never offer a second POST.
@@ -162,6 +197,7 @@ final class AppModel: ObservableObject {
         return created
     }
     func signOut() async {
+        guard !isDemo else { return }
         guard !busy else { return }
         busy = true
         sessionGeneration = UUID()
@@ -176,6 +212,14 @@ final class AppModel: ObservableObject {
         bootstrap = nil
         workspaceID = ""
         phase = .signedOut
+    }
+
+    func closeDemo() async {
+        guard let demo else { return }
+        draftStore.memory?.close()
+        await demo.close()
+        bootstrap = nil
+        if let name = demoPreferencesName { preferences.removePersistentDomain(forName: name) }
     }
 
     func resumeAfterUnstartedDeletion() async {
