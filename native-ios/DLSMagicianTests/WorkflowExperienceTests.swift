@@ -3,6 +3,19 @@ import XCTest
 
 final class WorkflowExperienceTests: XCTestCase {
     static let source = "GIVEN\na button named \"Open\"\n\nWHEN\nuser clicks button \"Open\"\n\nTHEN\nshow dialog \"Details\" with content \"Hello preview\""
+    func testContextualAndPreservesParentGroupAndUnrelatedSource() throws {
+        let source = "preamble🙂\nGIVEN\na button\n\nAND\nanother detail\n\nWHEN\nclicked\n\nTHEN\nshow result"
+        let change = try XCTUnwrap(IntentDocument(source: source).insertingAnd(after: 0))
+        XCTAssertEqual(change.index, 2)
+        XCTAssertEqual(change.source, source.replacingOccurrences(of: "WHEN\n", with: "AND\n\nWHEN\n"))
+        let blocks = IntentDocument(source: change.source).blocks
+        XCTAssertEqual(blocks.map(\.kind), ["GIVEN", "AND", "AND", "WHEN", "THEN"])
+        XCTAssertEqual(blocks[1].body, "another detail")
+        XCTAssertEqual(blocks[3].body, "clicked")
+        XCTAssertNil(IntentDocument(source: source).insertingAnd(after: 1))
+        XCTAssertNil(IntentDocument(source: source).insertingAnd(after: 99))
+        XCTAssertEqual(IntentDocument(source: "THEN\nresult").insertingAnd(after: 0)?.source, "THEN\nresult\n\nAND\n")
+    }
     func testStructuredEditingPreservesUnrelatedSourceAndUnicode() {
         let raw = "untouched preamble 🪄\r\ngiven\r\na button \"你好\"\r\n\r\nWHEN\r\nclick\r\nTHEN\r\nshow it"
         let document = IntentDocument(source: raw)

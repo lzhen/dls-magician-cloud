@@ -1,46 +1,70 @@
 {
-  "after-review-preview-interaction.png": {
-    "bytes": 199661,
-    "sha256": "33e8a4b3b9c5a103dac7975447e5fa50f14765fdcc80ee53dd363d4954aa4560"
+  "DLS-native-ui-review.html": {
+    "bytes": 3853512,
+    "sha256": "0b6e6865a039cb1220ee9f625e5d7c5bb7a8438ccaf6b4c3c24863fdc102971a"
   },
-  "after-review-preview-light.png": {
-    "bytes": 166376,
-    "sha256": "c700793a781b513d237f37e345ca907906c9b3110409504e3a0de425224ac679"
-  },
-  "before-review-preview-interaction.png": {
-    "bytes": 211904,
-    "sha256": "1c4039bbb4fdbb0cc199ace342baa2b6a7b4bcf32dad2b5e808924367881b8b3"
+  "after-review-intent-dark.png": {
+    "bytes": 158013,
+    "sha256": "5a75a3dbd129fd04612a3bf72d08cee752acc47ae77ee865f78cd40899c4f742"
   },
   "after-review-intent-light.png": {
-    "bytes": 151696,
-    "sha256": "56a860a703045d87545d6a44eba43074850909c3fbf169d62b3d6a93548401a7"
+    "bytes": 151860,
+    "sha256": "cbb0dc3d48932e7762afbe7f0dbf12b71ee103f8c63568c2f8406e0db65f2214"
   },
-  "before-review-projects-light.png": {
-    "bytes": 203752,
-    "sha256": "797af7ef18afeb1fe83d60fb3e57a651d5793d1594fbb4e1998a24df40773695"
+  "after-review-preview-interaction.png": {
+    "bytes": 200225,
+    "sha256": "635f8ef42aa48aeaa8567acbb03e0475495562ba5397f7c11f7e7585baf943de"
+  },
+  "after-review-preview-light.png": {
+    "bytes": 166935,
+    "sha256": "b2fbabe167c88318a2c2fb1ef1736fb9be67ca0f3f408e107b569079c3956c4a"
+  },
+  "after-review-projects-light.png": {
+    "bytes": 164336,
+    "sha256": "c6141a184e37220c0098ed02779098b2b1cc22ead5121fba8f4989d8c0c8e6c7"
   },
   "before-review-intent-light.png": {
     "bytes": 178615,
     "sha256": "666526aa47d6ed583c0d21547dec14979ea44887084c0af25870edb5f61b4c84"
   },
+  "before-review-preview-interaction.png": {
+    "bytes": 211904,
+    "sha256": "1c4039bbb4fdbb0cc199ace342baa2b6a7b4bcf32dad2b5e808924367881b8b3"
+  },
   "before-review-preview-light.png": {
     "bytes": 182741,
     "sha256": "52ee928f5326657d136cd5078c41da25db4883d359e4d516c2499c8eb239bceb"
   },
-  "DLS-native-ui-review.html": {
-    "bytes": 2159240,
-    "sha256": "cf5cff7709a7ffa019750901030c637b0dda91b8db642947dcc0c223f20997cd"
+  "before-review-projects-light.png": {
+    "bytes": 203752,
+    "sha256": "797af7ef18afeb1fe83d60fb3e57a651d5793d1594fbb4e1998a24df40773695"
+  },
+  "corrected-active-edit.png": {
+    "bytes": 253924,
+    "sha256": "8c1063850e9c9aec53c601354863e8fa0842ba865d676a187905c555a53e5564"
+  },
+  "corrected-contextual-and-edit.png": {
+    "bytes": 248954,
+    "sha256": "80e5c7a1b317e3d9ea7bc8d5afab1b0eacc801c506467f439ac03baac89becf2"
+  },
+  "corrected-contextual-and-reading.png": {
+    "bytes": 157987,
+    "sha256": "a241dc6c33b3ef8dfd3f21656a3618121f06f977d7dd45c4d8daab221be905fe"
+  },
+  "corrected-open-details.png": {
+    "bytes": 199574,
+    "sha256": "4e1de2948dcdc426ae50d5df85484a796f2343ffaa01264742a9cfa59ea71d36"
+  },
+  "corrected-sample-comments.png": {
+    "bytes": 146819,
+    "sha256": "8d3972939ca449835ca17fc6f95b9af9e97af98cb52a6f06780df2de161fdde1"
+  },
+  "corrected-sample-share.png": {
+    "bytes": 191669,
+    "sha256": "9855bdf1fc79e4cea15201c60405669efe0cb4c9ecb7345c30af8026279877c3"
   },
   "native-interaction.mp4": {
-    "bytes": 2311666,
-    "sha256": "c032d1285f4a038d8ab765071093e73e1b41d65ddaa96bad621b638d6ce3cb50"
-  },
-  "after-review-projects-light.png": {
-    "bytes": 164257,
-    "sha256": "818436a3312ca24092dcf1de07c2ff2176e58d42746f7fde768a80c39ff17e0f"
-  },
-  "after-review-intent-dark.png": {
-    "bytes": 157140,
-    "sha256": "4444085da8160f24f32bfb7614f3ae31dcd74a0cb6143243346f27b0e2673f78"
+    "bytes": 69269,
+    "sha256": "341f9e0fe4f271ab8a7e8350ba32172e53638670af8b3c8267099a5061bed9f2"
   }
 }

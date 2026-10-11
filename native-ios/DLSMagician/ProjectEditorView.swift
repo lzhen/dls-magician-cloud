@@ -104,7 +104,7 @@ struct ProjectEditorView: View {
             HStack {
                 Text(editor.role).font(.caption.weight(.semibold))
                 Spacer()
-                Text(editor.saving ? "Saving…" : editor.dirty ? "Unsaved draft" : "Saved source").font(.caption)
+                Text(editor.saving ? "Saving…" : editor.dirty ? "Unsaved draft" : app.isDemo ? "Saved on this device" : "Saved source").font(.caption)
             }.foregroundStyle(DLSTheme.muted)
             if !editor.editable { Text("Read-only intent").font(.caption) }
             if editor.restoredDraft { Text("Local draft restored").font(.caption).accessibilityIdentifier("editor.restored") }
@@ -117,37 +117,55 @@ struct ProjectEditorView: View {
             }
         }.padding(.horizontal, 20).padding(.vertical, 5)
     }
+    // Final Web CSS: .intent-block-rail / .intent-step-input and the later light overrides.
+    // Canonical CSS SHA-256 68c58a97d7adf59af11cb54457fb7257a9a1ca360b24f86f966cff08276bd5f4.
+    private func intentColor(_ kind: String) -> Color {
+        switch kind { case "WHEN": return DLSTheme.blue; case "THEN": return DLSTheme.green; case "AND": return DLSTheme.amber; default: return DLSTheme.violet }
+    }
     private var intent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("Structured intent").font(.custom("Georgia", size: 27, relativeTo: .title2))
+                    Text("Structured intent").font(.subheadline.weight(.semibold))
                     Spacer()
-                    Image(systemName: IntentDocument(source: editor.text).valid ? "checkmark.circle" : "pencil")
-                        .foregroundStyle(DLSTheme.muted).accessibilityLabel(IntentDocument(source: editor.text).valid ? "Structure ready" : "Add GIVEN, WHEN and THEN")
+                    Label(IntentDocument(source: editor.text).valid ? "Ready" : "Add steps", systemImage: IntentDocument(source: editor.text).valid ? "checkmark.circle" : "pencil")
+                        .font(.caption).foregroundStyle(DLSTheme.muted).accessibilityLabel(IntentDocument(source: editor.text).valid ? "Structure ready" : "Add GIVEN, WHEN and THEN")
                 }
                 if rawSource {
                     TextEditor(text: $editor.text).frame(minHeight: 350).focused($focus, equals: "raw")
                         .accessibilityIdentifier("editor.raw").accessibilityLabel("Workflow source").editorField()
                         .disabled(!editor.editable || editor.busy)
                 } else {
-                    VStack(alignment: .leading, spacing: scheme == .dark ? 16 : 24) {
+                    VStack(alignment: .leading, spacing: scheme == .dark ? 12 : 18) {
                         ForEach(IntentDocument(source: editor.text).blocks) { block in
                             VStack(alignment: .leading, spacing: 6) {
-                                Text(block.kind).font(.system(.caption, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(DLSTheme.muted)
+                                HStack {
+                                    Text(block.kind).font(.system(.caption, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(intentColor(block.kind))
+                                    Spacer()
+                                    if block.kind != "AND", editor.editable {
+                                        Button("+ AND") {
+                                            if let insertion = IntentDocument(source: editor.text).insertingAnd(after: block.id) {
+                                                editor.text = insertion.source
+                                                Task { @MainActor in await Task.yield(); focus = "block-\(insertion.index)" }
+                                            }
+                                        }.font(.system(.caption, design: .monospaced).weight(.semibold))
+                                            .frame(minWidth: 60, minHeight: 44).buttonStyle(.plain)
+                                            .accessibilityLabel("Add AND after \(block.kind)").accessibilityIdentifier("intent.and.\(block.id)").disabled(editor.busy)
+                                    }
+                                }
                                 TextField("Describe this step", text: Binding(get: {
                                     let blocks = IntentDocument(source: editor.text).blocks
                                     return blocks.indices.contains(block.id) ? blocks[block.id].body : ""
                                 }, set: { editor.text = IntentDocument(source: editor.text).replacing(block.id, with: $0) }), axis: .vertical)
-                                .lineLimit(2...).font(.body).lineSpacing(5).focused($focus, equals: "block-\(block.id)")
+                                .lineLimit(1...).font(.system(.subheadline, design: .monospaced)).lineSpacing(4).frame(minHeight: focus == "block-\(block.id)" ? 88 : nil, alignment: .topLeading).focused($focus, equals: "block-\(block.id)")
                                 .accessibilityLabel("\(block.kind) intent").accessibilityIdentifier("intent.\(block.id)")
                                 .disabled(!editor.editable || editor.busy)
                             }
-                            .padding(.vertical, 12).padding(.horizontal, scheme == .dark ? 16 : 0)
+                            .padding(.vertical, scheme == .dark ? 12 : 0).padding(.horizontal, scheme == .dark ? 16 : 0)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(scheme == .dark ? DLSTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(alignment: .leading) {
-                                if scheme == .dark { Rectangle().fill(block.kind == "GIVEN" ? DLSTheme.violet : block.kind == "WHEN" ? DLSTheme.blue : DLSTheme.green).frame(width: 2).padding(.vertical, 12) }
+                                if scheme == .dark { Rectangle().fill(intentColor(block.kind)).frame(width: 2).padding(.vertical, 12) }
                             }
                             .overlay(alignment: .bottom) { if focus == "block-\(block.id)" { Rectangle().fill(DLSTheme.border).frame(height: 1) } }
                         }
@@ -196,10 +214,8 @@ struct ProjectEditorView: View {
                     if let snapshot = editor.snapshot {
                         if output == "Interface" {
                             VStack(spacing: 0) {
-                                HStack(spacing: 5) {
-                                    ForEach(0..<3) { _ in Circle().fill(DLSTheme.border).frame(width: 5, height: 5) }
-                                    Spacer(); Text("Interactive preview").font(.caption2).foregroundStyle(DLSTheme.muted); Spacer()
-                                }.padding(12).background(DLSTheme.surface2)
+                                Text("Interactive preview").font(.caption2).foregroundStyle(DLSTheme.muted)
+                                    .frame(maxWidth: .infinity).padding(10).background(DLSTheme.surface2)
                                 Divider()
                                 PrototypeCanvas(snapshot: snapshot).frame(height: max(320, geometry.size.height - 112))
                             }.clipShape(RoundedRectangle(cornerRadius: 10))

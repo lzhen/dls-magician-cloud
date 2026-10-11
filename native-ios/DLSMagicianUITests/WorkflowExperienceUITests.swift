@@ -156,6 +156,48 @@ final class WorkflowExperienceUITests: XCTestCase {
 }
 
 final class ReviewDemoUITests: XCTestCase {
+    func testIrisCorrectionsEditingAndCollaboration() {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
+        XCTAssertTrue(app.buttons["demo.open"].waitForExistence(timeout: 10)); app.buttons["demo.open"].tap()
+        XCTAssertTrue(app.staticTexts["Sample interaction"].waitForExistence(timeout: 10)); app.staticTexts["Sample interaction"].tap()
+        XCTAssertTrue(app.textFields["intent.0"].waitForExistence(timeout: 10))
+        func shot(_ name: String) { let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a) }
+        app.textFields["intent.0"].tap(); app.textFields["intent.0"].typeText(" ")
+        shot("corrected-active-edit")
+        app.buttons["editor.keyboardDone"].tap()
+        app.buttons["intent.and.0"].tap()
+        let continuation = app.textFields["intent.1"]
+        XCTAssertTrue(continuation.waitForExistence(timeout: 5)); continuation.tap(); continuation.typeText("a second condition")
+        XCTAssertTrue((app.textFields["intent.2"].value as? String ?? "").contains("clicks"))
+        shot("corrected-contextual-and-edit")
+        app.buttons["editor.keyboardDone"].tap(); shot("corrected-contextual-and-reading")
+        app.buttons["editor.save"].tap()
+        XCTAssertTrue(app.staticTexts["Saved on this device"].waitForExistence(timeout: 8))
+        app.buttons["editor.collaboration"].tap(); app.buttons["Share"].tap()
+        XCTAssertTrue(app.buttons["share.copy"].waitForExistence(timeout: 8)); shot("corrected-sample-share")
+        app.buttons["collaboration.done"].tap()
+        app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
+        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 8)); app.textViews["comments.body"].tap(); app.textViews["comments.body"].typeText("Sample review note")
+        app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
+        XCTAssertTrue(app.staticTexts["Sample review note"].waitForExistence(timeout: 8)); shot("corrected-sample-comments")
+    }
+    func testFocusedPreviewInteractionRecording() {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
+        XCTAssertTrue(app.buttons["demo.open"].waitForExistence(timeout: 10)); app.buttons["demo.open"].tap()
+        XCTAssertTrue(app.staticTexts["Sample interaction"].waitForExistence(timeout: 10)); app.staticTexts["Sample interaction"].tap()
+        XCTAssertTrue(app.otherElements["editor.tabs"].waitForExistence(timeout: 10)); app.otherElements["editor.tabs"].buttons["Preview"].tap()
+        XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 10))
+        print("FOCUSED_PREVIEW_READY")
+        // Short dwell makes the actual tap/result readable in the requested recording.
+        Thread.sleep(forTimeInterval: 3)
+        app.webViews.buttons["Open"].tap()
+        XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5))
+        let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); a.name = "corrected-open-details"; a.lifetime = .keepAlways; add(a)
+        Thread.sleep(forTimeInterval: 5)
+        print("FOCUSED_PREVIEW_COMPLETE")
+    }
     func testVisualReview() {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
@@ -198,7 +240,7 @@ final class ReviewDemoUITests: XCTestCase {
         XCTAssertTrue(app.textFields["intent.0"].waitForExistence(timeout: 8))
         app.textFields["intent.0"].tap(); app.textFields["intent.0"].typeText(" ")
         app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
-        XCTAssertTrue(app.staticTexts["Saved source"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["Saved on this device"].waitForExistence(timeout: 8))
         app.otherElements["editor.tabs"].buttons["Preview"].tap()
         XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 10))
         app.webViews.buttons["Open"].tap()

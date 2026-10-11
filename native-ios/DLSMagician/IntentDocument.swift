@@ -56,6 +56,18 @@ struct IntentDocument {
         guard ["GIVEN", "WHEN", "THEN", "AND"].contains(kind) else { return source }
         return source + (source.isEmpty ? "" : "\n\n") + kind + "\n"
     }
+    // Insert within this parent's continuation group, preserving all existing source bytes.
+    func insertingAnd(after index: Int) -> (source: String, index: Int)? {
+        let current = blocks
+        guard current.indices.contains(index), current[index].kind != "AND" else { return nil }
+        var last = index
+        while last + 1 < current.count && current[last + 1].kind == "AND" { last += 1 }
+        let ns = source as NSString, offset = NSMaxRange(current[last].range)
+        let prefix = ns.substring(to: offset)
+        let separator = prefix.hasSuffix("\n\n") ? "" : prefix.hasSuffix("\n") ? "\n" : "\n\n"
+        let inserted = separator + "AND\n" + (offset < ns.length ? "\n" : "")
+        return (ns.replacingCharacters(in: NSRange(location: offset, length: 0), with: inserted), last + 1)
+    }
     func generated(name: String) -> GeneratedWorkflow {
         let parsed = blocks.map { block in
             (kind: block.kind, text: (source as NSString).substring(with: block.range).components(separatedBy: "\n").map(Self.webLine).filter { !$0.isEmpty }.joined(separator: " "))
