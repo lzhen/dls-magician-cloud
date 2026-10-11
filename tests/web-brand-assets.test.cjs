@@ -30,6 +30,7 @@ test('web install icons have the expected PNG dimensions', () => {
     assert.equal(bytes.readUInt32BE(16), size);
     assert.equal(bytes.readUInt32BE(20), size);
   }
-  assert.match(read('index.html'), /logo-light\.svg/);
+  assert.match(read('index.html'), /\/styles\.css\?v=brand-lockup-/);
+  assert.match(read('styles.css'), /logo-light\.svg/);
   assert.match(read('sw.js'), /logo-light\.svg/);
 });

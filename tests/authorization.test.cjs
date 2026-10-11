@@ -49,6 +49,7 @@ function harness(t, initial = fixture()) {
       if (name === 'http') return { createServer(fn) { handler = fn; return { listen() {}, close() {} }; } };
       if (name === './storage') return require('../storage.js');
       if (name === './authorization.cjs') return authorization;
+      if (name === './request-security.cjs') return require('../request-security.cjs');
       return require(name);
     },
     Buffer, URL, Date: FixtureDate,
@@ -64,6 +65,7 @@ function harness(t, initial = fixture()) {
     }
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8'), context, { filename: 'server.js' });
+  t.after(() => vm.runInContext('storage.close()', context));
 
   function token(id, overrides = {}, expiresAt = now + 3_600_000) {
     const value = `${Buffer.from(JSON.stringify({ alg: 'fixture' })).toString('base64url')}.${Buffer.from(JSON.stringify({ sub: id, exp: Math.floor(expiresAt / 1000), nonce: identities.size })).toString('base64url')}.fixture`;
