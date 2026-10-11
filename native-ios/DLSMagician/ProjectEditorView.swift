@@ -27,26 +27,10 @@ struct ProjectEditorView: View {
             if editor.loading && editor.project == nil {
                 ProgressView("Opening project…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if editor.project != nil {
-                status
-                HStack(spacing: 24) {
-                    ForEach(["Intent", "Preview"], id: \.self) { value in
-                        Button { tab = value } label: {
-                            VStack(spacing: 0) {
-                                Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).frame(minHeight: 44)
-                                Rectangle().fill(tab == value ? DLSTheme.text : .clear).frame(height: 2)
-                            }
-                        }.buttonStyle(.plain).accessibilityAddTraits(tab == value ? .isSelected : [])
-                    }
-                    Spacer()
-                    if tab == "Intent" {
-                        Menu {
-                            Toggle("Raw source", isOn: $rawSource).accessibilityIdentifier("editor.rawToggle")
-                            ForEach(["GIVEN", "WHEN", "THEN", "AND"], id: \.self) { kind in
-                                Button("Add \(kind)") { editor.text = IntentDocument(source: editor.text).appending(kind) }.disabled(!editor.editable || editor.busy)
-                            }
-                        } label: { Image(systemName: "text.badge.plus").frame(width: 44, height: 44) }.accessibilityLabel("Intent options")
-                    }
-                }.padding(.horizontal, 20).accessibilityElement(children: .contain).accessibilityIdentifier("editor.tabs")
+                if !typeSize.isAccessibilitySize { status }
+                if typeSize.isAccessibilitySize {
+                    ScrollView(.horizontal, showsIndicators: false) { stageTabs }.fixedSize(horizontal: false, vertical: true)
+                } else { stageTabs }
                 Divider()
                 ZStack {
                     intent.opacity(tab == "Intent" ? 1 : 0).allowsHitTesting(tab == "Intent").accessibilityHidden(tab != "Intent")
@@ -99,11 +83,32 @@ struct ProjectEditorView: View {
         }
         .task { await editor.load(using: app) }
     }
+    private var stageTabs: some View {
+        HStack(spacing: typeSize.isAccessibilitySize ? 12 : 24) {
+            ForEach(["Intent", "Preview"], id: \.self) { value in
+                Button { tab = value } label: {
+                    VStack(spacing: 0) {
+                        Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).fixedSize(horizontal: typeSize.isAccessibilitySize, vertical: false).frame(minHeight: 44)
+                        Rectangle().fill(tab == value ? DLSTheme.text : .clear).frame(height: 2)
+                    }
+                }.buttonStyle(.plain).accessibilityAddTraits(tab == value ? .isSelected : [])
+            }
+            Spacer()
+            if tab == "Intent" {
+                Menu {
+                    Toggle("Raw source", isOn: $rawSource).accessibilityIdentifier("editor.rawToggle")
+                    ForEach(["GIVEN", "WHEN", "THEN", "AND"], id: \.self) { kind in
+                        Button("Add \(kind)") { editor.text = IntentDocument(source: editor.text).appending(kind) }.disabled(!editor.editable || editor.busy)
+                    }
+                } label: { Image(systemName: "text.badge.plus").frame(width: 44, height: 44) }.accessibilityLabel("Intent options")
+            }
+        }.padding(.horizontal, 20).accessibilityElement(children: .contain).accessibilityIdentifier("editor.tabs")
+    }
     private var status: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack {
+            (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout())) {
                 Text(editor.role).font(.caption.weight(.semibold))
-                Spacer()
+                if !typeSize.isAccessibilitySize { Spacer() }
                 Text(editor.saving ? "Saving…" : editor.dirty ? "Unsaved draft" : app.isDemo ? "Saved on this device" : "Saved source").font(.caption)
             }.foregroundStyle(DLSTheme.muted)
             if !editor.editable { Text("Read-only intent").font(.caption) }
@@ -125,9 +130,10 @@ struct ProjectEditorView: View {
     private var intent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack {
+                if typeSize.isAccessibilitySize { status.padding(.horizontal, -20) }
+                (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout())) {
                     Text("Structured intent").font(.subheadline.weight(.semibold))
-                    Spacer()
+                    if !typeSize.isAccessibilitySize { Spacer() }
                     Label(IntentDocument(source: editor.text).valid ? "Ready" : "Add steps", systemImage: IntentDocument(source: editor.text).valid ? "checkmark.circle" : "pencil")
                         .font(.caption).foregroundStyle(DLSTheme.muted).accessibilityLabel(IntentDocument(source: editor.text).valid ? "Structure ready" : "Add GIVEN, WHEN and THEN")
                 }
@@ -210,6 +216,7 @@ struct ProjectEditorView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 0) {
+                    if typeSize.isAccessibilitySize { status }
                     previewToolbar
                     if let snapshot = editor.snapshot {
                         if output == "Interface" {

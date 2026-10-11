@@ -1,7 +1,27 @@
 {
   "DLS-native-ui-review.html": {
-    "bytes": 3853512,
-    "sha256": "0b6e6865a039cb1220ee9f625e5d7c5bb7a8438ccaf6b4c3c24863fdc102971a"
+    "bytes": 5223736,
+    "sha256": "d1737f4795d932130915924f9c98f18521bd721e94bedc4f9ba647d3949cac96"
+  },
+  "accessibility-comments-portrait.png": {
+    "bytes": 181396,
+    "sha256": "e9718ee792768b8f0c229ab3c0783069a0242440d8b840eef4ea63e74b936614"
+  },
+  "accessibility-flow-landscape.png": {
+    "bytes": 170783,
+    "sha256": "e083c678aef87412d86a60f47abf321f79a68dee6ec7f35919cd20e85650ae05"
+  },
+  "accessibility-intent-portrait.png": {
+    "bytes": 203788,
+    "sha256": "40322b4e58944062259649b0c76545b2fe45e6c5f06151250caf97c5092921f6"
+  },
+  "accessibility-share-landscape.png": {
+    "bytes": 244332,
+    "sha256": "8f1dfc70ed6ad3fbfb2c429ef5d4a9d1d4e57da49b4ff7a8cbbeee7ceb8c97be"
+  },
+  "accessibility-share-portrait.png": {
+    "bytes": 226090,
+    "sha256": "59b955c0a3292a7cdec34aee6cceb89c3423e4f6396f2b0e3a40ae4bcc42c06f"
   },
   "after-review-intent-dark.png": {
     "bytes": 158013,

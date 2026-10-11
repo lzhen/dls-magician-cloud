@@ -12,7 +12,7 @@ final class WorkflowExperienceUITests: XCTestCase {
         let item = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); item.name = name; item.lifetime = .keepAlways; add(item)
     }
     private func open(_ name: String, _ app: XCUIApplication) {
-        app.buttons["editor.collaboration"].tap(); app.buttons[name].tap()
+        app.buttons["editor.collaboration"].tap(); XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 5)); app.buttons[name].tap()
         XCTAssertTrue(app.buttons["collaboration.done"].waitForExistence(timeout: 8))
     }
     func testIntentPreviewInteractionFlowJSONAndLocalDesignSystem() {
@@ -138,8 +138,20 @@ final class WorkflowExperienceUITests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [portrait], timeout: 5), .completed)
         capture(app, "Native accessibility return to portrait")
+        open("Share", app)
+        XCTAssertTrue(app.buttons["share.copy"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["collaboration.done"].isHittable)
+        capture(app, "Native accessibility Share portrait")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.frame.width > app.frame.height }, object: nil)], timeout: 5), .completed)
+        capture(app, "Native accessibility Share landscape")
+        app.buttons["collaboration.done"].tap()
+        XCUIDevice.shared.orientation = .portrait
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in app.frame.height > app.frame.width }, object: nil)], timeout: 5), .completed)
         open("Comments", app)
         XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["collaboration.done"].isHittable)
+        capture(app, "Native accessibility Comments portrait")
         app.buttons["collaboration.done"].tap()
         XCTAssertTrue(app.otherElements["editor.tabs"].buttons["Preview"].isSelected)
     }
@@ -178,7 +190,8 @@ final class ReviewDemoUITests: XCTestCase {
         XCTAssertTrue(app.buttons["share.copy"].waitForExistence(timeout: 8)); shot("corrected-sample-share")
         app.buttons["collaboration.done"].tap()
         app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
-        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 8)); app.textViews["comments.body"].tap(); app.textViews["comments.body"].typeText("Sample review note")
+        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 8)); app.textViews["comments.body"].tap(); for character in "Sample review note" { app.textViews["comments.body"].typeText(String(character)) }
+        XCTAssertEqual(app.textViews["comments.body"].value as? String, "Sample review note")
         app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
         XCTAssertTrue(app.staticTexts["Sample review note"].waitForExistence(timeout: 8)); shot("corrected-sample-comments")
     }
