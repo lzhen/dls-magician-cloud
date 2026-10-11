@@ -48,6 +48,33 @@ final class NativeContractTests: XCTestCase {
         ]
         for value in rejected { XCTAssertThrowsError(try AppConfiguration.callbackCode(URL(string: value)!)) }
     }
+    func testPKCECallbackAcceptsOnlyCredentialFreeFragmentMarkers() throws {
+        for suffix in ["", "#", "#sb="] {
+            XCTAssertEqual(try AppConfiguration.callbackCode(URL(string: "design.zhenli.dlsmagician://auth/callback?code=synthetic" + suffix)!), "synthetic")
+        }
+        for suffix in ["#sb=other", "#code=other", "#unknown=1", "#sb=&sb="] {
+            XCTAssertThrowsError(try AppConfiguration.callbackCode(URL(string: "design.zhenli.dlsmagician://auth/callback?code=synthetic" + suffix)!))
+        }
+    }
+    func testProviderErrorsDoNotBecomeInvalidLinkOrExposeDescriptions() {
+        for suffix in ["?error=access_denied", "#error=access_denied&sb=", "?error=access_denied#error=access_denied&sb="] {
+            XCTAssertThrowsError(try AppConfiguration.callbackCode(URL(string: "design.zhenli.dlsmagician://auth/callback" + suffix)!)) {
+                XCTAssertEqual($0 as? AppFailure, .providerDeclined)
+            }
+        }
+        XCTAssertThrowsError(try AppConfiguration.callbackCode(URL(string: "design.zhenli.dlsmagician://auth/callback#error_code=otp_expired&error_description=DO_NOT_DISPLAY&sb=")!)) {
+            XCTAssertEqual($0 as? AppFailure, .emailLinkExpired)
+            XCTAssertFalse(userMessage($0).contains("DO_NOT_DISPLAY"))
+        }
+    }
+    func testTokenFragmentsAndMixedSuccessErrorsNeverSignIn() {
+        for key in ["access_token", "refresh_token", "provider_token", "provider_refresh_token", "token_hash", "id_token"] {
+            XCTAssertThrowsError(try AppConfiguration.callbackCode(URL(string: "design.zhenli.dlsmagician://auth/callback?code=synthetic#\(key)=synthetic")!)) {
+                XCTAssertEqual($0 as? AppFailure, .callbackTokens)
+            }
+        }
+        XCTAssertThrowsError(try AppConfiguration.callbackCode(URL(string: "design.zhenli.dlsmagician://auth/callback?code=synthetic#error=access_denied")!))
+    }
     func testAuthorizationCannotStartAtAnUntrustedOrigin() {
         XCTAssertTrue(AppConfiguration.authorizationURLIsAllowed(URL(string: "https://vxlwnvwijnzimjvgpeug.supabase.co/auth/v1/authorize?provider=google")!))
         for value in ["http://vxlwnvwijnzimjvgpeug.supabase.co/auth/v1/authorize",
