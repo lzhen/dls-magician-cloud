@@ -103,6 +103,9 @@ class ProjectChecks(unittest.TestCase):
         self.assertEqual(len(manifest['sha256']),3)
         for name,digest in manifest['sha256'].items():
             self.assertEqual(hashlib.sha256((assets/name).read_bytes()).hexdigest(),digest,name)
+        self.assertEqual(manifest['legacyWorkflow']['sourceCommit'], manifest['source_commit'])
+        for name,digest in manifest['legacyWorkflow']['assetSHA256'].items():
+            self.assertEqual(hashlib.sha256((assets/name).read_bytes()).hexdigest(),digest,name)
         project=(ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text()
         self.assertIn('DLSMagician/PreviewAssets',project)
 

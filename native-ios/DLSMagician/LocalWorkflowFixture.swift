@@ -6,7 +6,7 @@ import Foundation
 actor LocalWorkflowFixture {
     static let source = "GIVEN\na button named \"Open\"\n\nWHEN\nuser clicks button \"Open\"\n\nTHEN\nshow dialog \"Details\" with content \"Hello preview\""
     var revision = 1
-    var text = LocalWorkflowFixture.source
+    var text = ProcessInfo.processInfo.arguments.contains("--legacy") ? "GIVEN\nAn advertiser manages campaigns\nWHEN\nOffline data is ready\nTHEN\nThey can create a campaign" : LocalWorkflowFixture.source
     var comments: [[String: Any]] = []
     var members: [[String: Any]] = []
     private var role: String {

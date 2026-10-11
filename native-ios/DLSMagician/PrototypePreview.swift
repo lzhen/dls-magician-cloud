@@ -9,6 +9,7 @@ struct PrototypeSnapshot {
     let revision: String
     let json: String
     let html: String
+    let interfaceHTML: String
     let steps: [GeneratedWorkflow.Step]
 
     static func build(source: String, name: String, system: PrototypeSystem) throws -> Self {
@@ -24,25 +25,32 @@ struct PrototypeSnapshot {
         }
         let interactions = try asset("interaction-engine", "js")
         let renderer = try asset("component-preview", "js")
+        let legacy = try asset("legacy-workflow", "js")
+        context.evaluateScript(legacy)
         context.evaluateScript(interactions)
         context.evaluateScript(renderer)
         context.setObject(String(decoding: data, as: UTF8.self), forKeyedSubscript: "inputJSON" as NSString)
         context.setObject(system.rawValue, forKeyedSubscript: "systemID" as NSString)
         context.setObject(system.name, forKeyedSubscript: "systemName" as NSString)
-        let script = "(()=>{const result=DLSComponentPreview.output(JSON.parse(inputJSON),systemID,{name:systemName,source:'Built-in',selectionScope:'this-device'});result.designSystem=result.designSystem||{id:systemID,name:systemName,source:'Built-in',selectionScope:'this-device',implementation:'html-preview',components:[]};return JSON.stringify(result,null,2)})()"
+        let script = "(()=>{const base=JSON.parse(inputJSON);const analyzed=DLSComponentPreview.analyze(base);const result=analyzed.previewEngine==='components-v1'?DLSComponentPreview.output(analyzed,systemID,{name:systemName,source:'Built-in',selectionScope:'this-device'}):DLSLegacyWorkflow.output(base,systemID);result.designSystem={...result.designSystem,selectionScope:'this-device',implementation:'html-preview'};return JSON.stringify(result,null,2)})()"
         guard let json = context.evaluateScript(script)?.toString(), !scriptFailure, json != "undefined" else { throw AppFailure.invalidResponse }
-        let spec = Data(json.utf8).base64EncodedString()
-        let css = try asset("component-preview", "css")
-        // Generated content never enters executable JS: decode a base64 JSON value.
+        context.setObject(json, forKeyedSubscript: "compiledJSON" as NSString)
+        guard let interfaceHTML = context.evaluateScript("(()=>{const spec=JSON.parse(compiledJSON);return spec.previewEngine==='components-v1'?DLSComponentPreview.render(spec,systemID):DLSLegacyWorkflow.render(spec,systemID)})()")?.toString(), !scriptFailure else { throw AppFailure.invalidResponse }
+        let markup = Data(interfaceHTML.utf8).base64EncodedString()
+        guard let markData = UIImage(named: "BrandMark")?.pngData() else { throw AppFailure.configuration }
+        let mark = markData.base64EncodedString()
+        let css = try asset("legacy-workflow", "css") + "\n" + asset("component-preview", "css")
+        // Generated content never enters executable JS: decode base64 HTML markup.
         // The CSP and navigation delegate deny all network and file navigations.
         let html = """
-        <!doctype html><html data-theme="light"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html,body{margin:0;background:#fff;font-family:system-ui}*{box-sizing:border-box}\(css).component-preview{min-height:240px;padding:20px 12px}.cp-canvas{min-width:0} .cp-notice{padding:16px;font-size:14px;color:#55486a}</style></head><body><main id="preview"></main><script>\(interactions)</script><script>\(renderer)</script><script>
-        const spec=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('\(spec)'),c=>c.charCodeAt(0))));
-        if(spec.components&&spec.components.length){document.getElementById('preview').innerHTML=DLSComponentPreview.render(spec,'\(system.rawValue)');}else{document.getElementById('preview').textContent='Add a supported component such as a button or input to preview an interface. Your current source remains available in Flow and JSON.';document.getElementById('preview').style.padding='24px';}
+        <!doctype html><html data-theme="light"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html,body{margin:0;background:#fff;font-family:system-ui}*{box-sizing:border-box}\(css).brand-symbol,[data-theme="light"] .brand-symbol{background-image:url(data:image/png;base64,\(mark))}.component-preview{min-height:240px;padding:20px 12px}.cp-canvas{min-width:0} .cp-notice{padding:16px;font-size:14px;color:#55486a}</style></head><body><main id="preview"></main><script>\(interactions)</script><script>\(renderer)</script><script>
+        document.getElementById('preview').innerHTML=new TextDecoder().decode(Uint8Array.from(atob('\(markup)'),c=>c.charCodeAt(0)));
+        // Legacy production action is a local completion simulation, never a save/API call.
+        document.addEventListener('click',event=>{const action=event.target.closest('[data-action="run-prototype"]');if(action){action.disabled=true;action.textContent='Interface action completed';}});
         DLSComponentPreview.bindEvents(document);DLSInteractions.bind(document);
         </script></body></html>
         """
-        return Self(source: source, system: system, revision: revision, json: json, html: html, steps: generated.steps)
+        return Self(source: source, system: system, revision: revision, json: json, html: html, interfaceHTML: interfaceHTML, steps: generated.steps)
     }
 }
 

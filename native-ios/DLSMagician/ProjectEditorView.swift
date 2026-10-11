@@ -26,7 +26,6 @@ struct ProjectEditorView: View {
             if editor.loading && editor.project == nil {
                 ProgressView("Opening project…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if editor.project != nil {
-                status
                 Picker("Editor view", selection: $tab) {
                     Text("Intent").tag("Intent"); Text("Preview").tag("Preview")
                 }.pickerStyle(.segmented).padding(.horizontal).padding(.bottom, 10).accessibilityIdentifier("editor.tabs")
@@ -97,11 +96,12 @@ struct ProjectEditorView: View {
             } else if editor.collaborationNeedsRefresh {
                 Button("Refresh project before continuing") { Task { await editor.refreshCollaboration(using: app) } }.disabled(editor.busy)
             }
-        }.dynamicTypeSize(...DynamicTypeSize.accessibility1).padding(.horizontal).padding(.vertical, 10)
+        }.padding(.horizontal).padding(.vertical, 10)
     }
     private var intent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                status
                 VStack(alignment: .leading, spacing: 10) {
                     Label(IntentDocument(source: editor.text).valid ? "Structure ready" : "Add GIVEN, WHEN and THEN", systemImage: IntentDocument(source: editor.text).valid ? "checkmark.circle" : "pencil")
                         .font(.caption).foregroundStyle(DLSTheme.muted)
@@ -140,17 +140,18 @@ struct ProjectEditorView: View {
     private var preview: some View {
         ScrollView {
         VStack(spacing: 10) {
+            status
             VStack(alignment: .leading, spacing: 4) {
                 Text("Design system").font(.caption)
                 Picker("Design system", selection: Binding(get: { editor.system }, set: { editor.selectSystem($0) })) {
                     ForEach(PrototypeSystem.allCases) { Text($0.name).tag($0) }
                 }.accessibilityIdentifier("preview.system")
             }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
-                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+
             DisclosureGroup("About this preview") {
                 Text("Style preset on this device. HTML mappings, not the original component libraries. Changing a preset resets the preview test state.")
             }.font(.caption).foregroundStyle(DLSTheme.muted).padding(.horizontal)
-                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+
             Picker("Output", selection: $output) {
                 Text("Interface").tag("Interface"); Text("Flow").tag("Flow"); Text("JSON").tag("JSON")
             }.pickerStyle(.segmented).padding(.horizontal).accessibilityIdentifier("preview.output")

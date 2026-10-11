@@ -20,21 +20,30 @@ struct IntentDocument {
         let range: NSRange
     }
     let source: String
+    // ECMAScript trim whitespace, matching the production parser. Semantic parsing
+    // removes CR, but all editor ranges continue to address the untouched source.
+    private static let webWhitespace = CharacterSet(charactersIn: "\u{0009}\u{000A}\u{000B}\u{000C}\u{000D} \u{00A0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}")
+    private static func webLine(_ raw: String) -> String { raw.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: webWhitespace) }
     var blocks: [Block] {
         let ns = source as NSString
-        let re = try! NSRegularExpression(pattern: "(?im)^(GIVEN|WHEN|THEN|AND)[ \\t]*\\r?$")
-        let matches = re.matches(in: source, range: NSRange(location: 0, length: ns.length))
-        return matches.enumerated().map { index, match in
-            var start = NSMaxRange(match.range)
-            if start < ns.length, ns.substring(with: NSRange(location: start, length: 1)) == "\r" { start += 1 }
-            if start < ns.length, ns.substring(with: NSRange(location: start, length: 1)) == "\n" { start += 1 }
-            let end = index + 1 < matches.count ? matches[index + 1].range.location : ns.length
-            let range = NSRange(location: start, length: end - start)
-            return Block(id: index, kind: ns.substring(with: match.range(at: 1)).uppercased(),
+        var headings: [(kind: String, lineStart: Int, bodyStart: Int)] = []
+        var offset = 0
+        for raw in source.components(separatedBy: "\n") {
+            let length = (raw as NSString).length
+            let kind = Self.webLine(raw).uppercased()
+            if ["GIVEN", "WHEN", "THEN", "AND"].contains(kind) {
+                headings.append((kind, offset, min(ns.length, offset + length + 1)))
+            }
+            offset += length + 1
+        }
+        return headings.enumerated().map { index, heading in
+            let end = index + 1 < headings.count ? headings[index + 1].lineStart : ns.length
+            let range = NSRange(location: heading.bodyStart, length: end - heading.bodyStart)
+            return Block(id: index, kind: heading.kind,
                          body: ns.substring(with: range).trimmingCharacters(in: .newlines), range: range)
         }
     }
-    var valid: Bool { ["GIVEN", "WHEN", "THEN"].allSatisfy { kind in blocks.contains { $0.kind == kind && !$0.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } } }
+    var valid: Bool { generated(name: "").valid }
     func replacing(_ index: Int, with body: String) -> String {
         guard blocks.indices.contains(index) else { return source }
         let block = blocks[index]
@@ -48,9 +57,22 @@ struct IntentDocument {
         return source + (source.isEmpty ? "" : "\n\n") + kind + "\n"
     }
     func generated(name: String) -> GeneratedWorkflow {
-        .init(intent: name, version: "1.0", steps: blocks.enumerated().map { i, block in
-            .init(id: "step_\(i + 1)", type: block.kind,
-                  text: block.body.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " "), entities: [])
-        }, entities: [], valid: valid)
+        let parsed = blocks.map { block in
+            (kind: block.kind, text: (source as NSString).substring(with: block.range).components(separatedBy: "\n").map(Self.webLine).filter { !$0.isEmpty }.joined(separator: " "))
+        }
+        // JS \b is an ASCII word boundary; do not use ICU's Unicode \b here.
+        let re = try! NSRegularExpression(pattern: "(?i)(?<![A-Za-z0-9_])(?:advertiser|campaign|offline data|signals?|performance|insights?|dataset|audience|pixel|workflow)(?![A-Za-z0-9_])")
+        var entities: [String] = []
+        for step in parsed {
+            let ns = step.text as NSString
+            for match in re.matches(in: step.text, range: NSRange(location: 0, length: ns.length)) {
+                let entity = ns.substring(with: match.range).lowercased()
+                if !entities.contains(entity) { entities.append(entity) }
+            }
+        }
+        return .init(intent: name, version: "1.0", steps: parsed.enumerated().map { i, step in
+            .init(id: "step_\(i + 1)", type: step.kind, text: step.text,
+                  entities: entities.filter { step.text.lowercased().contains($0) })
+        }, entities: entities, valid: ["GIVEN", "WHEN", "THEN"].allSatisfy { required in parsed.contains { $0.kind == required && !$0.text.isEmpty } })
     }
 }

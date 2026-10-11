@@ -13,6 +13,8 @@ struct CollaborationView: View {
     @State private var anchor = "General"
     @State private var copied = false
     @State private var notice: String?
+    @State private var discardPresented = false
+    private var hasUnsentDraft: Bool { !email.isEmpty || !bodyText.isEmpty }
     @State private var pendingRole: RoleChange?
     @FocusState private var focused: Bool
     struct RoleChange: Identifiable { let memberID: String; let role: String; var id: String { memberID } }
@@ -33,10 +35,14 @@ struct CollaborationView: View {
                 .background(DLSTheme.background).foregroundStyle(DLSTheme.text)
                 .navigationTitle(mode == .share ? "Share" : "Comments").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(editor.busy).accessibilityIdentifier("collaboration.done") }
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { focused = false; if hasUnsentDraft { discardPresented = true } else { dismiss() } }.disabled(editor.busy).accessibilityIdentifier("collaboration.done") }
                     ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Hide keyboard") { focused = false } }
                 }
-        }.interactiveDismissDisabled(editor.busy)
+        }.interactiveDismissDisabled(editor.busy || hasUnsentDraft)
+            .confirmationDialog("Discard unsent draft?", isPresented: $discardPresented, titleVisibility: .visible) {
+                Button("Discard draft", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) { }
+            } message: { Text("Your unsent invitation or comment is still here. Keep editing to preserve it, or discard it to close.") }
             .alert(item: $pendingRole) { change in
                 Alert(title: Text("Change project role?"), message: Text("Set this member to \(change.role)?"), primaryButton: .default(Text("Change")) {
                     Task {
