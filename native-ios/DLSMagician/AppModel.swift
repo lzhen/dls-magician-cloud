@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published var busy = false
     @Published private(set) var bootstrap: Bootstrap?
     @Published var workspaceID = ""
+    @Published private(set) var projectLoadFailed = false
     @Published private(set) var authenticationRevision = UUID()
     @Published private(set) var deletionReceipt: AccountDeletionReceipt?
     let api = APIClient()
@@ -27,6 +28,14 @@ final class AppModel: ObservableObject {
     }
 
     func start() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--uitest-projects") {
+            let fixture = #"{"user":{"id":"synthetic","name":"Synthetic","email":"synthetic@example.invalid"},"workspaces":[{"id":"workspace","name":"Test workspace","members":[{"userId":"synthetic","role":"Editor"}]}],"projects":[]}"#
+            bootstrap = try? JSONDecoder().decode(Bootstrap.self, from: Data(fixture.utf8))
+            phase = .workspace
+            return
+        }
+        #endif
         guard !starting else { return }
         starting = true
         defer {
@@ -103,13 +112,30 @@ final class AppModel: ObservableObject {
         let data = try await api.bootstrap(token: token)
         guard data.user.id == sessionUser.id, generation == sessionGeneration else { throw AppFailure.unauthorized }
         bootstrap = data
+        projectLoadFailed = false
         if !workspaceID.isEmpty && !data.workspaces.contains(where: { $0.id == workspaceID }) { workspaceID = "" }
         phase = .workspace
         authenticationRevision = UUID()
         notice = nil
     }
     func refresh() async {
-        do { try await hydrate() } catch { notice = userMessage(error) }
+        do { try await hydrate() } catch { projectLoadFailed = true; notice = userMessage(error) }
+    }
+    var creationWorkspaces: [Workspace] {
+        guard let data = bootstrap else { return [] }
+        return data.workspaces.filter { $0.canCreate(userID: data.user.id) }
+    }
+    func createWorkflow(_ input: CreateWorkflowRequest) async throws -> ProjectDetail {
+        guard !busy, let user else { throw AppFailure.unauthorized }
+        let generation = sessionGeneration
+        busy = true
+        defer { busy = false }
+        let created = try await api.create(input, userID: user.id, token: try await auth.token())
+        guard generation == sessionGeneration, self.user?.id == user.id else { throw AppFailure.unauthorized }
+        workspaceID = input.workspaceId
+        // The create succeeded even if a later refresh fails; never offer a second POST.
+        await refresh()
+        return created
     }
     func signOut() async {
         guard !busy else { return }

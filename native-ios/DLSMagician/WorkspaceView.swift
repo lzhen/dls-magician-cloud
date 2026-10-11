@@ -5,6 +5,8 @@ struct WorkspaceView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var accountPresented = false
     @State private var search = ""
+    @State private var createPresented = false
+    @State private var createdProject: ProjectDetail?
     var filtered: [ProjectSummary] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return query.isEmpty ? app.projects : app.projects.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) }
@@ -26,17 +28,25 @@ struct WorkspaceView: View {
                             .background(DLSTheme.surface2, in: RoundedRectangle(cornerRadius: DLSTheme.radiusControl))
                             .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusControl).stroke(DLSTheme.border, lineWidth: 1))
                     }
+                    Button { createPresented = true } label: {
+                        Label("Create a workflow", systemImage: "plus")
+                    }.buttonStyle(DLSPrimaryButtonStyle()).accessibilityIdentifier("workflow.create")
                     if let notice = app.notice { NoticeView(text: notice) }
+                    if app.projectLoadFailed {
+                        Button("Retry loading projects") { Task { await app.refresh() } }
+                    }
                     LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 250), spacing: 14)], spacing: 14) {
                         ForEach(filtered) { project in
                             NavigationLink(value: project) { DLSProjectCard(project: project) }.buttonStyle(.plain)
                         }
                     }
-                    if filtered.isEmpty {
+                    if filtered.isEmpty && !app.projectLoadFailed {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(search.isEmpty ? "No projects here yet" : "No matching projects").font(.headline)
-                            Text(search.isEmpty ? "Ask a workspace owner to invite this account to a project, then pull down to refresh." : "Try a different project name.")
-                                .font(.subheadline).foregroundStyle(DLSTheme.muted)
+                            Text(emptyTitle).font(.headline)
+                            Text(emptyDescription).font(.subheadline).foregroundStyle(DLSTheme.muted)
+                            if let user = app.user {
+                                Text("Signed in as \(user.email)").font(.caption).foregroundStyle(DLSTheme.soft)
+                            }
                         }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
                             .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
                             .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
@@ -60,8 +70,31 @@ struct WorkspaceView: View {
                 if let user = app.user { ProjectEditorView(projectID: project.id, userID: user.id) }
             }
             .sheet(isPresented: $accountPresented) { AccountView() }
+            .sheet(isPresented: $createPresented) {
+                CreateWorkflowView { project in search = ""; createdProject = project }
+            }
+            .navigationDestination(isPresented: Binding(get: { createdProject != nil }, set: { if !$0 { createdProject = nil } })) {
+                if let project = createdProject, let user = app.user { ProjectEditorView(projectID: project.id, userID: user.id) }
+            }
         }
     }
+    private var listState: ProjectListState {
+        .resolve(app.bootstrap, workspaceID: app.workspaceID, search: search, loadFailed: app.projectLoadFailed)
+    }
+    private var emptyTitle: String {
+        switch listState {
+        case .noMatches: return "No matching projects"
+        case .emptyWorkspace: return "No projects in this workspace"
+        default: return "No accessible projects for this account"
+        }
+    }
+    private var emptyDescription: String {
+        if listState == .noMatches { return "Try a different project name." }
+        if listState == .emptyWorkspace { return "Choose All accessible projects or create a workflow here." }
+        if !app.creationWorkspaces.isEmpty { return "Create your first workflow in a workspace you can edit." }
+        return "If your projects appear on the Web, check that you signed in with the same account. This account needs workspace access before it can create a workflow."
+    }
+
 }
 
 struct DLSProjectCard: View {
@@ -170,6 +203,66 @@ struct AccountView: View {
                 }
                 .navigationDestination(isPresented: $deletionPresented) {
                     if let user = app.user { AccountDeletionView(userID: user.id) }
+                }
+        }
+    }
+}
+
+struct CreateWorkflowView: View {
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let onCreated: (ProjectDetail) -> Void
+    @State private var name = ""
+    @State private var description = ""
+    @State private var workspaceID = ""
+    @State private var submitting = false
+    @State private var submitted = false
+    @State private var error: String?
+    var body: some View {
+        NavigationStack {
+            Form {
+                if app.creationWorkspaces.isEmpty {
+                    Section {
+                        Text("No workspace available for creation")
+                        Text("Creation requires an Admin or Editor workspace role. Check the signed-in account or ask the workspace owner for access.")
+                        if let user = app.user { Text("Signed in as \(user.email)").textSelection(.enabled) }
+                    }.listRowBackground(DLSTheme.surface)
+                } else {
+                    Section("Workflow") {
+                        TextField("Workflow name", text: $name).accessibilityIdentifier("workflow.name")
+                        TextField("Description (optional)", text: $description, axis: .vertical)
+                        Picker("Workspace", selection: $workspaceID) {
+                            ForEach(app.creationWorkspaces) { Text($0.name).tag($0.id) }
+                        }
+                    }.disabled(submitting || submitted).listRowBackground(DLSTheme.surface)
+                    if let error { Section { NoticeView(text: error) }.listRowBackground(DLSTheme.surface) }
+                    Section {
+                        Button(submitting ? "Creating…" : "Create workflow") {
+                            Task {
+                                guard !submitting && !submitted else { return }
+                                submitting = true; submitted = true
+                                defer { submitting = false }
+                                do {
+                                    let input = try CreateWorkflowRequest(name: name, description: description, workspaceId: workspaceID)
+                                    let project = try await app.createWorkflow(input)
+                                    dismiss(); onCreated(project)
+                                } catch {
+                                    self.error = userMessage(error) + " Close this form and refresh projects before trying again; the request may already have saved."
+                                }
+                            }
+                        }.buttonStyle(DLSPrimaryButtonStyle())
+                            .disabled(submitting || submitted || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || workspaceID.isEmpty)
+                            .accessibilityIdentifier("workflow.submit")
+                    }.listRowBackground(DLSTheme.surface)
+                }
+            }.scrollContentBackground(.hidden).background(DLSTheme.background)
+                .foregroundStyle(DLSTheme.text).navigationTitle("Create a workflow")
+                .toolbar { ToolbarItem(placement: .cancellationAction) {
+                    Button(submitted ? "Close" : "Cancel") { dismiss() }.disabled(submitting).accessibilityIdentifier("workflow.cancel")
+                } }
+                .interactiveDismissDisabled(submitting)
+                .onAppear {
+                    workspaceID = app.creationWorkspaces.contains(where: { $0.id == app.workspaceID }) ? app.workspaceID : (app.creationWorkspaces.first?.id ?? "")
                 }
         }
     }

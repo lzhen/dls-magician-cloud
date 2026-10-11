@@ -28,3 +28,29 @@ final class LoginSmokeTests: XCTestCase {
         add(attachment)
     }
 }
+
+final class WorkflowCreationSmokeTests: XCTestCase {
+    func testCreateFormCanBeCancelledWithoutCreatingAnything() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitest-projects"]
+        app.launch()
+        XCTAssertTrue(app.buttons["workflow.create"].waitForExistence(timeout: 10))
+        app.buttons["workflow.create"].tap()
+        let field = app.textFields["workflow.name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["workflow.submit"].isEnabled)
+        field.tap(); field.typeText("Cancelled synthetic draft")
+        XCTAssertTrue(app.buttons["workflow.submit"].isEnabled)
+        app.buttons["workflow.cancel"].tap()
+        XCTAssertTrue(app.buttons["workflow.create"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No accessible projects for this account"].exists)
+        app.buttons["workflow.create"].tap()
+        XCTAssertTrue(app.textFields["workflow.name"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["workflow.name"].value as? String, "Workflow name")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Native create workflow — synthetic fixture"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}

@@ -11,6 +11,10 @@ struct WorkspaceUser: Codable, Identifiable, Equatable {
 struct WorkspaceMember: Codable { let userId: String; let role: String; let user: WorkspaceUser? }
 struct Workspace: Decodable, Identifiable {
     let id: String; let name: String; let members: [WorkspaceMember]
+    func canCreate(userID: String) -> Bool {
+        let matches = members.filter { $0.userId == userID }
+        return matches.count == 1 && ["Admin", "Editor"].contains(matches[0].role)
+    }
     func isAdmin(userID: String) -> Bool {
         let matches = members.filter { $0.userId == userID }
         return matches.count == 1 && matches[0].role == "Admin"
@@ -87,5 +91,31 @@ struct AuthenticationCallbackGate {
         guard currentID == id else { return false }
         currentID = nil
         return true
+    }
+}
+
+struct CreateWorkflowRequest: Encodable {
+    let name: String
+    let description: String
+    let workspaceId: String
+    let category = "Workflow"
+    init(name: String, description: String, workspaceId: String) throws {
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.workspaceId = workspaceId
+        guard !self.name.isEmpty, !workspaceId.isEmpty else { throw AppFailure.invalidResponse }
+    }
+}
+
+enum ProjectListState: Equatable {
+    case loading, failed, emptyAccount, emptyWorkspace, noMatches, populated
+    static func resolve(_ data: Bootstrap?, workspaceID: String, search: String, loadFailed: Bool) -> Self {
+        if loadFailed { return .failed }
+        guard let data else { return .loading }
+        if data.projects.isEmpty { return .emptyAccount }
+        let projects = workspaceID.isEmpty ? data.projects : data.projects.filter { $0.workspaceId == workspaceID }
+        if projects.isEmpty { return .emptyWorkspace }
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty || projects.contains(where: { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) }) ? .populated : .noMatches
     }
 }

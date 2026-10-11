@@ -119,3 +119,102 @@ final class NativeContractTests: XCTestCase {
         XCTAssertFalse(workspace.isAdmin(userID: "unknown"))
     }
 }
+
+private enum WorkflowFixtures {
+    static func bootstrap(role: String = "Editor", userID: String = "synthetic", projects: String = "[]") -> Data {
+        Data("""
+        {"user":{"id":"\(userID)","name":"Synthetic","email":"synthetic@example.invalid"},"workspaces":[{"id":"workspace","name":"Workspace","members":[{"userId":"synthetic","role":"\(role)"}]}],"projects":\(projects)}
+        """.utf8)
+    }
+    static let project = Data(#"{"id":"p-synthetic","name":"New workflow","description":"Synthetic only","workspaceId":"workspace","ownerId":"synthetic","status":"Draft","structuredLanguage":"GIVEN\nSynthetic","updatedAt":"2026-10-11T00:00:00Z","generated":{"intent":"Synthetic","version":"1.0","steps":[],"entities":[],"valid":true},"members":[{"userId":"synthetic","role":"Admin"}]}"#.utf8)
+    static let list = #"[{"id":"p-synthetic","name":"New workflow","description":"Synthetic only","workspaceId":"workspace","status":"Draft","updatedAt":"2026-10-11T00:00:00Z"}]"#
+}
+private actor WorkflowHTTP {
+    var steps: [(String, Int, Data)]
+    var bodies: [Data] = []
+    init(_ steps: [(String, Int, Data)]) { self.steps = steps }
+    func respond(_ request: URLRequest) throws -> (Data, URLResponse) {
+        XCTAssertFalse(steps.isEmpty)
+        let step = steps.removeFirst()
+        XCTAssertEqual(request.httpMethod, step.0)
+        XCTAssertEqual(request.url?.host, "dlsmagician.empathie.ai")
+        if let data = request.httpBody { bodies.append(data) }
+        if step.1 == 0 { throw URLError(.timedOut) }
+        return (step.2, HTTPURLResponse(url: request.url!, statusCode: step.1, httpVersion: nil, headerFields: nil)!)
+    }
+    func writtenBodies() -> [Data] { bodies }
+    func remaining() -> Int { steps.count }
+}
+final class WorkflowCreationTests: XCTestCase {
+    func testEmptyErrorsFiltersAndInvitedGuestAreDifferentStates() throws {
+        let empty = try JSONDecoder().decode(Bootstrap.self, from: WorkflowFixtures.bootstrap())
+        let populated = try JSONDecoder().decode(Bootstrap.self, from: WorkflowFixtures.bootstrap(projects: WorkflowFixtures.list))
+        XCTAssertEqual(ProjectListState.resolve(nil, workspaceID: "", search: "", loadFailed: false), .loading)
+        XCTAssertEqual(ProjectListState.resolve(empty, workspaceID: "", search: "", loadFailed: true), .failed)
+        XCTAssertEqual(ProjectListState.resolve(empty, workspaceID: "", search: "", loadFailed: false), .emptyAccount)
+        XCTAssertEqual(ProjectListState.resolve(populated, workspaceID: "", search: "", loadFailed: false), .populated)
+        XCTAssertEqual(ProjectListState.resolve(populated, workspaceID: "other", search: "", loadFailed: false), .emptyWorkspace)
+        XCTAssertEqual(ProjectListState.resolve(populated, workspaceID: "", search: "not found", loadFailed: false), .noMatches)
+        let guest = Bootstrap(user: populated.user, workspaces: [], projects: populated.projects)
+        XCTAssertEqual(ProjectListState.resolve(guest, workspaceID: "", search: "", loadFailed: false), .populated)
+    }
+    func testCreateSaveAndRefreshUseExistingContract() async throws {
+        let http = WorkflowHTTP([("GET",200,WorkflowFixtures.bootstrap()),("POST",201,WorkflowFixtures.project),
+                                 ("GET",200,WorkflowFixtures.bootstrap(projects: WorkflowFixtures.list)),
+                                 ("GET",200,WorkflowFixtures.bootstrap(projects: WorkflowFixtures.list)),
+                                 ("GET",200,WorkflowFixtures.project),("PATCH",200,WorkflowFixtures.project),
+                                 ("GET",200,WorkflowFixtures.project)])
+        let api = APIClient(transport: { try await http.respond($0) })
+        let input = try CreateWorkflowRequest(name: " New workflow ", description: " Synthetic only ", workspaceId: "workspace")
+        let created = try await api.create(input, userID: "synthetic", token: "synthetic-token")
+        let refreshed = try await api.bootstrap(token: "synthetic-token")
+        XCTAssertEqual(refreshed.projects.first?.id, created.id)
+        _ = try await api.save(created, text: "GIVEN\nChanged", userID: "synthetic", token: "synthetic-token")
+        _ = try await api.project(created.id, token: "synthetic-token")
+        let bodies = await http.writtenBodies()
+        let post = try XCTUnwrap(JSONSerialization.jsonObject(with: bodies[0]) as? [String:String])
+        XCTAssertEqual(Set(post.keys), ["name","description","workspaceId","category"])
+        XCTAssertEqual(post["name"], "New workflow")
+        let patch = try XCTUnwrap(JSONSerialization.jsonObject(with: bodies[1]) as? [String:String])
+        XCTAssertEqual(patch["expectedUpdatedAt"], created.updatedAt)
+        XCTAssertEqual(patch["structuredLanguage"], "GIVEN\nChanged")
+        let remaining = await http.remaining(); XCTAssertEqual(remaining, 0)
+    }
+    func testCreateRejectsReadOnlyRolesBeforePosting() async throws {
+        for role in ["Viewer","Commenter","unknown"] {
+            let http = WorkflowHTTP([("GET",200,WorkflowFixtures.bootstrap(role: role))])
+            let api = APIClient(transport: { try await http.respond($0) })
+            do { _ = try await api.create(CreateWorkflowRequest(name:"New",description:"",workspaceId:"workspace"),userID:"synthetic",token:"synthetic"); XCTFail("Must deny") }
+            catch { XCTAssertEqual(error as? AppFailure, .forbidden) }
+            let bodies = await http.writtenBodies(); XCTAssertTrue(bodies.isEmpty)
+        }
+    }
+    func testCreateRejectsAccountSwitchBeforePosting() async throws {
+        let http = WorkflowHTTP([("GET",200,WorkflowFixtures.bootstrap(userID:"other"))])
+        let api = APIClient(transport: { try await http.respond($0) })
+        do { _ = try await api.create(CreateWorkflowRequest(name:"New",description:"",workspaceId:"workspace"),userID:"synthetic",token:"synthetic"); XCTFail("Must deny") }
+        catch { XCTAssertEqual(error as? AppFailure, .unauthorized) }
+        let bodies = await http.writtenBodies(); XCTAssertTrue(bodies.isEmpty)
+    }
+    func testBootstrapHTTPAndMalformedErrorsNeverDecodeAsEmpty() async throws {
+        for (status, expected) in [(401,AppFailure.unauthorized),(403,.forbidden),(500,.unavailable),(200,.invalidResponse)] {
+            let http = WorkflowHTTP([("GET",status,Data("{}".utf8))])
+            let api = APIClient(transport: { try await http.respond($0) })
+            do { _ = try await api.bootstrap(token:"synthetic"); XCTFail("Must fail") }
+            catch { XCTAssertEqual(error as? AppFailure, expected) }
+        }
+    }
+    func testAmbiguousCreateIsNotAutomaticallyRetried() async throws {
+        let http = WorkflowHTTP([("GET",200,WorkflowFixtures.bootstrap()),("POST",0,Data())])
+        let api = APIClient(transport: { try await http.respond($0) })
+        do { _ = try await api.create(CreateWorkflowRequest(name:"New",description:"",workspaceId:"workspace"),userID:"synthetic",token:"synthetic"); XCTFail("Must fail") } catch {}
+        let bodies = await http.writtenBodies(); XCTAssertEqual(bodies.count,1)
+    }
+    func testWorkspaceCreationRoleCannotBeInferredFromProjectOrDuplicates() {
+        let member = WorkspaceMember(userId:"synthetic",role:"Editor",user:nil)
+        XCTAssertTrue(Workspace(id:"w",name:"w",members:[member]).canCreate(userID:"synthetic"))
+        XCTAssertFalse(Workspace(id:"w",name:"w",members:[member,member]).canCreate(userID:"synthetic"))
+        XCTAssertFalse(Workspace(id:"w",name:"w",members:[]).canCreate(userID:"synthetic"))
+        XCTAssertThrowsError(try CreateWorkflowRequest(name:"  ",description:"",workspaceId:"w"))
+    }
+}

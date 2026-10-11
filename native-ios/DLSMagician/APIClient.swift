@@ -11,7 +11,9 @@ final class RejectRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendab
 
 actor APIClient {
     private let session: URLSession
-    init() {
+    private let transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))?
+    init(transport: (@Sendable (URLRequest) async throws -> (Data, URLResponse))? = nil) {
+        self.transport = transport
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
@@ -32,7 +34,10 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await session.data(for: request)
+        let result: (Data, URLResponse)
+        if let transport { result = try await transport(request) }
+        else { result = try await session.data(for: request) }
+        let (data, response) = result
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw AppFailure.invalidResponse }
         switch http.statusCode {
@@ -62,6 +67,13 @@ actor APIClient {
         guard latest.updatedAt == project.updatedAt else { throw AppFailure.conflict }
         return try await request(projectPath(project.id), token: token, method: "PATCH",
                                  body: JSONEncoder().encode(ProjectUpdate(structuredLanguage: text, expectedUpdatedAt: project.updatedAt)))
+    }
+    func create(_ input: CreateWorkflowRequest, userID: String, token: String) async throws -> ProjectDetail {
+        let access = try await bootstrap(token: token)
+        guard access.user.id == userID else { throw AppFailure.unauthorized }
+        guard access.workspaces.first(where: { $0.id == input.workspaceId })?.canCreate(userID: userID) == true else { throw AppFailure.forbidden }
+        // Never retry POST automatically: the server may have committed after a lost response.
+        return try await request("/api/projects", token: token, method: "POST", body: JSONEncoder().encode(input))
     }
     private func projectPath(_ id: String) throws -> String {
         guard !id.isEmpty, id.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 95 }) else {
