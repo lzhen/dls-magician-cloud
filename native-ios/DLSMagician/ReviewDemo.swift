@@ -77,16 +77,16 @@ struct ReviewDemoView: View {
     @StateObject private var app = AppModel(demo: ReviewDemoStore())
     @State private var confirmExit = false
     @State private var closing = false
+    @State private var showInfo = false
     var body: some View {
         VStack(spacing:0) {
-            HStack(alignment:.top) {
-                VStack(alignment:.leading,spacing:4) {
-                    Text("Sample workspace · On this device").font(.subheadline.weight(.semibold))
-                    Text("Sample data stays on this device. Changes reset when you exit.").font(.caption)
-                }
+            HStack(spacing: 6) {
+                Text("Sample workspace").font(.caption.weight(.semibold))
+                Button { showInfo = true } label: { Image(systemName: "info.circle").frame(width: 44, height: 44) }.accessibilityLabel("About sample workspace")
                 Spacer()
-                Button("Exit") { confirmExit=true }.disabled(app.busy || closing).accessibilityIdentifier("demo.exit")
-            }.padding().background(DLSTheme.surface2)
+                Button("Exit") { confirmExit=true }.font(.caption.weight(.semibold)).frame(minHeight:44).disabled(app.busy || closing).accessibilityIdentifier("demo.exit")
+            }.padding(.horizontal, 20).background(DLSTheme.surface2)
+                .alert("Sample workspace", isPresented: $showInfo) { Button("Done",role:.cancel) {} } message: { Text("Sample data stays on this device. Changes reset when you exit.") }
             if app.phase == .workspace { WorkspaceView().environmentObject(app) }
             else if app.phase == .unavailable { NoticeView(text: app.notice ?? "Sample workspace could not open. Exit and try again.") }
             else { ProgressView("Opening sample workspace…").frame(maxWidth:.infinity,maxHeight:.infinity) }

@@ -14,8 +14,7 @@ struct WorkspaceView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    DLSPageHeading(kicker: "Shared source of truth", title: "Projects", description: "Pick up where your team left off.")
+                VStack(alignment: .leading, spacing: 16) {
                     if let workspaces = app.bootstrap?.workspaces, !workspaces.isEmpty {
                         HStack {
                             Image(systemName: "building.2").foregroundStyle(DLSTheme.muted)
@@ -24,13 +23,17 @@ struct WorkspaceView: View {
                                 ForEach(workspaces) { Text($0.name).tag($0.id) }
                             }.tint(DLSTheme.soft)
                             Spacer(minLength: 0)
-                        }.padding(.horizontal, 14).frame(minHeight: 48)
-                            .background(DLSTheme.surface2, in: RoundedRectangle(cornerRadius: DLSTheme.radiusControl))
-                            .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusControl).stroke(DLSTheme.border, lineWidth: 1))
+                        }.font(.caption).frame(minHeight: 44)
                     }
-                    Button { createPresented = true } label: {
-                        Label("Create a workflow", systemImage: "plus")
-                    }.buttonStyle(DLSPrimaryButtonStyle()).accessibilityIdentifier("workflow.create")
+                    HStack {
+                        Text("Projects").font(.custom("Georgia", size: 34, relativeTo: .largeTitle))
+                        Spacer()
+                        Button { createPresented = true } label: { Label("New", systemImage: "plus").font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44) }
+                            .background(DLSTheme.text, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(DLSTheme.surface).accessibilityIdentifier("workflow.create")
+                    }
+                    HStack { Image(systemName: "magnifyingglass"); TextField("Search projects…", text: $search) }
+                        .font(.subheadline).foregroundStyle(DLSTheme.muted).padding(.horizontal, 12).frame(minHeight: 44)
+                        .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(DLSTheme.border, lineWidth: 1))
                     if let notice = app.notice { NoticeView(text: notice) }
                     if app.projectLoadFailed {
                         Button("Retry loading projects") { Task { await app.refresh() } }
@@ -51,11 +54,11 @@ struct WorkspaceView: View {
                             .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
                             .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
                     }
-                }.padding(.horizontal, 18).padding(.vertical, 24)
+                }.padding(.horizontal, 18).padding(.vertical, 16)
             }
             .background(DLSTheme.background.ignoresSafeArea()).foregroundStyle(DLSTheme.text)
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search, prompt: "Search projects…")
+
             .refreshable { await app.refresh() }
             .toolbarBackground(DLSTheme.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -118,23 +121,20 @@ struct DLSProjectCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                Image(systemName: symbol).font(.body).foregroundStyle(accent).frame(width: 38, height: 38)
-                    .background(accent.opacity(0.06), in: RoundedRectangle(cornerRadius: DLSTheme.radiusControl))
-                    .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusControl).stroke(DLSTheme.border, lineWidth: 1))
-                Spacer()
+                Text(project.name).font(.headline).foregroundStyle(DLSTheme.text)
+                Spacer(minLength: 8)
                 DLSStatusPill(status: project.status)
             }
-            Text(project.name).font(.headline).foregroundStyle(DLSTheme.text).padding(.top, 18).padding(.bottom, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(project.description).font(.subheadline).foregroundStyle(DLSTheme.muted).lineLimit(2)
+            Text(project.description).font(.subheadline).foregroundStyle(DLSTheme.muted).lineLimit(2).padding(.top, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 18)
             HStack {
                 if let updated { Text("Updated ") + Text(updated, style: .relative) }
+                else if project.updatedAt.hasPrefix("demo-revision-") { Text("On this device") }
                 Spacer()
-                Image(systemName: "arrow.up.right").accessibilityHidden(true)
+
             }.font(.caption).foregroundStyle(DLSTheme.muted)
-        }.padding(18).frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
+        }.padding(18).frame(maxWidth: .infinity, minHeight: 135, alignment: .topLeading)
             .background {
                 ZStack(alignment: .topTrailing) {
                     DLSGradientSurface(role: .projectCard)

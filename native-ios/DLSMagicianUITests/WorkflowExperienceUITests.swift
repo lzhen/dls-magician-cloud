@@ -5,7 +5,7 @@ final class WorkflowExperienceUITests: XCTestCase {
     override func tearDown() { XCUIDevice.shared.orientation = .portrait; super.tearDown() }
     private func launch(_ args: [String] = []) -> XCUIApplication {
         let app = XCUIApplication(); app.launchArguments = ["--uitest-editor"] + args; app.launch()
-        XCTAssertTrue(app.segmentedControls["editor.tabs"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.otherElements["editor.tabs"].waitForExistence(timeout: 12))
         return app
     }
     private func capture(_ app: XCUIApplication, _ name: String) {
@@ -17,9 +17,9 @@ final class WorkflowExperienceUITests: XCTestCase {
     }
     func testIntentPreviewInteractionFlowJSONAndLocalDesignSystem() {
         let app = launch()
-        XCTAssertTrue(app.textViews["intent.0"].exists)
+        XCTAssertTrue(app.textFields["intent.0"].exists)
         capture(app, "Native structured intent")
-        app.segmentedControls["editor.tabs"].buttons["Preview"].tap()
+        app.otherElements["editor.tabs"].buttons["Preview"].tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10))
         let open = app.webViews.buttons["Open"]
         XCTAssertTrue(open.waitForExistence(timeout: 10))
@@ -28,17 +28,17 @@ final class WorkflowExperienceUITests: XCTestCase {
         capture(app, "Native interactive preview — dialog opened")
         app.buttons["preview.system"].tap(); app.buttons["Ant Design"].tap()
         XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 5))
-        app.segmentedControls["preview.output"].buttons["Flow"].tap()
+        app.otherElements["preview.output"].buttons["Flow"].tap()
         XCTAssertTrue(app.scrollViews["preview.flow"].exists)
         capture(app, "Native flow output")
-        app.segmentedControls["preview.output"].buttons["JSON"].tap()
+        app.otherElements["preview.output"].buttons["JSON"].tap()
         app.buttons["preview.copyJSON"].tap()
         XCTAssertTrue(app.buttons["JSON copied"].exists)
-        app.segmentedControls["editor.tabs"].buttons["Intent"].tap()
-        XCTAssertTrue((app.textViews["intent.0"].value as? String ?? "").contains("Open"))
+        app.otherElements["editor.tabs"].buttons["Intent"].tap()
+        XCTAssertTrue((app.textFields["intent.0"].value as? String ?? "").contains("Open"))
         app.terminate()
         let legacy = launch(["--legacy"])
-        legacy.segmentedControls["editor.tabs"].buttons["Preview"].tap()
+        legacy.otherElements["editor.tabs"].buttons["Preview"].tap()
         XCTAssertTrue(legacy.webViews.staticTexts["Create omnichannel campaign"].waitForExistence(timeout: 10))
         capture(legacy, "Native legacy workflow interface")
         let action = legacy.webViews.buttons["Create a campaign"]
@@ -49,7 +49,7 @@ final class WorkflowExperienceUITests: XCTestCase {
     }
     func testKeyboardCancelShareAddMemberCommentsResolveReopenAndNextSave() {
         let app = launch()
-        let given = app.textViews["intent.0"]
+        let given = app.textFields["intent.0"]
         given.tap(); given.typeText(" ")
         XCTAssertTrue(app.buttons["editor.keyboardDone"].waitForExistence(timeout: 4))
         capture(app, "Native keyboard and safe area")
@@ -86,7 +86,7 @@ final class WorkflowExperienceUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Resolve"].waitForExistence(timeout: 8))
         capture(app, "Native flat comments — resolve and reopen")
         app.buttons["collaboration.done"].tap()
-        app.textViews["intent.0"].tap(); app.textViews["intent.0"].typeText(" ")
+        app.textFields["intent.0"].tap(); app.textFields["intent.0"].typeText(" ")
         app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
         XCTAssertTrue(app.staticTexts["Saved source"].waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["editor.recover"].exists)
@@ -94,18 +94,18 @@ final class WorkflowExperienceUITests: XCTestCase {
     func testViewerCannotEditInviteOrCommentAndSheetCancellationReturnsToProject() {
         let app = launch(["--viewer"])
         XCTAssertFalse(app.buttons["editor.save"].exists)
-        XCTAssertFalse(app.textViews["intent.0"].isEnabled)
+        XCTAssertFalse(app.textFields["intent.0"].isEnabled)
         open("Share", app); XCTAssertFalse(app.buttons["share.add"].exists)
         capture(app, "Native Viewer share permissions")
         app.buttons["collaboration.done"].tap()
         open("Comments", app); XCTAssertFalse(app.buttons["comments.add"].exists)
         XCTAssertTrue(app.staticTexts["Viewer access: comments are read-only."].exists)
         app.buttons["collaboration.done"].tap()
-        XCTAssertTrue(app.textViews["intent.0"].exists)
+        XCTAssertTrue(app.textFields["intent.0"].exists)
     }
     func test409RetainsDraftAndBlocksCollaborationUntilManualReview() {
         let app = launch(["--conflict"])
-        let field = app.textViews["intent.0"]; field.tap(); field.typeText(" local")
+        let field = app.textFields["intent.0"]; field.tap(); field.typeText(" local")
         app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
         XCTAssertTrue(app.buttons["editor.recover"].waitForExistence(timeout: 8))
         app.buttons["editor.collaboration"].tap(); app.buttons["Share"].tap()
@@ -122,8 +122,8 @@ final class WorkflowExperienceUITests: XCTestCase {
         defer { XCUIDevice.shared.orientation = .portrait }
         XCTAssertTrue(app.buttons["editor.collaboration"].isHittable)
         capture(app, "Native accessibility text size portrait")
-        app.segmentedControls["editor.tabs"].buttons["Preview"].tap()
-        let output = app.segmentedControls["preview.output"]
+        app.otherElements["editor.tabs"].buttons["Preview"].tap()
+        let output = app.otherElements["preview.output"]
         XCTAssertTrue(output.buttons["Flow"].waitForExistence(timeout: 5))
         output.buttons["Flow"].tap()
         XCUIDevice.shared.orientation = .landscapeLeft
@@ -141,21 +141,35 @@ final class WorkflowExperienceUITests: XCTestCase {
         open("Comments", app)
         XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
         app.buttons["collaboration.done"].tap()
-        XCTAssertTrue(app.segmentedControls["editor.tabs"].buttons["Preview"].isSelected)
+        XCTAssertTrue(app.otherElements["editor.tabs"].buttons["Preview"].isSelected)
     }
     func testOfflineSaveRetainsDraftAcrossRelaunch() {
         let app = launch(["--offline"])
-        let field = app.textViews["intent.0"]; field.tap(); field.typeText(" offline")
+        let field = app.textFields["intent.0"]; field.tap(); field.typeText(" offline")
         app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
         XCTAssertTrue(app.staticTexts["editor.error"].waitForExistence(timeout: 8))
         app.terminate(); app.launchArguments.append("--restore-draft"); app.launch()
         XCTAssertTrue(app.staticTexts["editor.restored"].waitForExistence(timeout: 10))
-        XCTAssertTrue((app.textViews["intent.0"].value as? String ?? "").contains("offline"))
+        XCTAssertTrue((app.textFields["intent.0"].value as? String ?? "").contains("offline"))
         capture(app, "Native offline draft restored")
     }
 }
 
 final class ReviewDemoUITests: XCTestCase {
+    func testVisualReview() {
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
+        XCTAssertTrue(app.buttons["demo.open"].waitForExistence(timeout: 10)); app.buttons["demo.open"].tap()
+        XCTAssertTrue(app.staticTexts["Sample interaction"].waitForExistence(timeout: 10))
+        func shot(_ name: String) { let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); a.name = name; a.lifetime = .keepAlways; add(a) }
+        shot("review-projects-light")
+        app.staticTexts["Sample interaction"].tap()
+        XCTAssertTrue(app.textFields["intent.0"].waitForExistence(timeout: 10)); shot("review-intent-light")
+        app.otherElements["editor.tabs"].buttons["Preview"].tap()
+        XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 10)); shot("review-preview-light")
+        app.webViews.buttons["Open"].tap()
+        XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5)); shot("review-preview-interaction")
+    }
     func testDemoCreatesWorkflowAndAddsOnlySampleTeammate() {
         continueAfterFailure = false
         let app = XCUIApplication(); app.launchArguments = ["--uitest-login"]; app.launch()
@@ -181,11 +195,11 @@ final class ReviewDemoUITests: XCTestCase {
         app.buttons["demo.open"].tap()
         XCTAssertTrue(app.buttons["workflow.create"].waitForExistence(timeout: 10))
         app.staticTexts["Sample interaction"].tap()
-        XCTAssertTrue(app.textViews["intent.0"].waitForExistence(timeout: 8))
-        app.textViews["intent.0"].tap(); app.textViews["intent.0"].typeText(" ")
+        XCTAssertTrue(app.textFields["intent.0"].waitForExistence(timeout: 8))
+        app.textFields["intent.0"].tap(); app.textFields["intent.0"].typeText(" ")
         app.buttons["editor.keyboardDone"].tap(); app.buttons["editor.save"].tap()
         XCTAssertTrue(app.staticTexts["Saved source"].waitForExistence(timeout: 8))
-        app.segmentedControls["editor.tabs"].buttons["Preview"].tap()
+        app.otherElements["editor.tabs"].buttons["Preview"].tap()
         XCTAssertTrue(app.webViews.buttons["Open"].waitForExistence(timeout: 10))
         app.webViews.buttons["Open"].tap()
         XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5))

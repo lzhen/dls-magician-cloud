@@ -5,10 +5,11 @@ struct ProjectEditorView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .body) private var fieldHeight = 100
+    @Environment(\.colorScheme) private var scheme
     @StateObject private var editor: EditorModel
     @State private var tab = "Intent"
     @State private var rawSource = false
+    @State private var previewInfo = false
     @State private var output = "Interface"
     @State private var sheet: EditorSheet?
     @State private var leavePresented = false
@@ -26,9 +27,27 @@ struct ProjectEditorView: View {
             if editor.loading && editor.project == nil {
                 ProgressView("Opening project…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if editor.project != nil {
-                Picker("Editor view", selection: $tab) {
-                    Text("Intent").tag("Intent"); Text("Preview").tag("Preview")
-                }.pickerStyle(.segmented).padding(.horizontal).padding(.bottom, 10).accessibilityIdentifier("editor.tabs")
+                status
+                HStack(spacing: 24) {
+                    ForEach(["Intent", "Preview"], id: \.self) { value in
+                        Button { tab = value } label: {
+                            VStack(spacing: 0) {
+                                Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).frame(minHeight: 44)
+                                Rectangle().fill(tab == value ? DLSTheme.text : .clear).frame(height: 2)
+                            }
+                        }.buttonStyle(.plain).accessibilityAddTraits(tab == value ? .isSelected : [])
+                    }
+                    Spacer()
+                    if tab == "Intent" {
+                        Menu {
+                            Toggle("Raw source", isOn: $rawSource).accessibilityIdentifier("editor.rawToggle")
+                            ForEach(["GIVEN", "WHEN", "THEN", "AND"], id: \.self) { kind in
+                                Button("Add \(kind)") { editor.text = IntentDocument(source: editor.text).appending(kind) }.disabled(!editor.editable || editor.busy)
+                            }
+                        } label: { Image(systemName: "text.badge.plus").frame(width: 44, height: 44) }.accessibilityLabel("Intent options")
+                    }
+                }.padding(.horizontal, 20).accessibilityElement(children: .contain).accessibilityIdentifier("editor.tabs")
+                Divider()
                 ZStack {
                     intent.opacity(tab == "Intent" ? 1 : 0).allowsHitTesting(tab == "Intent").accessibilityHidden(tab != "Intent")
                     preview.opacity(tab == "Preview" ? 1 : 0).allowsHitTesting(tab == "Preview").accessibilityHidden(tab != "Preview")
@@ -96,89 +115,118 @@ struct ProjectEditorView: View {
             } else if editor.collaborationNeedsRefresh {
                 Button("Refresh project before continuing") { Task { await editor.refreshCollaboration(using: app) } }.disabled(editor.busy)
             }
-        }.padding(.horizontal).padding(.vertical, 10)
+        }.padding(.horizontal, 20).padding(.vertical, 5)
     }
     private var intent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                status
-                VStack(alignment: .leading, spacing: 10) {
-                    Label(IntentDocument(source: editor.text).valid ? "Structure ready" : "Add GIVEN, WHEN and THEN", systemImage: IntentDocument(source: editor.text).valid ? "checkmark.circle" : "pencil")
-                        .font(.caption).foregroundStyle(DLSTheme.muted)
-                    Toggle("Raw source", isOn: $rawSource).font(.caption).accessibilityLabel("Raw source").accessibilityIdentifier("editor.rawToggle")
+            VStack(alignment: .leading, spacing: 24) {
+                HStack {
+                    Text("Structured intent").font(.custom("Georgia", size: 27, relativeTo: .title2))
+                    Spacer()
+                    Image(systemName: IntentDocument(source: editor.text).valid ? "checkmark.circle" : "pencil")
+                        .foregroundStyle(DLSTheme.muted).accessibilityLabel(IntentDocument(source: editor.text).valid ? "Structure ready" : "Add GIVEN, WHEN and THEN")
                 }
                 if rawSource {
                     TextEditor(text: $editor.text).frame(minHeight: 350).focused($focus, equals: "raw")
                         .accessibilityIdentifier("editor.raw").accessibilityLabel("Workflow source").editorField()
                         .disabled(!editor.editable || editor.busy)
                 } else {
-                    ForEach(IntentDocument(source: editor.text).blocks) { block in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(block.kind).font(.caption.weight(.semibold)).foregroundStyle(DLSTheme.muted)
-                            TextEditor(text: Binding(get: {
-                                let blocks = IntentDocument(source: editor.text).blocks
-                                return blocks.indices.contains(block.id) ? blocks[block.id].body : ""
-                            }, set: { editor.text = IntentDocument(source: editor.text).replacing(block.id, with: $0) }))
-                            .frame(minHeight: fieldHeight).focused($focus, equals: "block-\(block.id)")
-                            .editorField().accessibilityLabel("\(block.kind) intent").accessibilityIdentifier("intent.\(block.id)")
-                            .disabled(!editor.editable || editor.busy)
+                    VStack(alignment: .leading, spacing: scheme == .dark ? 16 : 24) {
+                        ForEach(IntentDocument(source: editor.text).blocks) { block in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(block.kind).font(.system(.caption, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(DLSTheme.muted)
+                                TextField("Describe this step", text: Binding(get: {
+                                    let blocks = IntentDocument(source: editor.text).blocks
+                                    return blocks.indices.contains(block.id) ? blocks[block.id].body : ""
+                                }, set: { editor.text = IntentDocument(source: editor.text).replacing(block.id, with: $0) }), axis: .vertical)
+                                .lineLimit(2...).font(.body).lineSpacing(5).focused($focus, equals: "block-\(block.id)")
+                                .accessibilityLabel("\(block.kind) intent").accessibilityIdentifier("intent.\(block.id)")
+                                .disabled(!editor.editable || editor.busy)
+                            }
+                            .padding(.vertical, 12).padding(.horizontal, scheme == .dark ? 16 : 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(scheme == .dark ? DLSTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 10))
+                            .overlay(alignment: .leading) {
+                                if scheme == .dark { Rectangle().fill(block.kind == "GIVEN" ? DLSTheme.violet : block.kind == "WHEN" ? DLSTheme.blue : DLSTheme.green).frame(width: 2).padding(.vertical, 12) }
+                            }
+                            .overlay(alignment: .bottom) { if focus == "block-\(block.id)" { Rectangle().fill(DLSTheme.border).frame(height: 1) } }
                         }
                     }
-                    if editor.editable {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 180 : 75))]) {
-                            ForEach(["GIVEN", "WHEN", "THEN", "AND"], id: \.self) { kind in
-                                Button("+ \(kind)") { editor.text = IntentDocument(source: editor.text).appending(kind) }
-                                    .font(.caption).frame(minHeight: 44).accessibilityIdentifier("intent.add.\(kind)")
-                            }
-                        }.disabled(editor.busy)
-                    }
                 }
-                Text("Incomplete drafts can be saved. Raw source preserves all original text.").font(.caption).foregroundStyle(DLSTheme.muted)
-            }.padding()
+                Button { tab = "Preview" } label: { HStack { Text("Preview"); Image(systemName: "arrow.right") }.frame(minHeight: 44).padding(.horizontal, 18) }
+                    .font(.subheadline.weight(.semibold)).background(DLSTheme.text, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(DLSTheme.surface)
+                    .accessibilityIdentifier("intent.preview")
+            }.padding(20)
         }.scrollDismissesKeyboard(.interactively)
     }
-    private var preview: some View {
-        ScrollView {
-        VStack(spacing: 10) {
-            status
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Design system").font(.caption)
-                Picker("Design system", selection: Binding(get: { editor.system }, set: { editor.selectSystem($0) })) {
-                    ForEach(PrototypeSystem.allCases) { Text($0.name).tag($0) }
-                }.accessibilityIdentifier("preview.system")
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
-
-            DisclosureGroup("About this preview") {
-                Text("Style preset on this device. HTML mappings, not the original component libraries. Changing a preset resets the preview test state.")
-            }.font(.caption).foregroundStyle(DLSTheme.muted).padding(.horizontal)
-
-            Picker("Output", selection: $output) {
-                Text("Interface").tag("Interface"); Text("Flow").tag("Flow"); Text("JSON").tag("JSON")
-            }.pickerStyle(.segmented).padding(.horizontal).accessibilityIdentifier("preview.output")
-            if let snapshot = editor.snapshot {
-                Text(editor.dirty ? "Preview of your current unsaved draft" : "Preview of current source")
-                    .font(.caption).foregroundStyle(DLSTheme.muted).accessibilityIdentifier("preview.version")
-                if output == "Interface" {
-                    PrototypeCanvas(snapshot: snapshot).frame(minHeight: 360)
-                    Text("Local interactions only; server actions are simulated.").font(.caption2).foregroundStyle(DLSTheme.muted).padding(.bottom, 8)
-                } else if output == "Flow" {
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            ForEach(snapshot.steps) { step in
-                                VStack(alignment: .leading, spacing: 8) { Text(step.type).font(.caption.weight(.bold)); Text(step.text) }
-                                    .frame(maxWidth: .infinity, alignment: .leading).padding().background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: 14))
-                                if step.id != snapshot.steps.last?.id { Image(systemName: "arrow.down").foregroundStyle(DLSTheme.violet) }
-                            }
-                        }.padding()
-                    }.frame(minHeight: 350).accessibilityIdentifier("preview.flow")
-                } else {
-                    Button(copied ? "JSON copied" : "Copy JSON") { UIPasteboard.general.string = snapshot.json; copied = true }
-                        .buttonStyle(DLSSecondaryButtonStyle()).accessibilityIdentifier("preview.copyJSON")
-                    ScrollView([.horizontal, .vertical]) { Text(snapshot.json).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding() }.frame(minHeight: 350)
+    private var previewToolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { outputTabs; Spacer(minLength: 4); designPicker }
+            VStack(alignment: .leading, spacing: 0) { outputTabs; designPicker }
+        }.padding(.horizontal, 16).padding(.vertical, 4)
+    }
+    private var outputTabs: some View {
+        HStack(spacing: 0) {
+            ForEach(["Interface", "Flow", "JSON"], id: \.self) { value in
+                Button { output = value; copied = false } label: {
+                    Text(value).font(.caption.weight(output == value ? .semibold : .regular)).padding(.horizontal, 9).frame(minHeight: 44)
+                        .background(output == value ? DLSTheme.surface3 : .clear, in: RoundedRectangle(cornerRadius: 6))
+                }.buttonStyle(.plain).accessibilityAddTraits(output == value ? .isSelected : [])
+            }
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("preview.output")
+    }
+    private var designPicker: some View {
+        HStack(spacing: 0) {
+            Menu {
+                ForEach(PrototypeSystem.allCases) { system in
+                    Button(system.name) { editor.selectSystem(system) }
                 }
-            } else { Text("No preview available. Return to Intent to check your source.").padding(); Spacer() }
+            } label: {
+                HStack(spacing: 4) { Text(editor.system.name == "DLS Magician" ? "DLS" : editor.system.name == "Ant Design" ? "Ant" : editor.system.name); Image(systemName: "chevron.down").font(.caption2) }
+                    .font(.caption).frame(minHeight: 44)
+            }.accessibilityLabel("Design system: \(editor.system.name)").accessibilityIdentifier("preview.system")
+            Button { previewInfo = true } label: { Image(systemName: "info.circle").frame(width: 44, height: 44) }.accessibilityLabel("About this preview")
         }
-        }.accessibilityIdentifier("preview.scroll")
+    }
+    private var preview: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 0) {
+                    previewToolbar
+                    if let snapshot = editor.snapshot {
+                        if output == "Interface" {
+                            VStack(spacing: 0) {
+                                HStack(spacing: 5) {
+                                    ForEach(0..<3) { _ in Circle().fill(DLSTheme.border).frame(width: 5, height: 5) }
+                                    Spacer(); Text("Interactive preview").font(.caption2).foregroundStyle(DLSTheme.muted); Spacer()
+                                }.padding(12).background(DLSTheme.surface2)
+                                Divider()
+                                PrototypeCanvas(snapshot: snapshot).frame(height: max(320, geometry.size.height - 112))
+                            }.clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(DLSTheme.border, lineWidth: 1)).padding(.horizontal, 12)
+                        } else if output == "Flow" {
+                            ScrollView {
+                                VStack(spacing: 12) {
+                                    ForEach(snapshot.steps) { step in
+                                        VStack(alignment: .leading, spacing: 8) { Text(step.type).font(.caption.weight(.bold)); Text(step.text) }
+                                            .frame(maxWidth: .infinity, alignment: .leading).padding().background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+                                        if step.id != snapshot.steps.last?.id { Image(systemName: "arrow.down").foregroundStyle(DLSTheme.violet) }
+                                    }
+                                }.padding()
+                            }.frame(minHeight: 350).accessibilityIdentifier("preview.flow")
+                        } else {
+                            Button(copied ? "JSON copied" : "Copy JSON") { UIPasteboard.general.string = snapshot.json; copied = true }
+                                .buttonStyle(DLSSecondaryButtonStyle()).padding(.horizontal).accessibilityIdentifier("preview.copyJSON")
+                            ScrollView([.horizontal, .vertical]) { Text(snapshot.json).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding() }.frame(minHeight: 350)
+                        }
+                        Text(editor.dirty ? "Preview of your current unsaved draft" : "Preview of current source")
+                            .font(.caption2).foregroundStyle(DLSTheme.muted).padding(10).accessibilityIdentifier("preview.version")
+                    } else { Text("No preview available. Return to Intent to check your source.").padding() }
+                }
+            }.accessibilityIdentifier("preview.scroll")
+        }.alert("About this preview", isPresented: $previewInfo) {
+            Button("Done", role: .cancel) { }
+        } message: { Text("Local interactions only; server actions are simulated. Design systems are HTML style mappings on this device, not the original component libraries. Changing the preset resets preview test state.") }
     }
     private var recovery: some View {
         NavigationStack {
