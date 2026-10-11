@@ -1892,9 +1892,12 @@ document.addEventListener('click', async (event) => {
         showToast('Project link copied');
       } catch (_) {
         input?.select();
-        document.execCommand('copy');
-        if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
-        showToast('Project link copied');
+        if (document.execCommand('copy')) {
+          if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
+          showToast('Project link copied');
+        } else {
+          showToast('Select the project link and copy it manually.', 'error');
+        }
       }
       break;
     }
