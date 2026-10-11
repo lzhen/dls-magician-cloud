@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
 const { ROLES, projectRole, canProject, canWorkspace, canReadActivity, canReceiveEvent, findBoundUser, claimPendingProjectInvitation } = require('./authorization.cjs');
+const { recordMetric } = require('./metrics.cjs');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -208,6 +209,7 @@ const storage = require('./storage').openDatabase(DATA_DIR, seedDatabase);
 let { snapshot: db, revision: dbRevision } = storage.read();
 const sseClients = new Set();
 const presence = new Map();
+const measuredSessions = new Map();
 
 function saveDb() {
   try { dbRevision = storage.save(db, dbRevision); }
@@ -262,6 +264,7 @@ function ensureLocalUser(authUser) {
     };
     db.users.push(user);
     // Authentication creates a profile, never workspace or project membership.
+    recordMetric(db, 'signup');
   } else {
     user.name = name;
     user.email = authUser.email || user.email;
@@ -497,6 +500,16 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/session') {
     const session = await getSession(req, url);
     if (!session) return sendJson(res, 200, { authenticated: false });
+    const last = measuredSessions.get(session.userId) || 0;
+    if (Date.now() - last >= 30 * 60_000) {
+      recordMetric(db, 'login');
+      const user = getUser(session.userId);
+      if (user.lastSessionAt && Date.now() - Date.parse(user.lastSessionAt) >= 86400_000) recordMetric(db, 'return_session');
+      user.lastSessionAt = nowIso();
+      saveDb();
+      measuredSessions.set(session.userId, Date.now());
+      for (const [id, time] of measuredSessions) if (time < Date.now() - 30 * 60_000) measuredSessions.delete(id);
+    }
     return sendJson(res, 200, {
       authenticated: true,
       provider: session.provider,
@@ -592,6 +605,10 @@ async function handleApi(req, res, url) {
       versions: []
     };
     db.projects.unshift(project);
+    if (!currentUser.firstWorkflowAt) {
+      currentUser.firstWorkflowAt = nowIso();
+      recordMetric(db, 'first_workflow');
+    }
     recordActivity(session.userId, project.id, 'create', `created ${project.name}`);
     saveDb();
     broadcast('project_created', projectSummary(project), project.id, session.sid);
@@ -622,6 +639,7 @@ async function handleApi(req, res, url) {
     }
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'edit', `updated ${project.name}`);
+    if (Object.prototype.hasOwnProperty.call(body, 'structuredLanguage')) recordMetric(db, parseStructuredLanguage(project.structuredLanguage).valid ? 'generation_success' : 'generation_error');
     saveDb();
     broadcast('project_updated', {
       project: projectPayload(project),
@@ -629,6 +647,18 @@ async function handleApi(req, res, url) {
       actor: publicUser(currentUser)
     }, project.id, session.sid);
     return sendJson(res, 200, projectPayload(project));
+  }
+
+  const metricMatch = pathname.match(/^\/api\/projects\/([^/]+)\/metrics$/);
+  if (metricMatch && req.method === 'POST') {
+    const project = getProject(decodeURIComponent(metricMatch[1]));
+    if (!authorizeProject(res, project, session)) return;
+    const body = await readBody(req);
+    if (!authorizeProject(res, project, session)) return;
+    if (!['export', 'share'].includes(body.event) || Object.keys(body).some(key => key !== 'event')) return sendError(res, 400, 'Unsupported event.');
+    recordMetric(db, body.event);
+    saveDb();
+    return sendJson(res, 200, { recorded: true });
   }
 
   const commentMatch = pathname.match(/^\/api\/projects\/([^/]+)\/comments$/);
@@ -713,6 +743,7 @@ async function handleApi(req, res, url) {
     else project.members.push({ userId: user.id, role });
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'share', `invited ${user.name} as ${role}`);
+    recordMetric(db, 'share');
     saveDb();
     broadcast('member_invited', {
       member: { userId: user.id, role, user: publicUser(user) },
@@ -870,6 +901,7 @@ const server = http.createServer(async (req, res) => {
     }
   } catch (error) {
     console.error(error);
+    try { recordMetric(db, 'error'); saveDb(); } catch (_) { /* unavailable storage cannot acknowledge a metric */ }
     if (!res.headersSent) sendError(res, error.status || 500, error.status === 409 ? error.message : 'Unexpected server error.');
     else res.end();
   }

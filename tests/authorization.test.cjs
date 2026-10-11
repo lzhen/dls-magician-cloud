@@ -9,6 +9,17 @@ const vm = require('node:vm');
 const { PassThrough } = require('node:stream');
 const authorization = require('../authorization.cjs');
 
+test('usage events enforce project visibility and reject conversation/content fields', async t => {
+  const h = harness(t);
+  assert.equal((await h.request('owner-a', 'POST', '/api/projects/b/metrics', {event:'export'})).status, 404);
+  assert.equal((await h.request('viewer', 'POST', '/api/projects/a/metrics', {event:'export',content:'do not retain'})).status, 400);
+  assert.equal((await h.request('viewer', 'POST', '/api/projects/a/metrics', {event:'export'})).status, 200);
+  assert.equal((await h.request('viewer', 'POST', '/api/projects/a/metrics', {event:'unexpected'})).status, 400);
+  const day = Object.values(h.db().metrics.daily)[0];
+  assert.equal(day.export, 1);
+  assert.equal(Object.keys(day).length, 1);
+});
+
 // Synthetic fixtures only. The server is evaluated with mocked HTTP, Auth and
 // timers. No socket is opened, no real token is used, and no network is allowed.
 const USERS = ['owner-a', 'owner-b', 'project-admin', 'editor', 'commenter', 'viewer', 'workspace-member', 'workspace-admin', 'guest', 'outsider', 'invalid-role'];
@@ -50,6 +61,7 @@ function harness(t, initial = fixture()) {
       if (name === './storage') return require('../storage.js');
       if (name === './authorization.cjs') return authorization;
       if (name === './request-security.cjs') return require('../request-security.cjs');
+      if (name === './metrics.cjs') return require('../metrics.cjs');
       return require(name);
     },
     Buffer, URL, Date: FixtureDate,

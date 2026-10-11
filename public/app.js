@@ -1888,10 +1888,12 @@ document.addEventListener('click', async (event) => {
       const input = document.getElementById('share-url');
       try {
         await navigator.clipboard.writeText(input?.value || window.location.href);
+        if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
         showToast('Project link copied');
       } catch (_) {
         input?.select();
         document.execCommand('copy');
+        if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
         showToast('Project link copied');
       }
       break;
@@ -1937,6 +1939,7 @@ document.addEventListener('click', async (event) => {
     case 'copy-generated-json': {
       const parsed = generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject?.name));
       await navigator.clipboard.writeText(JSON.stringify(parsed, null, 2));
+      if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
       showToast('Generated JSON copied.', 'success');
       break;
     }

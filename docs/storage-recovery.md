@@ -46,3 +46,18 @@ writer recovery, migration, stale process writes, staged restore and request
 boundaries. Live Supabase account/browser testing, historical grant provenance,
 off-volume backups and a real-user pilot remain separate release gates. No real
 user memberships were altered by this migration.
+
+## Usage measurement
+
+Daily event counters retain up to 90 days and contain no account/project IDs,
+addresses, content or credentials. Signup means first local profile creation;
+login is a successful session check, deduplicated for 30 minutes in this process;
+first workflow means the first project created by an account. Generation counts
+represent server validation of saved GIVEN/WHEN/THEN content, not AI latency or
+unique users. Export is recorded after successful clipboard copying; sharing
+includes invitations and copied project links. Returning-session counts use the
+existing profile's last-session timestamp with a one-day gap. Errors count server
+exceptions. The privacy notice describes these measurements and the two profile
+timestamps. No third-party analytics or conversation logging is added. Aggregate
+counts alone cannot establish ten-minute conversion, W1 workspace retention or
+ten real design-partner teams; those targets require an observed pilot.
