@@ -7,6 +7,7 @@ struct CollaborationView: View {
     let mode: Mode
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var email = ""
     @State private var role = "Viewer"
     @State private var bodyText = ""
@@ -100,7 +101,26 @@ struct CollaborationView: View {
     @ViewBuilder private var commentContent: some View {
         if editor.canComment {
             Section("Add a comment") {
-                Picker("Position label", selection: $anchor) { ForEach(ProjectComment.anchors, id: \.self) { Text($0).tag($0) } }
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Position label").fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("comments.positionLabel")
+                        Menu {
+                            Picker("Position label", selection: $anchor) {
+                                ForEach(ProjectComment.anchors, id: \.self) { Text($0).tag($0) }
+                            }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(anchor).fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.up.chevron.down").font(.caption)
+                            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+                        }.accessibilityLabel("Position label").accessibilityValue(anchor)
+                            .accessibilityIdentifier("comments.position")
+                    }
+                } else {
+                    Picker("Position label", selection: $anchor) { ForEach(ProjectComment.anchors, id: \.self) { Text($0).tag($0) } }
+                }
                 TextEditor(text: $bodyText).frame(minHeight: 100).focused($focused).accessibilityLabel("Comment text").accessibilityIdentifier("comments.body")
                 Button(editor.collaborating ? "Adding…" : "Add comment") {
                     focused = false

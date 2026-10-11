@@ -18,4 +18,12 @@ Original b82b8fd full run: 47 unit +13 UI, zero failures. Final accessibility ca
 
 Product changes are limited to accessibility layout in ProjectEditorView. Standard type visual direction and CollaborationView code remain unchanged. No Cloud, push, binary upload, deployment or store submission. Current Web login remains unverified: Chrome lists DLS tab1860742630, but its content read times out. Select that existing tab to resume; only if Welcome back appears is the earlier login action still needed. No repeated auth prompt issued.
 
-Remaining visual issue: maximum Dynamic Type Comments position picker compresses its label and truncates General. Done and scrolling operate; do not claim full accessibility visual sign-off. Intent options at maximum text size are available through horizontal tab-strip scrolling.
+Prior issue (resolved by the next update): maximum Dynamic Type Comments position picker compresses its label and truncates General. Done and scrolling operate; do not claim full accessibility visual sign-off. Intent options at maximum text size are available through horizontal tab-strip scrolling.
+
+## Comments maximum-text fix
+
+Adaptive accessibility-only stack puts Position label above the selected anchor. The custom Menu label allows full-size wrapping while its native Picker retains selection behavior. No font-size reduction/cap. Accessible name and value are explicit, minimum selectable height44pt. Standard-size picker remains unchanged.
+
+Focused test testMaximumTextCommentPositionStacksAndKeepsLongSelectionReadable passed. It verifies label/value, stacked frames,44pt height, screen bounds, hittability, General→Generated JSON selection and safe close. Screenshots visually confirm full General and wrapped Generated JSON. Final single full run passed47 unit+14 UI with zero failures: evidence/comments-dynamic-type-final-full.xcresult. Focused evidence: comments-dynamic-type-focused.xcresult.
+
+Previous accessibility-comments-portrait.png/Library libfile_43bc62474814819194950fdc54b28b12 version0 is intentionally retained as before evidence; current images are comments-max-general-after.png and comments-max-long-after.png. Prior Comments truncation is resolved. Live Web comparison and user release confirmation remain pending. Browser left untouched; prior control timeout does not establish logged-out status. Build12 unchanged; no push, Cloud, installation-package upload or release.

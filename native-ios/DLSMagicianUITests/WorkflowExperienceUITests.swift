@@ -155,6 +155,30 @@ final class WorkflowExperienceUITests: XCTestCase {
         app.buttons["collaboration.done"].tap()
         XCTAssertTrue(app.otherElements["editor.tabs"].buttons["Preview"].isSelected)
     }
+    func testMaximumTextCommentPositionStacksAndKeepsLongSelectionReadable() {
+        let app = launch(["--commenter", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        open("Comments", app)
+        let label = app.staticTexts["comments.positionLabel"]
+        let position = app.buttons["comments.position"]
+        XCTAssertTrue(position.waitForExistence(timeout: 5))
+        XCTAssertEqual(position.label, "Position label")
+        XCTAssertEqual(position.value as? String, "General")
+        XCTAssertGreaterThanOrEqual(position.frame.minY, label.frame.maxY)
+        XCTAssertGreaterThanOrEqual(position.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(position.frame.minX, 0)
+        XCTAssertLessThanOrEqual(position.frame.maxX, app.frame.width)
+        XCTAssertTrue(position.isHittable)
+        capture(app, "Comments maximum text — General stacked")
+        position.tap()
+        XCTAssertTrue(app.buttons["Generated JSON"].waitForExistence(timeout: 5))
+        app.buttons["Generated JSON"].tap()
+        XCTAssertEqual(position.value as? String, "Generated JSON")
+        XCTAssertTrue(position.isHittable)
+        XCTAssertGreaterThanOrEqual(position.frame.height, 44)
+        capture(app, "Comments maximum text — long selection wrapped")
+        app.buttons["collaboration.done"].tap()
+        XCTAssertTrue(app.otherElements["editor.tabs"].exists)
+    }
     func testOfflineSaveRetainsDraftAcrossRelaunch() {
         let app = launch(["--offline"])
         let field = app.textFields["intent.0"]; field.tap(); field.typeText(" offline")

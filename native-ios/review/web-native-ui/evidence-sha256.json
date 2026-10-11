@@ -1,7 +1,7 @@
 {
   "DLS-native-ui-review.html": {
-    "bytes": 5223736,
-    "sha256": "d1737f4795d932130915924f9c98f18521bd721e94bedc4f9ba647d3949cac96"
+    "bytes": 5743816,
+    "sha256": "d9fb0d808cc3771a7887da927008aa8c1291072acf5065f3b80367b3150a420a"
   },
   "accessibility-comments-portrait.png": {
     "bytes": 181396,
@@ -58,6 +58,14 @@
   "before-review-projects-light.png": {
     "bytes": 203752,
     "sha256": "797af7ef18afeb1fe83d60fb3e57a651d5793d1594fbb4e1998a24df40773695"
+  },
+  "comments-max-general-after.png": {
+    "bytes": 195922,
+    "sha256": "326159158338150ac3b7fb89b595c045388dffb9d57a0e1e9c9bae88a639dd67"
+  },
+  "comments-max-long-after.png": {
+    "bytes": 193635,
+    "sha256": "1905612573777f06765ede3ee617e266343f3798df1ecdb63ceaa911f06275b2"
   },
   "corrected-active-edit.png": {
     "bytes": 253924,
