@@ -24,7 +24,22 @@ struct WorkspaceView: View {
                             }.tint(DLSTheme.soft)
                             Spacer(minLength: 0)
                         }.font(.caption).frame(minHeight: 44)
+                            .padding(.horizontal, 12)
+                            .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(DLSTheme.border, lineWidth: 1))
                     }
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Turn structured language into working prototypes.")
+                            .font(.custom("Georgia", size: 28, relativeTo: .title))
+                            .tracking(-0.7).fixedSize(horizontal: false, vertical: true)
+                        Text("Write intent, review the executable flow, and collaborate in one workspace.")
+                            .font(.subheadline).foregroundStyle(DLSTheme.soft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                    .background { DLSGradientSurface(role: .dashboardHero) }
+                    .clipShape(RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
+                    .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
                     HStack {
                         Text("Projects").font(.custom("Georgia", size: 34, relativeTo: .largeTitle))
                         Spacer()
@@ -54,7 +69,7 @@ struct WorkspaceView: View {
                             .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
                             .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
                     }
-                }.padding(.horizontal, 18).padding(.vertical, 16)
+                }.padding(.horizontal, 20).padding(.vertical, 16)
             }
             .background(DLSTheme.background.ignoresSafeArea()).foregroundStyle(DLSTheme.text)
             .navigationBarTitleDisplayMode(.inline)

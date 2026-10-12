@@ -58,8 +58,8 @@ struct RootView: View {
 struct BrandMark: View {
     var size: CGFloat = 44
     var body: some View {
-        Image("BrandMark").resizable().scaledToFit().frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 8)).accessibilityHidden(true)
+        Image("BrandMarkTransparent").resizable().scaledToFit().frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

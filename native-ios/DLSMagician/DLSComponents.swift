@@ -127,7 +127,10 @@ struct DLSBrandLockup: View {
     var body: some View {
         HStack(spacing: 12) {
             BrandMark(size: 32)
-            Text("DLS Magician").font(.system(.headline)).fontWeight(.semibold).tracking(-0.36)
+            // Web mobile brand: 18px / 600 / -0.02em. Helvetica Neue is its
+            // installed iOS fallback; Inter is not bundled by either client.
+            Text("DLS Magician").font(.custom("HelveticaNeue", size: 18, relativeTo: .headline))
+                .fontWeight(.semibold).tracking(-0.36)
                 .foregroundStyle(DLSTheme.text)
         }.frame(minHeight: 44)
             .allowsHitTesting(false)
