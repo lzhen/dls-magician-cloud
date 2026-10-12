@@ -2,7 +2,6 @@ import SwiftUI
 
 struct WorkspaceView: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var accountPresented = false
     @State private var search = ""
     @State private var createPresented = false
@@ -28,32 +27,19 @@ struct WorkspaceView: View {
                             .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: 12))
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(DLSTheme.border, lineWidth: 1))
                     }
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Turn structured language into working prototypes.")
-                            .font(.custom("Georgia", size: 28, relativeTo: .title))
-                            .tracking(-0.7).fixedSize(horizontal: false, vertical: true)
-                        Text("Write intent, review the executable flow, and collaborate in one workspace.")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Projects").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                        Text(app.isDemo ? "Sample workspace · On this device" : "Your accessible workspace projects")
                             .font(.subheadline).foregroundStyle(DLSTheme.soft)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(20)
-                    .background { DLSGradientSurface(role: .dashboardHero) }
-                    .clipShape(RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
-                    .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
-                    HStack {
-                        Text("Projects").font(.custom("Georgia", size: 34, relativeTo: .largeTitle))
-                        Spacer()
-                        Button { createPresented = true } label: { Label("New", systemImage: "plus").font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44) }
-                            .background(DLSTheme.text, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(DLSTheme.surface).accessibilityIdentifier("workflow.create")
                     }
                     HStack { Image(systemName: "magnifyingglass"); TextField("Search projects…", text: $search) }
-                        .font(.subheadline).foregroundStyle(DLSTheme.muted).padding(.horizontal, 12).frame(minHeight: 44)
-                        .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).stroke(DLSTheme.border, lineWidth: 1))
+                        .font(.subheadline).foregroundStyle(DLSTheme.soft).padding(.horizontal, 16).frame(minHeight: 48)
+                        .background(DLSTheme.surface, in: Capsule()).overlay(Capsule().stroke(DLSTheme.border, lineWidth: 1))
                     if let notice = app.notice { NoticeView(text: notice) }
                     if app.projectLoadFailed {
                         Button("Retry loading projects") { Task { await app.refresh() } }
                     }
-                    LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 250), spacing: 14)], spacing: 14) {
+                    LazyVStack(spacing: 8) {
                         ForEach(filtered) { project in
                             NavigationLink(value: project) { DLSProjectCard(project: project) }.buttonStyle(.plain)
                         }
@@ -69,10 +55,18 @@ struct WorkspaceView: View {
                             .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
                             .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
                     }
-                }.padding(.horizontal, 20).padding(.vertical, 16)
+                }.frame(maxWidth: DLSMobile.readingWidth).frame(maxWidth: .infinity).padding(.horizontal, DLSMobile.pageInset).padding(.vertical, 16)
             }
             .background(DLSTheme.background.ignoresSafeArea()).foregroundStyle(DLSTheme.text)
             .navigationBarTitleDisplayMode(.inline)
+            .tint(DLSTheme.text)
+            .safeAreaInset(edge: .bottom) {
+                Button { createPresented = true } label: {
+                    Label("New workflow", systemImage: "plus").frame(maxWidth: .infinity)
+                }.buttonStyle(DLSPrimaryButtonStyle()).accessibilityIdentifier("workflow.create")
+                    .frame(maxWidth: DLSMobile.readingWidth).padding(.horizontal, DLSMobile.pageInset)
+                    .padding(.vertical, 8).frame(maxWidth: .infinity).background(DLSTheme.background)
+            }
 
             .refreshable { await app.refresh() }
             .toolbarBackground(DLSTheme.background, for: .navigationBar)
@@ -90,7 +84,7 @@ struct WorkspaceView: View {
                 ToolbarItem(placement: .navigationBarLeading) { DLSBrandLockup() }
                 #endif
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { accountPresented = true } label: { Image(systemName: "person.crop.circle") }
+                    Button { accountPresented = true } label: { Image(systemName: "person.crop.circle").frame(minWidth: 44, minHeight: 44) }
                         .accessibilityLabel("Account")
                 }
             }
@@ -127,52 +121,37 @@ struct WorkspaceView: View {
 
 struct DLSProjectCard: View {
     let project: ProjectSummary
-    private var accent: Color { DLSTheme.projectAccent(project.accent) }
-    private var symbol: String {
-        switch project.accent {
-        case "green": return "sparkles"
-        case "blue": return "wand.and.stars"
-        case "amber": return "clock"
-        case "pink": return "building.2"
-        case "cyan": return "person.2"
-        default: return "doc.text"
-        }
-    }
     private var updated: Date? {
         let parser = ISO8601DateFormatter()
         parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return parser.date(from: project.updatedAt) ?? ISO8601DateFormatter().date(from: project.updatedAt)
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(project.name).font(.headline).foregroundStyle(DLSTheme.text)
-                Spacer(minLength: 8)
-                DLSStatusPill(status: project.status)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    .foregroundStyle(DLSTheme.soft).accessibilityHidden(true)
             }
-            Text(project.description).font(.subheadline).foregroundStyle(DLSTheme.muted).lineLimit(2).padding(.top, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 18)
-            HStack {
-                if let updated { Text("Updated ") + Text(updated, style: .relative) }
-                else if project.updatedAt.hasPrefix("demo-revision-") { Text("On this device") }
-                Spacer()
-
-            }.font(.caption).foregroundStyle(DLSTheme.muted)
-        }.padding(18).frame(maxWidth: .infinity, minHeight: 135, alignment: .topLeading)
-            .background {
-                ZStack(alignment: .topTrailing) {
-                    DLSGradientSurface(role: .projectCard)
-                    Circle().fill(DLSTheme.projectGlow(project.accent))
-                        .frame(width: DLSTheme.projectGlowSize, height: DLSTheme.projectGlowSize)
-                        .blur(radius: DLSTheme.projectGlowBlur).opacity(Double(DLSTheme.projectGlowOpacity))
-                        .offset(x: -DLSTheme.projectGlowRight, y: DLSTheme.projectGlowTop)
-                        .allowsHitTesting(false).accessibilityHidden(true)
-                }
+            if !project.description.isEmpty {
+                Text(project.description).font(.subheadline).foregroundStyle(DLSTheme.soft).lineLimit(2)
             }
-            .clipShape(RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
-            .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusCard).stroke(DLSTheme.border, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: DLSTheme.radiusCard))
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { DLSStatusPill(status: project.status); updatedLabel }
+                VStack(alignment: .leading, spacing: 8) { DLSStatusPill(status: project.status); updatedLabel }
+            }
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: DLSMobile.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: DLSMobile.cardRadius).stroke(DLSTheme.border, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: DLSMobile.cardRadius))
+    }
+    private var updatedLabel: some View {
+        Group {
+            if let updated { Text("Updated ") + Text(updated, style: .relative) }
+            else if project.updatedAt.hasPrefix("demo-revision-") { Text("On this device") }
+        }.font(.caption).foregroundStyle(DLSTheme.soft)
     }
 }
 
@@ -213,12 +192,12 @@ struct AccountView: View {
                     Section("Sample account") { Text("This is a local sample identity. No cloud account was created. Use Exit to reset the sample workspace.") }
                 }
             }.scrollContentBackground(.hidden).background(DLSTheme.background)
-                .foregroundStyle(DLSTheme.text)
+                .foregroundStyle(DLSTheme.text).tint(DLSTheme.text)
                 .navigationTitle("Account").navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(DLSTheme.background, for: .navigationBar)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        Text("Account").font(DLSTheme.accountTitle).foregroundStyle(DLSTheme.text)
+                        Text("Account").font(.headline).foregroundStyle(DLSTheme.text)
                             .accessibilityAddTraits(.isHeader)
                     }
                     ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.disabled(app.busy) }

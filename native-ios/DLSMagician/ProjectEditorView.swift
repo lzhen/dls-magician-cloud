@@ -5,7 +5,6 @@ struct ProjectEditorView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.colorScheme) private var scheme
     @StateObject private var editor: EditorModel
     @State private var tab = "Intent"
     @State private var rawSource = false
@@ -43,7 +42,7 @@ struct ProjectEditorView: View {
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(DLSTheme.background.ignoresSafeArea()).foregroundStyle(DLSTheme.text)
+        .background(DLSTheme.background.ignoresSafeArea()).foregroundStyle(DLSTheme.text).tint(DLSTheme.text)
         .navigationTitle(editor.project?.name ?? "Workflow").navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbarBackground(DLSTheme.background, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
@@ -58,8 +57,8 @@ struct ProjectEditorView: View {
                         .accessibilityIdentifier("editor.save")
                 }
                 Button { collaborationPicker = true } label: {
-                    Image(systemName: "ellipsis.circle").frame(minWidth: 44, minHeight: 44)
-                }.accessibilityLabel("Collaboration").accessibilityIdentifier("editor.collaboration")
+                    Image(systemName: "person.2").frame(minWidth: 44, minHeight: 44)
+                }.accessibilityLabel("Share and comments").accessibilityIdentifier("editor.collaboration")
                     .disabled(editor.busy || opening)
             }
             ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Done") { focus = nil }.accessibilityIdentifier("editor.keyboardDone") }
@@ -79,18 +78,18 @@ struct ProjectEditorView: View {
         }
         .sheet(item: $sheet) { selected in
             if selected == .recovery { recovery }
-            else { CollaborationView(editor: editor, mode: selected == .share ? .share : .comments) }
+            else { CollaborationView(editor: editor, mode: selected == .share ? .share : .comments).presentationDragIndicator(.visible) }
         }
         .task { await editor.load(using: app) }
     }
     private var stageTabs: some View {
-        HStack(spacing: typeSize.isAccessibilitySize ? 12 : 24) {
+        HStack(spacing: 8) {
             ForEach(["Intent", "Preview"], id: \.self) { value in
                 Button { tab = value } label: {
-                    VStack(spacing: 0) {
-                        Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular)).fixedSize(horizontal: typeSize.isAccessibilitySize, vertical: false).frame(minHeight: 44)
-                        Rectangle().fill(tab == value ? DLSTheme.text : .clear).frame(height: 2)
-                    }
+                    Text(value).font(.subheadline.weight(tab == value ? .semibold : .regular))
+                        .fixedSize(horizontal: typeSize.isAccessibilitySize, vertical: false)
+                        .padding(.horizontal, 16).frame(minHeight: DLSMobile.minimumTarget)
+                        .background(tab == value ? DLSTheme.surface3 : .clear, in: Capsule())
                 }.buttonStyle(.plain).accessibilityAddTraits(tab == value ? .isSelected : [])
             }
             Spacer()
@@ -102,7 +101,7 @@ struct ProjectEditorView: View {
                     }
                 } label: { Image(systemName: "text.badge.plus").frame(width: 44, height: 44) }.accessibilityLabel("Intent options")
             }
-        }.padding(.horizontal, 20).accessibilityElement(children: .contain).accessibilityIdentifier("editor.tabs")
+        }.padding(.horizontal, DLSMobile.pageInset).padding(.vertical, 4).accessibilityElement(children: .contain).accessibilityIdentifier("editor.tabs")
     }
     private var status: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -120,17 +119,12 @@ struct ProjectEditorView: View {
             } else if editor.collaborationNeedsRefresh {
                 Button("Refresh project before continuing") { Task { await editor.refreshCollaboration(using: app) } }.disabled(editor.busy)
             }
-        }.padding(.horizontal, 20).padding(.vertical, 5)
-    }
-    // Final Web CSS: .intent-block-rail / .intent-step-input and the later light overrides.
-    // Canonical CSS SHA-256 68c58a97d7adf59af11cb54457fb7257a9a1ca360b24f86f966cff08276bd5f4.
-    private func intentColor(_ kind: String) -> Color {
-        switch kind { case "WHEN": return DLSTheme.blue; case "THEN": return DLSTheme.green; case "AND": return DLSTheme.amber; default: return DLSTheme.violet }
+        }.padding(.horizontal, DLSMobile.pageInset).padding(.vertical, 8)
     }
     private var intent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if typeSize.isAccessibilitySize { status.padding(.horizontal, -20) }
+                if typeSize.isAccessibilitySize { status.padding(.horizontal, -DLSMobile.pageInset) }
                 (typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout())) {
                     Text("Structured intent").font(.subheadline.weight(.semibold))
                     if !typeSize.isAccessibilitySize { Spacer() }
@@ -142,11 +136,11 @@ struct ProjectEditorView: View {
                         .accessibilityIdentifier("editor.raw").accessibilityLabel("Workflow source").editorField()
                         .disabled(!editor.editable || editor.busy)
                 } else {
-                    VStack(alignment: .leading, spacing: scheme == .dark ? 12 : 18) {
+                    VStack(alignment: .leading, spacing: 12) {
                         ForEach(IntentDocument(source: editor.text).blocks) { block in
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack {
-                                    Text(block.kind).font(.system(.caption, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(intentColor(block.kind))
+                                    Text(block.kind).font(.system(.caption, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(DLSTheme.soft)
                                     Spacer()
                                     if block.kind != "AND", editor.editable {
                                         Button("+ AND") {
@@ -167,20 +161,18 @@ struct ProjectEditorView: View {
                                 .accessibilityLabel("\(block.kind) intent").accessibilityIdentifier("intent.\(block.id)")
                                 .disabled(!editor.editable || editor.busy)
                             }
-                            .padding(.vertical, scheme == .dark ? 12 : 0).padding(.horizontal, scheme == .dark ? 16 : 0)
+                            .padding(16)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(scheme == .dark ? DLSTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(alignment: .leading) {
-                                if scheme == .dark { Rectangle().fill(intentColor(block.kind)).frame(width: 2).padding(.vertical, 12) }
-                            }
-                            .overlay(alignment: .bottom) { if focus == "block-\(block.id)" { Rectangle().fill(DLSTheme.border).frame(height: 1) } }
+                            .background(DLSTheme.surface, in: RoundedRectangle(cornerRadius: DLSMobile.cardRadius))
+                            .overlay(RoundedRectangle(cornerRadius: DLSMobile.cardRadius)
+                                .stroke(focus == "block-\(block.id)" ? DLSTheme.violet : DLSTheme.border, lineWidth: 1))
                         }
                     }
                 }
-                Button { tab = "Preview" } label: { HStack { Text("Preview"); Image(systemName: "arrow.right") }.frame(minHeight: 44).padding(.horizontal, 18) }
-                    .font(.subheadline.weight(.semibold)).background(DLSTheme.text, in: RoundedRectangle(cornerRadius: 8)).foregroundStyle(DLSTheme.surface)
+                Button { focus = nil; tab = "Preview" } label: { Label("Preview", systemImage: "arrow.right").frame(maxWidth: .infinity) }
+                    .buttonStyle(DLSPrimaryButtonStyle())
                     .accessibilityIdentifier("intent.preview")
-            }.padding(20)
+            }.frame(maxWidth: DLSMobile.readingWidth).frame(maxWidth: .infinity).padding(DLSMobile.pageInset)
         }.scrollDismissesKeyboard(.interactively)
     }
     private var previewToolbar: some View {
@@ -194,7 +186,7 @@ struct ProjectEditorView: View {
             ForEach(["Interface", "Flow", "JSON"], id: \.self) { value in
                 Button { output = value; copied = false } label: {
                     Text(value).font(.caption.weight(output == value ? .semibold : .regular)).padding(.horizontal, 9).frame(minHeight: 44)
-                        .background(output == value ? DLSTheme.surface3 : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .background(output == value ? DLSTheme.surface3 : .clear, in: Capsule())
                 }.buttonStyle(.plain).accessibilityAddTraits(output == value ? .isSelected : [])
             }
         }.accessibilityElement(children: .contain).accessibilityIdentifier("preview.output")

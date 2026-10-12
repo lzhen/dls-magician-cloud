@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// DLS mobile layout values; these are our own, not ChatGPT's private tokens.
+enum DLSMobile {
+    static let pageInset: CGFloat = 16
+    static let cardRadius: CGFloat = 16
+    static let minimumTarget: CGFloat = 44
+    static let readingWidth: CGFloat = 720
+}
+
 enum DLSGradientLayer {
     case solid(Color)
     case linear(degrees: CGFloat, stops: [Gradient.Stop])
@@ -86,9 +94,9 @@ struct DLSPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.callout.weight(.semibold))
-            .foregroundStyle(DLSTheme.primaryInk)
-            .padding(.horizontal, 14).frame(minHeight: 44)
-            .background(DLSTheme.primaryFill, in: RoundedRectangle(cornerRadius: DLSTheme.radiusButton))
+            .foregroundStyle(DLSTheme.surface)
+            .padding(.horizontal, 20).padding(.vertical, 4).frame(minHeight: DLSMobile.minimumTarget)
+            .background(DLSTheme.text, in: Capsule())
             .opacity(enabled ? (configuration.isPressed ? 0.86 : 1) : 0.45)
     }
 }
@@ -117,8 +125,8 @@ struct DLSSecondaryButtonStyle: ButtonStyle {
         configuration.label.font(.callout.weight(.medium))
             .foregroundStyle(DLSTheme.soft)
             .padding(.horizontal, 14).frame(minHeight: 44)
-            .background(DLSTheme.surface2, in: RoundedRectangle(cornerRadius: DLSTheme.radiusControl))
-            .overlay(RoundedRectangle(cornerRadius: DLSTheme.radiusControl).stroke(DLSTheme.border, lineWidth: 1))
+            .background(DLSTheme.surface2, in: Capsule())
+            .overlay(Capsule().stroke(DLSTheme.border, lineWidth: 1))
             .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
     }
 }

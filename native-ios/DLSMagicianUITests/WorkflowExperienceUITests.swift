@@ -255,6 +255,12 @@ final class ReviewDemoUITests: XCTestCase {
         XCTAssertTrue(app.buttons["demo.open"].waitForExistence(timeout: 10))
         for _ in 0..<3 { if app.buttons["demo.open"].isHittable { break }; app.swipeUp() }
         app.buttons["demo.open"].tap()
+        // Static toolbar branding must not swallow the adjacent account action.
+        XCTAssertTrue(app.buttons["Account"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["Account"].isHittable)
+        app.buttons["Account"].tap()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
         XCTAssertTrue(app.buttons["workflow.create"].waitForExistence(timeout: 8)); app.buttons["workflow.create"].tap()
         app.textFields["workflow.name"].tap(); app.textFields["workflow.name"].typeText("Review sample")
         app.buttons["workflow.submit"].tap()

@@ -33,7 +33,8 @@ struct CollaborationView: View {
                 }
                 if mode == .share { shareContent } else { commentContent }
             }.scrollDismissesKeyboard(.interactively).scrollContentBackground(.hidden)
-                .background(DLSTheme.background).foregroundStyle(DLSTheme.text)
+                .background(DLSTheme.background).foregroundStyle(DLSTheme.text).tint(DLSTheme.text)
+                .toolbarBackground(DLSTheme.background, for: .navigationBar)
                 .navigationTitle(mode == .share ? "Share" : "Comments").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) { Button("Done") { focused = false; if hasUnsentDraft { discardPresented = true } else { dismiss() } }.disabled(editor.busy).accessibilityIdentifier("collaboration.done") }
