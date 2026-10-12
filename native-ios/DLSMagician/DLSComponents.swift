@@ -129,7 +129,9 @@ struct DLSBrandLockup: View {
             BrandMark(size: 32)
             Text("DLS Magician").font(.system(.headline)).fontWeight(.semibold).tracking(-0.36)
                 .foregroundStyle(DLSTheme.text)
-        }.frame(minHeight: 44).accessibilityElement(children: .combine)
+        }.frame(minHeight: 44)
+            .allowsHitTesting(false)
+            .accessibilityElement(children: .combine)
     }
 }
 

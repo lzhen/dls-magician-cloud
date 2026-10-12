@@ -63,7 +63,17 @@ struct WorkspaceView: View {
             .toolbarBackground(DLSTheme.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                // Branding is static; newer iOS toolbars must not give it a control background.
+                #if compiler(>=6.2)
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .navigationBarLeading) { DLSBrandLockup() }
+                        .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .navigationBarLeading) { DLSBrandLockup() }
+                }
+                #else
                 ToolbarItem(placement: .navigationBarLeading) { DLSBrandLockup() }
+                #endif
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { accountPresented = true } label: { Image(systemName: "person.crop.circle") }
                         .accessibilityLabel("Account")
