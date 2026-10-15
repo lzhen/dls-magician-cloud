@@ -1,5 +1,13 @@
 'use strict';
 
+const APP_BASE_PATH = /^\/dlsmagician(?:\/|$)/.test(window.location.pathname || '') ? '/dlsmagician' : '';
+const appPath = path => `${APP_BASE_PATH}${path}`;
+// Keep the already approved Supabase callback during the domain transition.
+// The server forwards its PKCE code to the canonical origin before booting.
+const authRedirectUrl = () => APP_BASE_PATH
+  ? 'https://dlsmagician.empathie.ai/#dashboard'
+  : `${window.location.origin}/#dashboard`;
+
 const ICONS = {
   home: '<path d="M3 10.8 12 3l9 7.8"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/>',
   projects: '<path d="M3 6.5h6l2 2h10v10.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 10h18"/>',
@@ -247,7 +255,7 @@ function providerMark(provider) {
 }
 
 function brandLockup() {
-  return `<span class="brand-lockup" role="img" aria-label="DLS Magician Cloud"><span class="brand-symbol" aria-hidden="true"><svg class="brand-glyph" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><filter id="dls-brand-alpha" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="1.0323886639676114" intercept="-0.032388663967611336"/></feComponentTransfer></filter><mask id="dls-brand-mask" x="0" y="0" width="1024" height="1024" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="/icons/dls-1024-20261008.png" width="1024" height="1024" filter="url(#dls-brand-alpha)"/></mask></defs><rect width="1024" height="1024" fill="currentColor" mask="url(#dls-brand-mask)"/></svg></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">Magician</span></span></span>`;
+  return `<span class="brand-lockup" role="img" aria-label="DLS Magician Cloud"><span class="brand-symbol" aria-hidden="true"><svg class="brand-glyph" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><filter id="dls-brand-alpha" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="1.0323886639676114" intercept="-0.032388663967611336"/></feComponentTransfer></filter><mask id="dls-brand-mask" x="0" y="0" width="1024" height="1024" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="${appPath('/icons/dls-1024-20261008.png')}" width="1024" height="1024" filter="url(#dls-brand-alpha)"/></mask></defs><rect width="1024" height="1024" fill="currentColor" mask="url(#dls-brand-mask)"/></svg></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">Magician</span></span></span>`;
 }
 
 function themeToggle(className = '') {
@@ -273,7 +281,7 @@ async function api(path, options = {}) {
   }
   let response;
   try {
-    response = await fetch(path, config);
+    response = await fetch(appPath(path), config);
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('The server took too long to respond. Please refresh and try again.');
     throw error;
@@ -463,7 +471,7 @@ function renderLogin() {
             </form>
           ` : ''}
           <div class="auth-demo-note">${icon('shield', 'icon-sm')}<span>Authentication is secured by Supabase. Your account is recorded when you sign in.</span></div>
-          <div class="auth-legal">By continuing, you agree to the <a href="/terms.html" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</div>
+          <div class="auth-legal">By continuing, you agree to the <a href="${appPath('/terms.html')}" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="${appPath('/privacy.html')}" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</div>
         </div>
       </section>
     </main>
@@ -507,7 +515,7 @@ function sidebar(activePage) {
           <div class="sidebar-label">Settings</div>
           <nav class="nav-list">
             ${navItem('settings', 'Preferences', 'settings', activePage, '#settings')}
-            <a class="nav-item" href="/help.html" target="_blank" rel="noopener">${icon('files')}<span>Help & docs<span class="sr-only"> (opens in a new tab)</span></span></a>
+            <a class="nav-item" href="${appPath('/help.html')}" target="_blank" rel="noopener">${icon('files')}<span>Help & docs<span class="sr-only"> (opens in a new tab)</span></span></a>
           </nav>
         </div>
       </div>
@@ -924,7 +932,7 @@ function renderEditor() {
     <main class="editor-shell">
       <header class="editor-topbar">
         <div class="editor-title-group">
-          <button class="editor-brand-button" data-action="back-dashboard" aria-label="Back to workspace"><span class="brand-symbol" style="transform:scale(.75)"><svg class="brand-glyph" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><filter id="dls-editor-alpha" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="1.0323886639676114" intercept="-0.032388663967611336"/></feComponentTransfer></filter><mask id="dls-editor-mask" x="0" y="0" width="1024" height="1024" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="/icons/dls-1024-20261008.png" width="1024" height="1024" filter="url(#dls-editor-alpha)"/></mask></defs><rect width="1024" height="1024" fill="currentColor" mask="url(#dls-editor-mask)"/></svg></span></button>
+          <button class="editor-brand-button" data-action="back-dashboard" aria-label="Back to workspace"><span class="brand-symbol" style="transform:scale(.75)"><svg class="brand-glyph" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><filter id="dls-editor-alpha" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="1.0323886639676114" intercept="-0.032388663967611336"/></feComponentTransfer></filter><mask id="dls-editor-mask" x="0" y="0" width="1024" height="1024" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="${appPath('/icons/dls-1024-20261008.png')}" width="1024" height="1024" filter="url(#dls-editor-alpha)"/></mask></defs><rect width="1024" height="1024" fill="currentColor" mask="url(#dls-editor-mask)"/></svg></span></button>
           <div class="editor-project-meta">
             <div class="editor-project-name"><h1>${escapeHtml(project.name)}</h1><span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span></div>
             <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">${state.editorConflict ? escapeHtml(editorConflictMessage) : state.editorDirty ? 'Unsaved changes…' : `Saved ${relativeTime(project.updatedAt)}`}</div>
@@ -1062,7 +1070,7 @@ function renderGeneratedInterface(generated, expanded = false) {
     <div class="prototype-stage ds-${escapeHtml(state.designSystem)} ${expanded ? 'prototype-stage-expanded' : ''}">
       <section class="prototype-window">
         <header class="prototype-topbar">
-          <span class="prototype-product"><span class="brand-symbol"><svg class="brand-glyph" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><filter id="dls-prototype-alpha" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="1.0323886639676114" intercept="-0.032388663967611336"/></feComponentTransfer></filter><mask id="dls-prototype-mask" x="0" y="0" width="1024" height="1024" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="/icons/dls-1024-20261008.png" width="1024" height="1024" filter="url(#dls-prototype-alpha)"/></mask></defs><rect width="1024" height="1024" fill="currentColor" mask="url(#dls-prototype-mask)"/></svg></span>Generated by DLS Magician</span>
+          <span class="prototype-product"><span class="brand-symbol"><svg class="brand-glyph" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false"><defs><filter id="dls-prototype-alpha" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="1.0323886639676114" intercept="-0.032388663967611336"/></feComponentTransfer></filter><mask id="dls-prototype-mask" x="0" y="0" width="1024" height="1024" maskUnits="userSpaceOnUse" style="mask-type:alpha"><image href="${appPath('/icons/dls-1024-20261008.png')}" width="1024" height="1024" filter="url(#dls-prototype-alpha)"/></mask></defs><rect width="1024" height="1024" fill="currentColor" mask="url(#dls-prototype-mask)"/></svg></span>Generated by DLS Magician</span>
           <span class="prototype-badge">${icon('sparkles', 'icon-sm')}${escapeHtml(system.name)}</span>
         </header>
         <div class="prototype-content">
@@ -1467,7 +1475,7 @@ async function streamEvents(projectId, controller) {
   const { data } = await supabaseClient.auth.getSession();
   if (!data.session?.access_token) return;
   const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
-  const response = await fetch(`/api/events${query}`, {
+  const response = await fetch(appPath(`/api/events${query}`), {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
     signal: controller.signal
   });
@@ -1610,7 +1618,7 @@ async function authenticate(provider, email = '') {
     if (provider === 'magic') {
       const { error } = await supabaseClient.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: `${window.location.origin}/#dashboard` }
+        options: { emailRedirectTo: authRedirectUrl() }
       });
       if (error) throw error;
       state.user = null;
@@ -1622,7 +1630,7 @@ async function authenticate(provider, email = '') {
     const supabaseProvider = provider === 'microsoft' ? 'azure' : provider;
     const { error } = await supabaseClient.auth.signInWithOAuth({
       provider: supabaseProvider,
-      options: { redirectTo: `${window.location.origin}/#dashboard`, scopes: provider === 'microsoft' ? 'email' : undefined }
+      options: { redirectTo: authRedirectUrl(), scopes: provider === 'microsoft' ? 'email' : undefined }
     });
     if (error) throw error;
   } catch (error) {
@@ -2169,7 +2177,7 @@ window.addEventListener('beforeunload', (event) => {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((error) => {
+    navigator.serviceWorker.register(appPath('/sw.js'), { scope: `${APP_BASE_PATH}/` }).catch((error) => {
       console.warn('Service worker registration failed.', error);
     });
   });
