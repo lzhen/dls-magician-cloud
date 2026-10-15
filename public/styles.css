@@ -3596,7 +3596,8 @@ svg {
   }
 
   .topbar .theme-toggle {
-    display: none;
+    display: inline-flex;
+    flex-shrink: 0;
   }
 
   .mobile-nav .nav-item {
