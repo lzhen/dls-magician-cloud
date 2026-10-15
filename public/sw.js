@@ -1,6 +1,9 @@
 'use strict';
 
-const CACHE_VERSION = 'dls-magician-release-metrics-20261011-v2';
+const APP_BASE_PATH = new URL(self.location.href).pathname.replace(/\/sw\.js$/, '');
+const CACHE_PREFIX = `dls-magician${APP_BASE_PATH.replaceAll('/', '-')}-`;
+const CACHE_VERSION = `${CACHE_PREFIX}subpath-20261015-v1`;
+const appPath = path => `${APP_BASE_PATH}${path}`;
 const APP_SHELL = [
   '/icons/dls-32-20261008.png',
   '/icons/dls-180-20261008.png',
@@ -9,8 +12,8 @@ const APP_SHELL = [
   '/icons/dls-1024-20261008.png',
   '/',
   '/index.html',
-  '/styles.css?v=brand-lockup-20261009',
-  '/app.js?v=conditional-save-20261011-metrics-v2',
+  '/styles.css?v=brand-lockup-20261015-transparent-web-mobile',
+  '/app.js?v=brand-lockup-20261015-transparent-web-mobile',
   '/interaction-engine.js?v=inline-and-1',
   '/component-preview.js?v=inline-and-1',
   '/component-preview.css?v=inline-and-1',
@@ -23,7 +26,7 @@ const APP_SHELL = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable-512.png'
-];
+].map(appPath);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_VERSION).then((cache) => cache.addAll(APP_SHELL)));
@@ -33,7 +36,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_VERSION).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -42,17 +45,17 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (request.method !== 'GET' || url.origin !== self.location.origin || !url.pathname.startsWith(`${APP_BASE_PATH}/`) || url.pathname.startsWith(appPath('/api/'))) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put('/index.html', copy));
+          caches.open(CACHE_VERSION).then((cache) => cache.put(appPath('/index.html'), copy));
           return response;
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => caches.match(appPath('/index.html')))
     );
     return;
   }

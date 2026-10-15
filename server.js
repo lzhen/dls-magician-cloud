@@ -17,7 +17,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://vxlwnvwijnzimjvgpeug.s
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_r3jVlTJmChdbHkJRcaBfcw_2k13Yx2A';
 const requestGuard = require('./request-security.cjs').createRequestGuard({
   trustedProxy: process.env.RAILWAY_ENVIRONMENT_ID !== undefined,
-  origins: (process.env.DLS_ALLOWED_ORIGINS || `https://dlsmagician.empathie.ai,https://dls-magician-cloud-production.up.railway.app,http://localhost:${PORT},http://127.0.0.1:${PORT}`).split(',').map(value => value.trim()).filter(Boolean)
+  origins: (process.env.DLS_ALLOWED_ORIGINS || `https://www.empathie.ai,https://empathie.ai,https://dlsmagician.empathie.ai,https://dls-magician-cloud-production.up.railway.app,http://localhost:${PORT},http://127.0.0.1:${PORT}`).split(',').map(value => value.trim()).filter(Boolean)
 });
 
 function nowIso() {
@@ -861,7 +861,7 @@ function mimeType(filePath) {
   }[ext] || 'application/octet-stream';
 }
 
-function serveStatic(req, res, url) {
+function serveStatic(req, res, url, basePath = '') {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/') pathname = '/index.html';
   const safeRelative = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
@@ -874,14 +874,37 @@ function serveStatic(req, res, url) {
   }
 
   try {
+    const contentType = mimeType(filePath);
+    let content;
+    if (basePath && /\.(?:html|css|webmanifest)$/.test(filePath)) {
+      let text = fs.readFileSync(filePath, 'utf8');
+      if (filePath.endsWith('.html')) {
+        text = text.replace(/(\b(?:href|src|action)=["'])\/(?!\/)/g, `$1${basePath}/`);
+      } else if (filePath.endsWith('.css')) {
+        text = text.replace(/(url\(["']?)\/(?!\/)/g, `$1${basePath}/`);
+      } else {
+        const manifest = JSON.parse(text);
+        const scoped = value => typeof value === 'string' && value.startsWith('/') ? basePath + value : value;
+        for (const key of ['id', 'start_url', 'scope']) manifest[key] = scoped(manifest[key]);
+        for (const icon of manifest.icons || []) icon.src = scoped(icon.src);
+        for (const shortcut of manifest.shortcuts || []) {
+          shortcut.url = scoped(shortcut.url);
+          for (const icon of shortcut.icons || []) icon.src = scoped(icon.src);
+        }
+        text = JSON.stringify(manifest);
+      }
+      content = Buffer.from(text);
+    }
     const stat = fs.statSync(filePath);
     const shouldRevalidate = filePath.endsWith('index.html') || filePath.endsWith('sw.js') || filePath.endsWith('manifest.webmanifest');
     res.writeHead(200, {
-      'Content-Type': mimeType(filePath),
-      'Content-Length': stat.size,
+      'Content-Type': contentType,
+      'Content-Length': content ? content.length : stat.size,
       'Cache-Control': shouldRevalidate ? 'no-cache' : 'public, max-age=3600',
-      ...(filePath.endsWith('sw.js') ? { 'Service-Worker-Allowed': '/' } : {})
+      ...(filePath.endsWith('sw.js') ? { 'Service-Worker-Allowed': `${basePath}/` } : {})
     });
+    if (req.method === 'HEAD') return res.end();
+    if (content) return res.end(content);
     fs.createReadStream(filePath).pipe(res);
   } catch (error) {
     sendError(res, 500, 'Unable to serve file.');
@@ -890,14 +913,25 @@ function serveStatic(req, res, url) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const basePath = url.pathname === '/dlsmagician' || url.pathname.startsWith('/dlsmagician/') ? '/dlsmagician' : '';
+  if (basePath) url.pathname = url.pathname.slice(basePath.length) || '/';
   try {
+    // Retain the old hostname as an Auth callback bridge: PKCE codes arrive
+    // at the new origin, where the browser originally stored the verifier.
+    const legacyHost = String(req.headers.host || '').split(':')[0] === 'dlsmagician.empathie.ai';
+    const documentRequest = url.pathname === '/' || url.pathname.endsWith('.html');
+    if (legacyHost && ['GET', 'HEAD'].includes(req.method) && documentRequest && (process.env.DLS_CANONICAL_REDIRECT === '1' || url.searchParams.has('code'))) {
+      const destination = `https://www.empathie.ai/dlsmagician${url.pathname === '/index.html' ? '/' : url.pathname}${url.search}`;
+      res.writeHead(307, { Location: destination, 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     if (url.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'dls-magician-cloud' });
     if (url.pathname.startsWith('/api/')) {
       const denied = requestGuard(req);
       if (denied) return sendJson(res, denied.status, { error: denied.error }, denied.retryAfter ? { 'Retry-After': String(denied.retryAfter) } : {});
       await handleApi(req, res, url);
     } else {
-      serveStatic(req, res, url);
+      serveStatic(req, res, url, basePath);
     }
   } catch (error) {
     console.error(error);
