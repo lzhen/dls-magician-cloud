@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { fileURLToPath } from 'node:url';
 
 // Generate paths for the machine where this script is run. Do not overwrite a

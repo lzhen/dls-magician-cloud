@@ -33,3 +33,5 @@ jobs:
       - run: npm run mcp:setup
       - run: npm run test:mcp
       - run: npm run demo:mcp
+      - run: npm run showcase:mcp
+      - run: node --check mcp/showcase/showcase.js

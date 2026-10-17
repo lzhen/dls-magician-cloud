@@ -1,9 +1,42 @@
-# DLS Magician MCP · internal MVP 0.1.0
+# DLS Magician MCP · community preview 0.2.0
 
 A working, read-only **stdio MCP server** for the existing DLS Magician Cloud
 design system. It uses the official MCP SDK and reads the repository's current
 HTML/CSS implementation. No model call, API key, paid design-reference service,
 web app login, or running web server is required.
+
+## Explore and share
+
+The source and setup guide can be shared using this repository's feature branch.
+Build the interactive component explorer with `npm run showcase:mcp`; the output
+is `mcp/.showcase/`. Host those four static files together on a static host. The
+explorer includes component/category search, real stylesheet previews, variant
+selection, copyable HTML/CSS and MCP requests, token inspection, and setup steps.
+It does not send requests to a live MCP service or collect form input.
+
+The explorer follows the useful browsing/preview/source pattern of
+[ThreeUI](https://github.com/MengTo/threeui), using our own product's components,
+content, and source. It does not include ThreeUI's components or artwork.
+
+To create a standalone local installation archive:
+
+```bash
+npm run package:mcp
+```
+
+This writes `empathie-dls-magician-mcp-0.2.0.tgz` at the repository root. Transfer
+that archive to another machine, then install and generate its host config:
+
+```bash
+npm install ./empathie-dls-magician-mcp-0.2.0.tgz
+./node_modules/.bin/dls-magician-mcp-config
+```
+
+The archive contains a source-fingerprinted design-system snapshot and the actual
+stylesheet. It runs without a checkout of the original app. Install a newly
+built package to receive later design updates. The package remains private to
+prevent accidental npm registry publication; local archive installation works.
+An npm registry release and a public remote MCP endpoint have not been created.
 
 ## Run and verify
 

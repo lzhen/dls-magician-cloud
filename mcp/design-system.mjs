@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -54,6 +54,13 @@ function rendererSource(source, name) {
 }
 
 export function loadDesignSystem(root = REPO_ROOT) {
+  // A packed installation has an immutable snapshot instead of a repository.
+  // Explicit fixture roots still fail fast when their source files are missing.
+  if (root === REPO_ROOT && !existsSync(path.join(root, 'mcp/catalog.json'))) {
+    const system = JSON.parse(readFileSync(new URL('./.bundle/design-system.json', import.meta.url), 'utf8'));
+    system.metadata.distributionMode = 'bundled-snapshot';
+    return system;
+  }
   const css = read(root, 'public/styles.css');
   const app = read(root, 'public/app.js');
   const catalogText = read(root, 'mcp/catalog.json');
@@ -98,6 +105,7 @@ export function loadDesignSystem(root = REPO_ROOT) {
   return {
     metadata: {
       name: 'DLS Magician',
+      distributionMode: 'repository-source',
       applicationVersion: appPackage.version,
       mcpVersion: mcpPackage.version,
       catalogVersion: catalog.version,
@@ -152,7 +160,10 @@ export function designGuidance(system, { section = 'all', category = 'all' } = {
   if (section === 'all' || section === 'versions') {
     output.versions = {
       current: system.metadata,
-      history: [{ version: '0.1.0', changes: ['Initial internal read-only MCP: component search, source-derived tokens and guidance, component examples with source bindings.'] }],
+      history: [
+        { version: '0.2.0', changes: ['Standalone local package with a versioned design-system snapshot; interactive component explorer and connection guide.'] },
+        { version: '0.1.0', changes: ['Initial internal read-only MCP: component search, source-derived tokens and guidance, component examples with source bindings.'] }
+      ],
       notes: 'applicationVersion is the app package version; catalogVersion describes this catalog; sourceRevision hashes the actual input files. Project/user version history is not read or exposed.'
     };
   }
@@ -174,6 +185,7 @@ export function componentCode(system, { componentId, variant = 'default' }) {
     css: component.css,
     stylesheet: 'public/styles.css',
     stylesheetRequired: true,
+    ...(system.metadata.distributionMode === 'bundled-snapshot' ? { packagedStylesheet: '@empathie/dls-magician-mcp/.bundle/styles.css' } : {}),
     sourceBindings: component.bindings,
     ...(component.rendererSource ? { rendererSource: component.rendererSource } : {}),
     recommendations: component.recommendations

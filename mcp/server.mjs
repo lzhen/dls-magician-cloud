@@ -52,9 +52,10 @@ export function createServer(system = loadDesignSystem()) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const server = createServer();
+    const system = loadDesignSystem();
+    const server = createServer(system);
     await server.connect(new StdioServerTransport());
-    console.error('DLS Magician MCP 0.1.0 ready on stdio (read-only).');
+    console.error(`DLS Magician MCP ${system.metadata.mcpVersion} ready on stdio (read-only).`);
   } catch (error) {
     console.error(`DLS Magician MCP could not start: ${error.message}`);
     process.exitCode = 1;

@@ -9,7 +9,9 @@
     "mcp:setup": "npm ci --prefix mcp",
     "mcp": "node mcp/server.mjs",
     "test:mcp": "npm test --prefix mcp",
-    "demo:mcp": "npm run demo --prefix mcp"
+    "demo:mcp": "npm run demo --prefix mcp",
+    "package:mcp": "npm pack ./mcp",
+    "showcase:mcp": "node mcp/build-showcase.mjs"
   },
   "engines": {
     "node": ">=20"
