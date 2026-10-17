@@ -1,0 +1,27 @@
+{
+  "name": "@empathie/dls-magician-mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "dls-magician-mcp": "server.mjs",
+    "dls-magician-mcp-config": "config.mjs"
+  },
+  "files": ["server.mjs", "design-system.mjs", "config.mjs", "README.md", ".bundle/design-system.json", ".bundle/styles.css"],
+  "description": "Read-only MCP access to DLS Magician's existing components and design rules.",
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "demo": "node demo.mjs",
+    "prepack": "node build-package.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.3.1",
+    "postcss": "^8.5.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1"
+  }
+}

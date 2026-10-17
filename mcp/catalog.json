@@ -1,0 +1,116 @@
+{
+  "version": "0.1.0",
+  "scope": "Existing DLS Magician Cloud HTML/CSS primitives. This catalog documents implementation; it is not an accessibility certification or a cross-product approval.",
+  "components": [
+    {
+      "id": "button",
+      "name": "Button",
+      "description": "Action button with the visual variants and sizes used by DLS Magician.",
+      "tags": ["action", "submit", "save", "按钮", "保存", "操作"],
+      "selectors": [".btn", ".btn-primary", ".btn-gold", ".btn-ghost", ".btn-danger", ".btn-icon", ".btn-sm", ".btn-lg"],
+      "variants": {
+        "default": "<button class=\"btn\" type=\"button\">Cancel</button>",
+        "primary": "<button class=\"btn btn-primary\" type=\"submit\">Create task</button>",
+        "gold": "<button class=\"btn btn-gold\" type=\"button\">Generate</button>",
+        "ghost": "<button class=\"btn btn-ghost\" type=\"button\">More options</button>",
+        "danger": "<button class=\"btn btn-danger\" type=\"button\">Delete</button>",
+        "small": "<button class=\"btn btn-sm\" type=\"button\">Save</button>",
+        "large": "<button class=\"btn btn-lg btn-primary\" type=\"button\">Continue</button>",
+        "icon": "<button class=\"btn btn-icon\" type=\"button\" aria-label=\"More options\"><span aria-hidden=\"true\">…</span></button>",
+        "disabled": "<button class=\"btn btn-primary\" type=\"button\" disabled>Save</button>"
+      },
+      "recommendations": ["Use a native button for actions and a link for navigation.", "Give icon-only buttons an accessible name.", "Use one visually dominant primary action per decision area.", "Check touch targets in the target product: the existing base CSS uses a 38px minimum height."]
+    },
+    {
+      "id": "input",
+      "name": "Text input",
+      "description": "Single-line input, paired with an explicit label and optional description or error.",
+      "tags": ["form", "field", "text", "name", "输入", "表单", "名称"],
+      "selectors": [".field", ".field-label", ".input"],
+      "variants": {
+        "default": "<div class=\"field\"><label for=\"task-name\">Task name</label><input class=\"input\" id=\"task-name\" name=\"taskName\" type=\"text\" required></div>",
+        "disabled": "<div class=\"field\"><label for=\"task-name-disabled\">Task name</label><input class=\"input\" id=\"task-name-disabled\" type=\"text\" disabled></div>",
+        "error": "<div class=\"field\"><label for=\"task-name-error\">Task name</label><input class=\"input\" id=\"task-name-error\" aria-invalid=\"true\" aria-describedby=\"task-name-message\"><p id=\"task-name-message\" role=\"alert\">Enter a task name.</p></div>"
+      },
+      "recommendations": ["Keep the visible label; do not use the placeholder as its replacement.", "The error example supplies semantic error markup; there is no dedicated invalid-input visual token in the current CSS.", "Validate field text and escape it before inserting it into HTML."]
+    },
+    {
+      "id": "textarea",
+      "name": "Textarea",
+      "description": "Multiline input using the current form-control styles.",
+      "tags": ["form", "field", "notes", "description", "多行", "描述", "备注"],
+      "selectors": [".field", ".field-label", ".textarea"],
+      "variants": {
+        "default": "<div class=\"field\"><label for=\"task-notes\">Notes</label><textarea class=\"textarea\" id=\"task-notes\" name=\"notes\" rows=\"4\"></textarea></div>",
+        "disabled": "<div class=\"field\"><label for=\"task-notes-disabled\">Notes</label><textarea class=\"textarea\" id=\"task-notes-disabled\" rows=\"4\" disabled></textarea></div>"
+      },
+      "recommendations": ["Keep multiline text vertically resizable.", "Associate helper and error text with aria-describedby when present."]
+    },
+    {
+      "id": "select",
+      "name": "Select",
+      "description": "Native single-choice select with DLS styling.",
+      "tags": ["form", "field", "dropdown", "choice", "下拉", "选择"],
+      "selectors": [".field", ".field-label", ".select"],
+      "variants": {
+        "default": "<div class=\"field\"><label for=\"task-repeat\">Repeat</label><select class=\"select\" id=\"task-repeat\" name=\"repeat\"><option value=\"none\">Does not repeat</option><option value=\"daily\">Daily</option><option value=\"weekly\">Weekly</option></select></div>",
+        "disabled": "<div class=\"field\"><label for=\"task-repeat-disabled\">Repeat</label><select class=\"select\" id=\"task-repeat-disabled\" disabled><option>Does not repeat</option></select></div>"
+      },
+      "recommendations": ["Retain native keyboard behavior and a visible label.", "The current select arrow uses appearance:none; verify its rendering in the target browser."]
+    },
+    {
+      "id": "status",
+      "name": "Status badge",
+      "description": "Neutral badge and draft, review, or published status pills.",
+      "tags": ["badge", "state", "label", "published", "review", "draft", "状态", "标签"],
+      "selectors": [".badge", ".status-pill"],
+      "variants": {
+        "default": "<span class=\"badge\">Shared</span>",
+        "draft": "<span class=\"status-pill draft\">Draft</span>",
+        "review": "<span class=\"status-pill review\">In review</span>",
+        "published": "<span class=\"status-pill published\">Published</span>"
+      },
+      "recommendations": ["Keep a visible text label so status is not conveyed by color alone.", "Use live-region announcements only when status changes need immediate attention."]
+    },
+    {
+      "id": "dialog",
+      "name": "Dialog",
+      "description": "Existing modal shell, including header, scrolling body, footer, and width variants.",
+      "tags": ["modal", "popup", "create", "task", "弹窗", "对话框", "创建任务"],
+      "selectors": [".modal-backdrop", ".modal", ".modal-lg", ".modal-xl", ".modal-header", ".modal-title", ".modal-subtitle", ".modal-body", ".modal-footer"],
+      "variants": {
+        "default": "<div class=\"modal-backdrop\"><section class=\"modal\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"task-title\"><header class=\"modal-header\"><h2 class=\"modal-title\" id=\"task-title\">Create task</h2><button class=\"btn btn-ghost\" type=\"button\" aria-label=\"Close dialog\">Close</button></header><div class=\"modal-body\"><p>Add task details here.</p></div><footer class=\"modal-footer\"><button class=\"btn\" type=\"button\">Cancel</button><button class=\"btn btn-primary\" type=\"button\">Create task</button></footer></section></div>",
+        "large": "<section class=\"modal modal-lg\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"large-dialog-title\"><header class=\"modal-header\"><h2 class=\"modal-title\" id=\"large-dialog-title\">Preview</h2></header><div class=\"modal-body\">Preview content</div></section>",
+        "extra-large": "<section class=\"modal modal-xl\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"history-dialog-title\"><header class=\"modal-header\"><h2 class=\"modal-title\" id=\"history-dialog-title\">Version history</h2></header><div class=\"modal-body\">Version content</div></section>"
+      },
+      "recommendations": ["These are markup examples, not a complete dialog controller.", "Implement initial focus, focus trapping, Escape dismissal, background inertness, and focus return in the host application.", "Wire Close, Cancel, and primary action handlers before shipping; validate scrolling at narrow widths."]
+    },
+    {
+      "id": "flow-node",
+      "name": "Flow node",
+      "description": "Structured-language preview node for GIVEN, WHEN, THEN, and AND steps.",
+      "tags": ["flow", "preview", "given", "when", "then", "and", "流程", "预览", "节点"],
+      "selectors": [".flow-node", ".flow-node-type", ".flow-node-text", ".design-system-preview"],
+      "renderer": "renderFlow",
+      "variants": {
+        "default": "<div class=\"design-system-preview ds-dls\"><div class=\"flow-node\" data-type=\"GIVEN\"><div class=\"flow-node-type\">GIVEN</div><div class=\"flow-node-text\">A user has a task to complete.</div></div></div>",
+        "when": "<div class=\"flow-node\" data-type=\"WHEN\"><div class=\"flow-node-type\">WHEN</div><div class=\"flow-node-text\">They create a task.</div></div>",
+        "then": "<div class=\"flow-node\" data-type=\"THEN\"><div class=\"flow-node-type\">THEN</div><div class=\"flow-node-text\">The task is visible in their list.</div></div>",
+        "and": "<div class=\"flow-node\" data-type=\"AND\"><div class=\"flow-node-type\">AND</div><div class=\"flow-node-text\">A confirmation is shown.</div></div>"
+      },
+      "recommendations": ["Use the built-in ds-dls context when matching the DLS preview.", "Escape step text as renderFlow does; do not interpolate untrusted text directly into markup.", "A flow node is a static preview of a step, not an executable interaction or a completed form."]
+    },
+    {
+      "id": "flow-connector",
+      "name": "Flow connector",
+      "description": "Vertical connector and arrow used between adjacent preview steps.",
+      "tags": ["flow", "arrow", "connection", "流程", "连接线", "箭头"],
+      "selectors": [".flow-connector"],
+      "renderer": "renderFlow",
+      "variants": {
+        "default": "<div class=\"flow-connector\" aria-hidden=\"true\"></div>"
+      },
+      "recommendations": ["Insert only between adjacent flow nodes.", "Keep decorative connectors out of the accessibility tree and preserve step order in the DOM."]
+    }
+  ]
+}
