@@ -5,7 +5,11 @@
   "description": "A runnable cloud-collaboration MVP for DLS Magician.",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "mcp:setup": "npm ci --prefix mcp",
+    "mcp": "node mcp/server.mjs",
+    "test:mcp": "npm test --prefix mcp",
+    "demo:mcp": "npm run demo --prefix mcp"
   },
   "engines": {
     "node": ">=20"

@@ -112,3 +112,16 @@ Stop the server, delete `data/db.json`, and start the app again. The server recr
 - `screenshots/dashboard.png` — shared team workspace
 - `screenshots/editor.png` — structured language, generated JSON, and live flow
 # dls-magician-cloud
+
+## Internal design-system MCP
+
+The read-only MCP MVP exposes component search, source-derived design tokens and
+guidance, and component examples with source/version bindings. See
+[mcp/README.md](mcp/README.md) for local stdio setup, supported components, and
+the current integration boundaries.
+
+```bash
+npm run mcp:setup
+npm run test:mcp
+npm run demo:mcp
+```
