@@ -38,7 +38,7 @@ test('the company subpath serves the app, isolated assets, API and PWA routes', 
   assert.match(html, /href="\/dlsmagician\/manifest\.webmanifest"/);
   assert.doesNotMatch(html, /(?:href|src)="\/(?!\/|dlsmagician\/)/);
   const style = await (await fetch(origin + '/dlsmagician/styles.css')).text();
-  assert.match(style, /url\(['"]?\/dlsmagician\/icons\//);
+  assert.match(style, /url\(['"]?\/dlsmagician\/logo(?:-light)?\.svg/);
   const manifest = await (await fetch(origin + '/dlsmagician/manifest.webmanifest')).json();
   assert.equal(manifest.scope, '/dlsmagician/');
   assert.equal(manifest.start_url, '/dlsmagician/#dashboard');
