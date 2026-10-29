@@ -580,6 +580,28 @@ async function handleApi(req, res, url) {
     });
   }
 
+  if (req.method === 'POST' && pathname === '/api/workspaces') {
+    const body = await readBody(req);
+    if (!requireLiveSession(res, session)) return;
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name || name.length > 80) return sendError(res, 400, 'Workspace name must be between 1 and 80 characters.');
+    const id = `ws-${crypto.randomUUID()}`;
+    const workspace = {
+      id, name, slug: id, domain: '', plan: 'Personal',
+      logo: name.split(/\s+/).slice(0, 2).map(part => Array.from(part)[0]).join('').toUpperCase(),
+      authProviders: {}, createdAt: nowIso(),
+      members: [{ userId: session.userId, role: 'Admin', joinedAt: nowIso() }]
+    };
+    // A new workspace is private to its creator. Never attach a login to a seeded team.
+    db.workspaces.push(workspace);
+    saveDb();
+    broadcast('workspace_updated', { workspaceId: id }, null, session.sid, id);
+    return sendJson(res, 201, {
+      ...workspace,
+      members: workspace.members.map(member => ({ ...member, user: publicUser(currentUser) }))
+    });
+  }
+
   if (req.method === 'POST' && pathname === '/api/projects') {
     const body = await readBody(req);
     if (!requireLiveSession(res, session)) return;

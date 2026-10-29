@@ -61,7 +61,14 @@ test('real HTTP create/save/conflict survives a server restart with synthetic Au
   assert.equal(versionSaved.status,201);
   const shared=await request('POST','/api/projects/'+id+'/share',{email:'invitee@example.invalid',role:'Viewer'});
   assert.equal(shared.status,201);
+  const workspace=await request('POST','/dlsmagician/api/workspaces',{name:'Persistent private workspace'});
+  assert.equal(workspace.status,201);
+  const onboardingProject=await request('POST','/dlsmagician/api/projects',{name:'First project in new workspace',workspaceId:workspace.body.id});
+  assert.equal(onboardingProject.status,201);
   await stop();await start();
+  const bootstrap=await request('GET','/dlsmagician/api/bootstrap');
+  assert.ok(bootstrap.body.workspaces.some(item=>item.id===workspace.body.id&&item.members[0].role==='Admin'));
+  assert.ok(bootstrap.body.projects.some(item=>item.id===onboardingProject.body.id));
   const recovered=await request('GET','/api/projects/'+id);
   assert.equal(recovered.status,200);assert.equal(recovered.body.structuredLanguage,saved.body.structuredLanguage);
   assert.equal(recovered.body.id,id);assert.notEqual(recovered.body.name,'stale');

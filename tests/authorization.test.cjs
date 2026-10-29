@@ -118,6 +118,35 @@ function protectedState(h) {
   return JSON.stringify({ projects, workspaces, activities });
 }
 
+test('a signed-in user with no workspace can create a private workspace and their first project', async t => {
+  const h = harness(t);
+  assert.equal((await h.request('outsider', 'GET', '/api/bootstrap')).json.workspaces.length, 0);
+  const originalTeams = JSON.stringify(h.db().workspaces);
+  assert.equal((await h.request(null, 'POST', '/api/workspaces', { name: 'Private work' })).status, 401);
+  for (const name of ['', '   ', 'x'.repeat(81), { text: 'not a string' }]) {
+    assert.equal((await h.request('outsider', 'POST', '/api/workspaces', { name })).status, 400);
+  }
+  assert.equal(JSON.stringify(h.db().workspaces), originalTeams);
+  const created = await h.request('outsider', 'POST', '/api/workspaces', {
+    name: '  My workspace  ', id: 'alpha', members: [{ userId: 'owner-b', role: 'Admin' }], authProviders: { companySso: true }
+  });
+  assert.equal(created.status, 201);
+  const workspace = created.json;
+  assert.equal(workspace.name, 'My workspace');
+  assert.notEqual(workspace.id, 'alpha');
+  assert.deepEqual(workspace.members.map(member => [member.userId, member.role]), [['outsider', 'Admin']]);
+  assert.deepEqual(workspace.authProviders, {});
+  assert.equal(JSON.stringify(h.db().workspaces.slice(0, -1)), originalTeams);
+  const first = await h.request('outsider', 'POST', '/api/projects', { name: 'First workflow', workspaceId: workspace.id });
+  assert.equal(first.status, 201);
+  const bootstrap = (await h.request('outsider', 'GET', '/api/bootstrap')).json;
+  assert.deepEqual(bootstrap.workspaces.map(item => item.id), [workspace.id]);
+  assert.deepEqual(bootstrap.projects.map(item => item.id), [first.json.id]);
+  assert.ok(!(await h.request('owner-b', 'GET', '/api/bootstrap')).json.workspaces.some(item => item.id === workspace.id));
+  assert.equal((await h.request('owner-b', 'GET', '/api/projects/' + first.json.id)).status, 404);
+  assert.equal((await h.request('owner-b', 'POST', '/api/projects', { name: 'Unauthorized', workspaceId: workspace.id })).status, 404);
+});
+
 test('unauthenticated API, invalid token and expired token fail closed', async (t) => {
   const h = harness(t);
   assert.equal((await h.request(null, 'GET', '/api/bootstrap')).status, 401);

@@ -24,6 +24,72 @@ function clientHarness() {
   return { context, state, run, timers };
 }
 
+test('first project asks for a workspace name and keeps template context', () => {
+  const h = clientHarness();
+  h.state.user = { id: 'new-user', name: 'New user' };
+  const html = h.run('renderNewProjectModal({name:"Omnichannel Campaign", description:"Original description", id:"t-omni"})');
+  assert.match(html, /name="workspaceName"/);
+  assert.match(html, /Create workspace & project/);
+  assert.match(html, /Omnichannel Campaign workflow/);
+  assert.match(html, /Original description/);
+  assert.doesNotMatch(html, /<select[^>]+name="workspaceId"/);
+  assert.match(h.run('renderWorkspacesPage()'), /data-action="new-workspace"/);
+});
+
+test('a failed first project retains the new workspace and draft for a successful retry', async () => {
+  const h = clientHarness();
+  h.state.user = { id: 'new-user' };
+  let workspaceCalls = 0, projectCalls = 0;
+  const button = { disabled: false, innerHTML: '' };
+  const select = { value: '' };
+  const field = { innerHTML: '' };
+  const values = { name: 'My workflow', description: 'Keep this draft', workspaceName: 'Private work', category: 'Workflow' };
+  const form = { dataset: {}, querySelector(selector) {
+    if (selector === '[type="submit"]') return button;
+    if (selector === '[data-project-workspace]') return field;
+    if (selector === '[name="workspaceId"]') return select;
+    throw Error('Unexpected selector: ' + selector);
+  } };
+  h.context.FormData = class { get(name) { return name === 'workspaceId' ? select.value : values[name]; } };
+  h.context.fixtureForm = form;
+  h.context.fixtureApi = async (url, options) => {
+    if (url === '/api/workspaces') {
+      workspaceCalls++;
+      return { id: 'new-workspace', name: 'Private work', members: [{userId:'new-user',role:'Admin'}] };
+    }
+    assert.equal(url, '/api/projects');
+    projectCalls++;
+    assert.equal(options.body.workspaceId, 'new-workspace');
+    assert.equal(options.body.description, 'Keep this draft');
+    if (projectCalls === 1) throw Error('Temporary project failure');
+    return { id: 'new-project' };
+  };
+  h.run('api = fixtureApi; showToast = () => {}; closeModal = () => {}; loadBootstrap = async () => {};');
+  const first = h.run('createProject(fixtureForm)');
+  await h.run('createProject(fixtureForm)'); // A double submission does nothing.
+  await first;
+  assert.equal(select.value, 'new-workspace');
+  assert.equal(button.disabled, false);
+  assert.equal(form.dataset.submitting, undefined);
+  await h.run('createProject(fixtureForm)');
+  assert.equal(workspaceCalls, 1);
+  assert.equal(projectCalls, 2);
+  assert.equal(h.context.window.location.hash, '#project/new-project');
+});
+
+test('a workspace response from a previous account cannot populate the current account', async () => {
+  const h = clientHarness();
+  h.state.user = { id: 'previous-user' };
+  let complete;
+  h.context.fixtureApi = () => new Promise(resolve => { complete = resolve; });
+  h.run('api = fixtureApi;');
+  const pending = h.run('createWorkspace("Private work")');
+  h.state.user = { id: 'current-user' };
+  complete({id:'previous-workspace', members:[{userId:'previous-user',role:'Admin'}]});
+  await assert.rejects(pending, /Your account changed/);
+  assert.equal(h.state.workspaces.length, 0);
+});
+
 test('a project-only guest can discover the shared project with an empty workspace list', () => {
   const h = clientHarness();
   h.state.user = { id: 'guest', name: 'Guest' };

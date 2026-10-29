@@ -759,6 +759,7 @@ function renderWorkspacesPage() {
     <div class="page">
       <div class="page-header">
         <div><div class="page-kicker">Organization</div><h1 class="page-title">Workspaces</h1><p class="page-description">Group projects, people, permissions, and identity policies around a shared team boundary.</p></div>
+        <button class="btn btn-primary" data-action="new-workspace">${icon('plus')}Create workspace</button>
       </div>
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-value">${workspace?.members.length || 0}</div><div class="stat-label">Workspace members</div></div>
@@ -768,6 +769,7 @@ function renderWorkspacesPage() {
       <div class="section-heading"><div><h2>Your workspaces</h2><p>Managed collaboration environments.</p></div></div>
       <section class="panel">
         <div class="workspace-list">
+          ${state.workspaces.length ? '' : '<div class="workspace-row"><div><div class="row-title">Create your first workspace</div><div class="row-subtitle">A private space for your projects. Only you have access until you invite collaborators.</div></div></div>'}
           ${state.workspaces.map((item) => `
             <div class="workspace-row">
               <div class="workspace-logo">${escapeHtml(item.logo)}</div>
@@ -1180,7 +1182,8 @@ function renderModal() {
     return;
   }
   const type = state.modal.type;
-  if (type === 'new-project') modalRoot.innerHTML = renderNewProjectModal();
+  if (type === 'new-project') modalRoot.innerHTML = renderNewProjectModal(state.templates.find(item => item.id === state.modal.templateId));
+  else if (type === 'new-workspace') modalRoot.innerHTML = renderNewWorkspaceModal();
   else if (type === 'share') modalRoot.innerHTML = renderShareModal();
   else if (type === 'comments') modalRoot.innerHTML = renderCommentsDrawer();
   else if (type === 'versions') modalRoot.innerHTML = renderVersionsModal();
@@ -1209,6 +1212,25 @@ function activateModal() {
   });
 }
 
+function projectWorkspaces() {
+  return state.workspaces.filter(workspace => workspace.members.some(member => member.userId === state.user?.id && ['Admin', 'Editor'].includes(member.role)));
+}
+
+function renderProjectWorkspaceField() {
+  const workspaces = projectWorkspaces();
+  if (!workspaces.length) return `<label for="new-project-workspace-name">Workspace name</label><input id="new-project-workspace-name" class="input" name="workspaceName" placeholder="e.g. My workspace" maxlength="80" required aria-describedby="new-workspace-help" /><p class="helper" id="new-workspace-help">Create a private workspace for this project. Only you will have access.</p>`;
+  return `<label for="new-project-workspace">Workspace</label><select id="new-project-workspace" class="select" name="workspaceId" required>${workspaces.map(workspace => `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}</option>`).join('')}</select>`;
+}
+
+function renderNewWorkspaceModal() {
+  return `<div class="modal-backdrop" data-action="close-modal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-workspace-title">
+      <header class="modal-header"><div><h2 class="modal-title" id="new-workspace-title">Create a workspace</h2><div class="modal-subtitle">A private space for your projects.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close">${icon('close')}</button></header>
+      <form data-form="new-workspace"><div class="modal-body"><div class="field"><label for="workspace-name">Workspace name</label><input id="workspace-name" class="input" name="name" placeholder="e.g. My workspace" maxlength="80" required autofocus /><p class="helper">Only you will have access. You can invite collaborators to individual projects later.</p></div></div>
+      <footer class="modal-footer"><button class="btn" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Create workspace</button></footer></form>
+    </section></div>`;
+}
+
 function renderNewProjectModal(template = null) {
   const templateName = template?.name ? `${template.name} workflow` : '';
   return `
@@ -1220,12 +1242,12 @@ function renderNewProjectModal(template = null) {
             <div class="field"><label for="new-project-name">Project name</label><input id="new-project-name" class="input" name="name" value="${escapeHtml(templateName)}" placeholder="e.g. Omnichannel eligibility workflow" required autofocus /></div>
             <div class="field"><label for="new-project-description">Description</label><textarea id="new-project-description" class="textarea" name="description" placeholder="What should this workflow help the team design or build?">${escapeHtml(template?.description || '')}</textarea></div>
             <div class="form-row">
-              <div class="field"><label for="new-project-workspace">Workspace</label><select id="new-project-workspace" class="select" name="workspaceId">${state.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}</option>`).join('')}</select></div>
+              <div class="field" data-project-workspace>${renderProjectWorkspaceField()}</div>
               <div class="field"><label for="new-project-category">Category</label><select id="new-project-category" class="select" name="category"><option>Workflow</option><option>Advertising</option><option>AI</option><option>Analytics</option><option>Onboarding</option></select></div>
             </div>
             <input type="hidden" name="templateId" value="${escapeHtml(template?.id || '')}" />
           </div>
-          <footer class="modal-footer"><button class="btn" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${icon('plus', 'icon-sm')}Create project</button></footer>
+          <footer class="modal-footer"><button class="btn" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${icon('plus', 'icon-sm')}${projectWorkspaces().length ? 'Create project' : 'Create workspace & project'}</button></footer>
         </form>
       </section>
     </div>
@@ -1655,7 +1677,38 @@ async function logout(signOut = true) {
   renderLogin();
 }
 
+async function createWorkspace(name) {
+  const userId = state.user?.id;
+  const workspace = await api('/api/workspaces', { method: 'POST', body: { name } });
+  if (!userId || state.user?.id !== userId) throw new Error('Your account changed. Please sign in again.');
+  state.workspaces.push(workspace);
+  return workspace;
+}
+
+async function submitWorkspace(form) {
+  if (form.dataset.submitting) return;
+  form.dataset.submitting = 'true';
+  const button = form.querySelector('[type="submit"]');
+  button.disabled = true;
+  try {
+    await createWorkspace(new FormData(form).get('name'));
+    closeModal();
+    if (window.location.hash === '#workspaces') renderShell('workspaces');
+    else window.location.hash = '#workspaces';
+    showToast('Workspace created');
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    delete form.dataset.submitting;
+    button.disabled = false;
+  }
+}
+
 async function createProject(form) {
+  if (form.dataset.submitting) return;
+  form.dataset.submitting = 'true';
+  const button = form.querySelector('[type="submit"]');
+  button.disabled = true;
   const formData = new FormData(form);
   const template = state.templates.find((item) => item.id === formData.get('templateId'));
   let structuredLanguage;
@@ -1677,12 +1730,24 @@ async function createProject(form) {
     structuredLanguage
   };
   try {
+    if (!body.workspaceId) {
+      const workspace = await createWorkspace(formData.get('workspaceName'));
+      body.workspaceId = workspace.id;
+      // Keep the created workspace selected if project creation fails, so retry
+      // preserves the draft and does not create another workspace.
+      form.querySelector('[data-project-workspace]').innerHTML = renderProjectWorkspaceField();
+      form.querySelector('[name="workspaceId"]').value = workspace.id;
+      button.innerHTML = `${icon('plus', 'icon-sm')}Create project`;
+    }
     const project = await api('/api/projects', { method: 'POST', body });
     closeModal();
     await loadBootstrap();
     window.location.hash = `#project/${project.id}`;
   } catch (error) {
     showToast(error.message, 'error');
+  } finally {
+    delete form.dataset.submitting;
+    button.disabled = false;
   }
 }
 
@@ -1868,6 +1933,10 @@ document.addEventListener('click', async (event) => {
     case 'open-project':
       window.location.hash = `#project/${actionElement.dataset.projectId}`;
       break;
+    case 'new-workspace':
+      state.modal = { type: 'new-workspace' };
+      renderModal();
+      break;
     case 'new-project':
       state.modal = { type: 'new-project' };
       renderModal();
@@ -1875,7 +1944,7 @@ document.addEventListener('click', async (event) => {
     case 'use-template': {
       const template = state.templates.find((item) => item.id === actionElement.dataset.templateId);
       state.modal = { type: 'new-project', templateId: template?.id };
-      modalRoot.innerHTML = renderNewProjectModal(template);
+      renderModal();
       break;
     }
     case 'close-modal':
@@ -2010,6 +2079,8 @@ document.addEventListener('submit', async (event) => {
   if (form.dataset.form === 'magic-login') {
     const data = new FormData(form);
     await authenticate('magic', data.get('email'));
+  } else if (form.dataset.form === 'new-workspace') {
+    await submitWorkspace(form);
   } else if (form.dataset.form === 'new-project') {
     await createProject(form);
   } else if (form.dataset.form === 'invite-member') {
