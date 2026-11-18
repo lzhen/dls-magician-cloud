@@ -1,5 +1,28 @@
 import XCTest
 
+private extension XCTestCase {
+    func enterComment(_ text: String, in control: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(control.waitForExistence(timeout: 5), file: file, line: line)
+        control.tap()
+        XCTAssertTrue(XCUIApplication().keyboards.firstMatch.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(control.value as? String, "", file: file, line: line)
+        var prefix = ""
+        for character in text {
+            control.typeText(String(character))
+            prefix.append(character)
+            let expected = prefix
+            let committed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                control.value as? String == expected
+            }, object: nil)
+            guard XCTWaiter.wait(for: [committed], timeout: 3) == .completed else {
+                XCTFail("Comment input did not commit the expected prefix: \(expected)", file: file, line: line)
+                return
+            }
+        }
+        XCTAssertEqual(control.value as? String, text, file: file, line: line)
+    }
+}
+
 final class WorkflowExperienceUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDown() { XCUIDevice.shared.orientation = .portrait; super.tearDown() }
@@ -69,7 +92,7 @@ final class WorkflowExperienceUITests: XCTestCase {
         capture(app, "Native share — isolated membership fixture")
         app.buttons["collaboration.done"].tap()
         open("Comments", app)
-        app.textViews["comments.body"].tap(); XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5)); app.textViews["comments.body"].typeText("Review note")
+        enterComment("Review note", in: app.textViews["comments.body"])
         XCTAssertEqual(app.textViews["comments.body"].value as? String, "Review note")
         app.buttons["Hide keyboard"].tap()
         app.buttons["collaboration.done"].tap()
@@ -172,6 +195,11 @@ final class WorkflowExperienceUITests: XCTestCase {
         position.tap()
         XCTAssertTrue(app.buttons["Generated JSON"].waitForExistence(timeout: 5))
         app.buttons["Generated JSON"].tap()
+        // Selection updates before the native menu's dismissal animation finishes.
+        let selectionReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            position.value as? String == "Generated JSON" && position.isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [selectionReady], timeout: 5), .completed)
         XCTAssertEqual(position.value as? String, "Generated JSON")
         XCTAssertTrue(position.isHittable)
         XCTAssertGreaterThanOrEqual(position.frame.height, 44)
@@ -214,7 +242,7 @@ final class ReviewDemoUITests: XCTestCase {
         XCTAssertTrue(app.buttons["share.copy"].waitForExistence(timeout: 8)); shot("corrected-sample-share")
         app.buttons["collaboration.done"].tap()
         app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
-        XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 8)); app.textViews["comments.body"].tap(); for character in "Sample review note" { app.textViews["comments.body"].typeText(String(character)) }
+        enterComment("Sample review note", in: app.textViews["comments.body"])
         XCTAssertEqual(app.textViews["comments.body"].value as? String, "Sample review note")
         app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
         XCTAssertTrue(app.staticTexts["Sample review note"].waitForExistence(timeout: 8)); shot("corrected-sample-comments")
@@ -290,8 +318,12 @@ final class ReviewDemoUITests: XCTestCase {
         XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5))
         app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
         XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
-        app.textViews["comments.body"].tap(); app.textViews["comments.body"].typeText("Sample local comment")
-        app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
+        let comment = app.textViews["comments.body"]
+        enterComment("Sample local comment", in: comment)
+        XCTAssertEqual(comment.value as? String, "Sample local comment")
+        app.buttons["Hide keyboard"].tap()
+        XCTAssertEqual(comment.value as? String, "Sample local comment")
+        app.buttons["comments.add"].tap()
         XCTAssertTrue(app.staticTexts["Sample local comment"].waitForExistence(timeout: 8))
         app.buttons["collaboration.done"].tap()
         let proof = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); proof.name = "Visible sample workspace"; proof.lifetime = .keepAlways; add(proof)
