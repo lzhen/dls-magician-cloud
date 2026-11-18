@@ -10,7 +10,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.DLS_DATA_DIR ? path.resolve(process.env.DLS_DATA_DIR) : path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
