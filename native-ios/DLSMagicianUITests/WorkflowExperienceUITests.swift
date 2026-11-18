@@ -172,6 +172,11 @@ final class WorkflowExperienceUITests: XCTestCase {
         position.tap()
         XCTAssertTrue(app.buttons["Generated JSON"].waitForExistence(timeout: 5))
         app.buttons["Generated JSON"].tap()
+        // Selection updates before the native menu's dismissal animation finishes.
+        let selectionReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            position.value as? String == "Generated JSON" && position.isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [selectionReady], timeout: 5), .completed)
         XCTAssertEqual(position.value as? String, "Generated JSON")
         XCTAssertTrue(position.isHittable)
         XCTAssertGreaterThanOrEqual(position.frame.height, 44)
@@ -290,8 +295,14 @@ final class ReviewDemoUITests: XCTestCase {
         XCTAssertTrue(app.webViews.staticTexts["Hello preview"].waitForExistence(timeout: 5))
         app.buttons["editor.collaboration"].tap(); app.buttons["Comments"].tap()
         XCTAssertTrue(app.textViews["comments.body"].waitForExistence(timeout: 5))
-        app.textViews["comments.body"].tap(); app.textViews["comments.body"].typeText("Sample local comment")
-        app.buttons["Hide keyboard"].tap(); app.buttons["comments.add"].tap()
+        let comment = app.textViews["comments.body"]
+        comment.tap()
+        // Synchronize each event with the SwiftUI TextEditor before submitting.
+        for character in "Sample local comment" { comment.typeText(String(character)) }
+        XCTAssertEqual(comment.value as? String, "Sample local comment")
+        app.buttons["Hide keyboard"].tap()
+        XCTAssertEqual(comment.value as? String, "Sample local comment")
+        app.buttons["comments.add"].tap()
         XCTAssertTrue(app.staticTexts["Sample local comment"].waitForExistence(timeout: 8))
         app.buttons["collaboration.done"].tap()
         let proof = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); proof.name = "Visible sample workspace"; proof.lifetime = .keepAlways; add(proof)
