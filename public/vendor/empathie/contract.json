@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0.0",
+  "adapterVersion": "0.1.0",
+  "status": "review-candidate",
+  "runtime": "native-dom",
+  "global": "EmpathieDOM",
+  "files": ["empathie-dom.js", "empathie-dom.css"],
+  "components": {
+    "Button": { "element": "button", "options": ["loadingLabel"], "methods": ["setLoading", "setDisabled"], "rules": ["explicit button type", "visible or accessible name", "native disabled semantics"] },
+    "Field": { "elements": ["input", "textarea", "select"], "methods": ["setError"], "rules": ["unique id", "associated visible label", "persistent id-error element", "preserve existing hint descriptions"] },
+    "Dialog": { "element": "dialog", "options": ["onDismiss", "returnFocus", "initialFocus", "fallbackFocus"], "methods": ["open", "destroy"], "rules": ["accessible name", "native showModal", "contained tab order", "close remains available", "restore focus"] }
+  },
+  "composition": {
+    "AsyncForm": {
+      "options": ["submit", "onSuccess", "validate", "loadingLabel", "pendingMessage", "failureMessage"],
+      "methods": ["destroy"],
+      "readOnlyProperties": ["pending"],
+      "rules": ["pre-mounted status/error regions", "single submit handler", "synchronous duplicate guard", "capture values before disabling", "retain values on failure", "ignore dismissed session results", "separate creation success from navigation", "no implicit server cancellation or idempotency"]
+    }
+  },
+  "adoption": { "product": "DLS Magician Cloud", "flow": "project creation including template entry", "state": "candidate-not-production", "otherProductFlows": "unverified" },
+  "verification": { "domSimulation": "product tests", "browser": "record separately", "screenReader": "unverified", "nativeApp": "not implemented", "generationBenchmark": "proposed-not-run" }
+}

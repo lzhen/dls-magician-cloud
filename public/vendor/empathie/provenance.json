@@ -1,0 +1,12 @@
+{
+  "repository": "lzhen/empathie-website",
+  "commit": "fe5c0bc428e683a1c79340bdb20e311ecce7dd00",
+  "path": "designsystems/adapters/dom",
+  "status": "review-candidate",
+  "sha256": {
+    "contract.json": "38d77dd210a30e6116e49a75c070af5acaa5944478779c7fbada7f1e9dd50b6a",
+    "empathie-dom.css": "9b5195d7bba65ca4e4273da904dbd6e5ea6ff2b78d38c8bb8cb8a7c3ff611cd8",
+    "empathie-dom.js": "ccb58f388bbcc7910cb8a692679691bfd2a9d8eec387fc37390e60d03a01bdfb",
+    "evaluation-tasks.json": "85dc5ff7ed7df5811c9a9ae041cc31d0cd82004f5c699675328807f07ca216f9"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "status": "proposed-not-run",
+  "purpose": "Measure whether an agent chooses and composes appropriate patterns; behavior tests are separate evidence.",
+  "input": ["README.md", "contract.json", "empathie-dom.js", "empathie-dom.css"],
+  "suggestedIndependentRunsPerTask": 3,
+  "tasks": [
+    { "id": "project", "brief": "Create a named project within the existing workspace, with recoverable server failure.", "expected": "bounded modal; labeled fields; pending guard; preserved values; active success only" },
+    { "id": "rename", "brief": "Rename a project while keeping the project list visible.", "expected": "justify inline editing; preserve draft and return focus" },
+    { "id": "invite", "brief": "Invite a collaborator with an email and role; handle a slow response.", "expected": "bounded form; semantic email validation; cancellable view; no claim that closing cancels the server" },
+    { "id": "setting", "brief": "Choose an appropriate control for an immediately applied persistent preference.", "expected": "justify switch versus checkbox; accessible state and failure recovery" },
+    { "id": "mobile", "brief": "Adapt a bounded multi-field form to a narrow viewport and reduced motion.", "expected": "no horizontal overflow; visible actions and focus; retain accessible names; no claim of native app implementation" }
+  ],
+  "reportSeparately": ["pattern choice and justification", "actual public API use", "token/role validity", "behavioral acceptance", "browser accessibility observations", "human visual review"],
+  "record": ["model and version", "prompt", "contract commit", "unedited first output hash", "first-pass result", "repairs", "remaining failures"]
+}

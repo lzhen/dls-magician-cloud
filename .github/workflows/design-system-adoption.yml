@@ -1,0 +1,21 @@
+name: Design system adoption
+on:
+  pull_request:
+    paths: ['public/**', 'server.js', 'tests/**', 'scripts/verify-empathie.cjs', 'package*.json', '.github/workflows/design-system-adoption.yml']
+  push:
+    branches: [main]
+    paths: ['public/**', 'server.js', 'tests/**', 'scripts/verify-empathie.cjs', 'package*.json', '.github/workflows/design-system-adoption.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
