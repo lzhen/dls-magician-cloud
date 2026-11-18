@@ -3,7 +3,7 @@
   "appName": "DLS Magician",
   "webDir": "www",
   "server": {
-    "url": "https://dlsmagician.empathie.ai",
+    "url": "https://www.empathie.ai/dlsmagician/",
     "cleartext": false
   },
   "android": {
