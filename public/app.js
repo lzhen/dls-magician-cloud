@@ -97,6 +97,9 @@ const state = {
   presenceTimer: null,
   modal: null,
   modalReturnFocus: null,
+  newProjectDrafts: Object.create(null),
+  newProjectReturnFocus: null,
+  projectFocusOnLoad: null,
   magicOpen: false,
   shareTab: 'invite',
   selectedVersionId: null,
@@ -112,6 +115,7 @@ const state = {
 };
 let deferredInstallPrompt = null;
 document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.empathieTheme = state.theme;
 let supabaseClient = null;
 
 const app = document.getElementById('app');
@@ -371,6 +375,7 @@ function parseRoute() {
 }
 
 async function handleRoute() {
+  if (state.modal?.type === 'new-project') closeModal();
   const route = parseRoute();
   if (!state.user) {
     disconnectStream();
@@ -381,6 +386,10 @@ async function handleRoute() {
   if (route.page === 'project' && route.id) {
     if (!await loadProject(route.id)) return;
     renderEditor();
+    if (state.projectFocusOnLoad === route.id) {
+      document.querySelector('#structured-editor .intent-step-input')?.focus();
+      state.projectFocusOnLoad = null;
+    }
     connectStream(route.id);
     startPresence(route.id);
     return;
@@ -1175,12 +1184,20 @@ async function saveEditor() {
 }
 
 function renderModal() {
+  // Background workspace refreshes must not replace an active form or invalidate its request.
+  if (newProjectController && state.modal?.type === 'new-project' &&
+      modalRoot.querySelector('[name="templateId"]')?.value === (state.modal.templateId || '')) return;
+  destroyNewProjectController();
   if (!state.modal) {
     modalRoot.innerHTML = '';
     return;
   }
   const type = state.modal.type;
-  if (type === 'new-project') modalRoot.innerHTML = renderNewProjectModal();
+  if (type === 'new-project') {
+    const template = state.templates.find((item) => item.id === state.modal.templateId);
+    modalRoot.innerHTML = renderNewProjectModal(template);
+    mountNewProjectDialog();
+  }
   else if (type === 'share') modalRoot.innerHTML = renderShareModal();
   else if (type === 'comments') modalRoot.innerHTML = renderCommentsDrawer();
   else if (type === 'versions') modalRoot.innerHTML = renderVersionsModal();
@@ -1210,26 +1227,66 @@ function activateModal() {
 }
 
 function renderNewProjectModal(template = null) {
-  const templateName = template?.name ? `${template.name} workflow` : '';
+  const draft = state.newProjectDrafts[template?.id || ''] || {};
+  const templateName = draft.name ?? (template?.name ? `${template.name} workflow` : '');
   return `
-    <div class="modal-backdrop" data-action="close-modal">
-      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-project-title">
-        <header class="modal-header"><div><h2 class="modal-title" id="new-project-title">Create a new project</h2><div class="modal-subtitle">Start with a shared structured-language workspace.</div></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close">${icon('close')}</button></header>
-        <form data-form="new-project">
+      <dialog class="modal" data-e-component="Dialog" aria-labelledby="new-project-title" aria-describedby="new-project-description">
+        <header class="modal-header"><div><h2 class="modal-title" id="new-project-title">Create a new project</h2><p class="modal-subtitle" id="new-project-description">Start with a shared structured-language workspace.</p></div><button class="btn btn-icon btn-ghost" type="button" data-e-component="Button" data-action="close-modal" aria-label="Close">${icon('close')}</button></header>
+        <form data-form="new-project" novalidate>
           <div class="modal-body" style="display:grid;gap:16px">
-            <div class="field"><label for="new-project-name">Project name</label><input id="new-project-name" class="input" name="name" value="${escapeHtml(templateName)}" placeholder="e.g. Omnichannel eligibility workflow" required autofocus /></div>
-            <div class="field"><label for="new-project-description">Description</label><textarea id="new-project-description" class="textarea" name="description" placeholder="What should this workflow help the team design or build?">${escapeHtml(template?.description || '')}</textarea></div>
+            <div class="field"><label for="new-project-name">Project name</label><input class="input" id="new-project-name" name="name" value="${escapeHtml(templateName)}" required autofocus /><p id="new-project-name-error" data-e-field-error hidden></p></div>
+            <div class="field"><label for="new-project-description-field">Description</label><textarea class="textarea" id="new-project-description-field" name="description" placeholder="What should this workflow help the team design or build?">${escapeHtml(draft.description ?? template?.description ?? '')}</textarea><p id="new-project-description-field-error" data-e-field-error hidden></p></div>
             <div class="form-row">
-              <div class="field"><label for="new-project-workspace">Workspace</label><select id="new-project-workspace" class="select" name="workspaceId">${state.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name)}</option>`).join('')}</select></div>
-              <div class="field"><label for="new-project-category">Category</label><select id="new-project-category" class="select" name="category"><option>Workflow</option><option>Advertising</option><option>AI</option><option>Analytics</option><option>Onboarding</option></select></div>
+              <div class="field"><label for="new-project-workspace">Workspace</label><select class="select" id="new-project-workspace" name="workspaceId" required>${state.workspaces.map((workspace) => `<option value="${escapeHtml(workspace.id)}"${draft.workspaceId === workspace.id ? ' selected' : ''}>${escapeHtml(workspace.name)}</option>`).join('')}</select><p id="new-project-workspace-error" data-e-field-error hidden></p></div>
+              <div class="field"><label for="new-project-category">Category</label><select class="select" id="new-project-category" name="category">${['Workflow', 'Advertising', 'AI', 'Analytics', 'Onboarding'].map((category) => `<option${(draft.category ?? template?.category) === category ? ' selected' : ''}>${category}</option>`).join('')}</select><p id="new-project-category-error" data-e-field-error hidden></p></div>
             </div>
             <input type="hidden" name="templateId" value="${escapeHtml(template?.id || '')}" />
+            <p data-e-status role="status" aria-live="polite" aria-atomic="true"></p>
+            <p data-e-error role="alert" aria-atomic="true"></p>
           </div>
-          <footer class="modal-footer"><button class="btn" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">${icon('plus', 'icon-sm')}Create project</button></footer>
+          <footer class="modal-footer"><button class="btn" type="button" data-e-component="Button" data-action="close-modal">Cancel</button><button class="btn btn-primary" data-e-intent="primary" type="submit">${icon('plus', 'icon-sm')}Create project</button></footer>
         </form>
-      </section>
-    </div>
+      </dialog>
   `;
+}
+
+let newProjectController = null;
+
+function destroyNewProjectController() {
+  if (!newProjectController) return;
+  newProjectController.form.destroy();
+  newProjectController.dialog.destroy();
+  newProjectController = null;
+}
+
+function mountNewProjectDialog() {
+  const element = modalRoot.querySelector('dialog');
+  const form = element.querySelector('form');
+  const templateKey = form.elements.templateId.value;
+  const dialog = EmpathieDOM.Dialog(element, {
+    onDismiss: closeModal,
+    returnFocus: state.newProjectReturnFocus,
+    initialFocus: form.elements.name,
+    fallbackFocus: () => document.querySelector('[data-action="new-project"]')
+  });
+  const submission = EmpathieDOM.AsyncForm(form, {
+    submit: createProject,
+    loadingLabel: 'Creating…',
+    validate: (data) => String(data.get('name') || '').trim() ? {} : { name: 'Enter a project name.' },
+    pendingMessage: 'Creating your project. Closing this form will not cancel creation; check Projects before trying again.',
+    failureMessage: 'Could not confirm project creation. Your input is preserved. Check Projects before trying again if your connection was interrupted.',
+    onSuccess: (project) => {
+      delete state.newProjectDrafts[templateKey];
+      closeModal({ preserveDraft: false });
+      state.projects.unshift({ ...project, members: (project.members || []).map((member) => member.user), memberCount: project.members?.length || 0 });
+      state.projectFocusOnLoad = project.id;
+      showToast('Project created');
+      window.location.hash = `#project/${encodeURIComponent(project.id)}`;
+      loadBootstrap().catch(() => showToast('Project created. Refresh the workspace to update recent activity.', 'info'));
+    }
+  });
+  newProjectController = { dialog, form: submission };
+  dialog.open();
 }
 
 function renderShareModal() {
@@ -1446,8 +1503,15 @@ function renderUserMenuModal() {
   `;
 }
 
-function closeModal() {
+function closeModal({ preserveDraft = true } = {}) {
   const returnFocus = state.modalReturnFocus;
+  if (state.modal?.type === 'new-project' && preserveDraft) {
+    const form = modalRoot.querySelector('form');
+    if (form) state.newProjectDrafts[form.elements.templateId.value] = Object.fromEntries(
+      ['name', 'description', 'workspaceId', 'category'].map((key) => [key, form.elements[key].value])
+    );
+  }
+  destroyNewProjectController();
   state.modal = null;
   modalRoot.innerHTML = '';
   app.inert = false;
@@ -1641,6 +1705,8 @@ async function authenticate(provider, email = '') {
 }
 
 async function logout(signOut = true) {
+  closeModal();
+  state.newProjectDrafts = Object.create(null);
   state.projectLoadRevision += 1;
   if (signOut && supabaseClient) await supabaseClient.auth.signOut();
   disconnectStream();
@@ -1655,8 +1721,7 @@ async function logout(signOut = true) {
   renderLogin();
 }
 
-async function createProject(form) {
-  const formData = new FormData(form);
+async function createProject(formData) {
   const template = state.templates.find((item) => item.id === formData.get('templateId'));
   let structuredLanguage;
   if (template?.id === 't-omni') {
@@ -1670,20 +1735,13 @@ async function createProject(form) {
   }
 
   const body = {
-    name: formData.get('name'),
+    name: String(formData.get('name') || '').trim(),
     description: formData.get('description'),
     workspaceId: formData.get('workspaceId'),
     category: formData.get('category'),
     structuredLanguage
   };
-  try {
-    const project = await api('/api/projects', { method: 'POST', body });
-    closeModal();
-    await loadBootstrap();
-    window.location.hash = `#project/${project.id}`;
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
+  return api('/api/projects', { method: 'POST', body });
 }
 
 async function inviteMember(form) {
@@ -1852,6 +1910,7 @@ document.addEventListener('click', async (event) => {
     case 'toggle-theme':
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.empathieTheme = state.theme;
       localStorage.setItem('dls-theme', state.theme);
       await handleRoute();
       break;
@@ -1869,13 +1928,15 @@ document.addEventListener('click', async (event) => {
       window.location.hash = `#project/${actionElement.dataset.projectId}`;
       break;
     case 'new-project':
+      state.newProjectReturnFocus = actionElement;
       state.modal = { type: 'new-project' };
       renderModal();
       break;
     case 'use-template': {
       const template = state.templates.find((item) => item.id === actionElement.dataset.templateId);
       state.modal = { type: 'new-project', templateId: template?.id };
-      modalRoot.innerHTML = renderNewProjectModal(template);
+      state.newProjectReturnFocus = actionElement;
+      renderModal();
       break;
     }
     case 'close-modal':
@@ -2010,8 +2071,6 @@ document.addEventListener('submit', async (event) => {
   if (form.dataset.form === 'magic-login') {
     const data = new FormData(form);
     await authenticate('magic', data.get('email'));
-  } else if (form.dataset.form === 'new-project') {
-    await createProject(form);
   } else if (form.dataset.form === 'invite-member') {
     await inviteMember(form);
   } else if (form.dataset.form === 'new-comment') {
@@ -2119,7 +2178,7 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     if (state.activeProject) saveEditor().then((ok) => { if (ok && !state.editorDirty) showToast('Project saved'); });
   }
-  if (event.key === 'Escape' && state.modal) closeModal();
+  if (event.key === 'Escape' && state.modal && state.modal.type !== 'new-project') closeModal();
   if (event.key === 'Enter' && event.target.closest('[data-action="open-project"]')) {
     const card = event.target.closest('[data-action="open-project"]');
     window.location.hash = `#project/${card.dataset.projectId}`;

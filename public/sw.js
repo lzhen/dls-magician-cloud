@@ -2,7 +2,7 @@
 
 const APP_BASE_PATH = new URL(self.location.href).pathname.replace(/\/sw\.js$/, '');
 const CACHE_PREFIX = `dls-magician${APP_BASE_PATH.replaceAll('/', '-')}-`;
-const CACHE_VERSION = `${CACHE_PREFIX}original-svg-20261021-v1`;
+const CACHE_VERSION = `${CACHE_PREFIX}empathie-dom-v1`;
 const appPath = path => `${APP_BASE_PATH}${path}`;
 const APP_SHELL = [
   '/icons/dls-32-20261008.png',
@@ -13,7 +13,9 @@ const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css?v=brand-lockup-20261021-original-svg',
-  '/app.js?v=brand-lockup-20261021-original-svg',
+  '/app.js?v=empathie-dom-0.1.0',
+  '/vendor/empathie/empathie-dom.js?v=0.1.0',
+  '/vendor/empathie/empathie-dom.css?v=0.1.0',
   '/interaction-engine.js?v=inline-and-1',
   '/component-preview.js?v=inline-and-1',
   '/component-preview.css?v=inline-and-1',
