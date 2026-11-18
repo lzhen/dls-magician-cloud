@@ -1,0 +1,53 @@
+/* Shared geometry and semantic roles. Products may supply --e-* theme overrides. */
+[data-e-component="Dialog"] {
+  --e-surface: #101216;
+  --e-text: #FAFBFC;
+  --e-secondary: #A8AFBB;
+  --e-border: #8E96A5;
+  --e-focus: #91B3FF;
+  --e-error: #FFB0B0;
+  --e-on-action: #090A0C;
+  --e-action: #FAFBFC;
+  color-scheme: dark;
+  box-sizing: border-box;
+  color: var(--e-text);
+  background: var(--e-surface);
+  border: 1px solid var(--e-border);
+  border-radius: 16px;
+  width: min(620px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+}
+[data-empathie-theme="light"] [data-e-component="Dialog"] {
+  --e-surface: #FFFFFF;
+  --e-text: #101216;
+  --e-secondary: #657083;
+  --e-border: #657083;
+  --e-focus: #3159D9;
+  --e-error: #BB3333;
+  --e-action: #101216;
+  --e-on-action: #FFFFFF;
+  color-scheme: light;
+}
+[data-e-component="Dialog"]::backdrop { background: rgb(0 0 0 / .68); }
+[data-e-component="Dialog"] [data-e-component="Button"] { min-height: 44px; min-width: 44px; font-size: 14px; }
+[data-e-component="Dialog"] [data-e-component="Field"] { min-height: 48px; font-size: 16px; }
+[data-e-component="Dialog"] :is(input, textarea, select) { color: var(--e-text); background: var(--e-surface); border-color: var(--e-border); }
+[data-e-component="Dialog"] :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--e-focus); outline-offset: 2px; }
+[data-e-component="Dialog"] [aria-invalid="true"] { border-color: var(--e-error); }
+[data-e-component="Dialog"] :is([data-e-field-error], [data-e-error]) { color: var(--e-error); }
+[data-e-component="Dialog"] :is([data-e-field-error], [data-e-status], [data-e-error]) { margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+[data-e-component="Dialog"] [data-e-field-error][hidden] { display: none; }
+[data-e-component="Dialog"] [data-e-intent="primary"] { color: var(--e-on-action); background: var(--e-action); border-color: var(--e-action); }
+[data-e-component="Dialog"] [data-e-intent="primary"]:hover { color: var(--e-on-action); background: var(--e-action); }
+[data-e-component="Dialog"] :is(.modal-title, .modal-subtitle, label) { color: inherit; }
+[data-e-component="Dialog"] .modal-subtitle { color: var(--e-secondary); font-size: 14px; }
+[data-e-component="Dialog"] label { font-size: 14px; }
+@media (max-width: 600px) {
+  [data-e-component="Dialog"] { width: calc(100% - 24px); max-height: calc(100dvh - 24px); border-radius: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-e-component="Dialog"], [data-e-component="Dialog"] * { animation: none !important; transition: none !important; }
+}
