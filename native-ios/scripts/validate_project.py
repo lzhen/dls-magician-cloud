@@ -53,15 +53,25 @@ class ProjectChecks(unittest.TestCase):
         self.assertIn(project['buildConfigurationList'], parsed['objects'])
         self.assertEqual(len(project['targets']), 3)
     def test_every_swift_file_is_in_sources_build_phase(self):
-        project = (ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text()
+        parsed = parse_openstep((ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text())
+        objects = parsed['objects']
         for directory in ['DLSMagician','DLSMagicianTests','DLSMagicianUITests']:
+            targets = [value for value in objects.values()
+                       if value.get('isa') == 'PBXNativeTarget' and value.get('name') == directory]
+            self.assertEqual(len(targets), 1, directory)
+            source_phases = [objects[phase] for phase in targets[0]['buildPhases']
+                             if objects[phase]['isa'] == 'PBXSourcesBuildPhase']
+            self.assertEqual(len(source_phases), 1, directory)
             for file in (ROOT/directory).glob('*.swift'):
                 relative = str(file.relative_to(ROOT))
-                file_id = hashlib.sha1(relative.encode()).hexdigest()[:24].upper()
-                build_id = hashlib.sha1(('build:'+relative).encode()).hexdigest()[:24].upper()
-                self.assertIn(f'fileRef = {file_id};',project)
-                self.assertEqual(project.count(build_id),2,relative)
-                self.assertIn(f'path = "{relative}";',project)
+                # Xcode may assign IDs independently of our generator's hash convention.
+                references = [key for key, value in objects.items()
+                              if value.get('isa') == 'PBXFileReference' and value.get('path') == relative]
+                self.assertEqual(len(references), 1, relative)
+                builds = [key for key, value in objects.items()
+                          if value.get('isa') == 'PBXBuildFile' and value.get('fileRef') == references[0]]
+                self.assertEqual(len(builds), 1, relative)
+                self.assertEqual(source_phases[0]['files'].count(builds[0]), 1, relative)
     def test_xcode_object_references_resolve_and_ids_are_unique(self):
         project=(ROOT/'DLSMagician.xcodeproj/project.pbxproj').read_text()
         definitions=re.findall(r'^\s*([A-F0-9]{24}) = \{',project,re.M)
