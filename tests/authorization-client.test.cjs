@@ -10,18 +10,19 @@ function clientHarness() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
   assert.match(source, /\nboot\(\);\s*$/);
   const timers = [];
+  const listeners = new Map();
   const elements = new Map();
   const context = vm.createContext({
     console, URL, AbortController, clearTimeout() {},
     localStorage: { getItem() { return null; }, setItem() {} },
     navigator: {},
     window: { location: { hash: '#dashboard' }, addEventListener() {}, setTimeout(fn) { timers.push(fn); } },
-    document: { documentElement: { dataset: {} }, addEventListener() {}, getElementById(id) { if (!elements.has(id)) elements.set(id, { innerHTML: '', textContent: '', setAttribute() {} }); return elements.get(id); } }
+    document: { documentElement: { dataset: {} }, addEventListener(type, listener) { listeners.set(type, listener); }, getElementById(id) { if (!elements.has(id)) elements.set(id, { innerHTML: '', textContent: '', setAttribute() {} }); return elements.get(id); } }
   });
   vm.runInContext(source.replace(/\nboot\(\);\s*$/, '\n'), context, { filename: 'public/app.js' });
   const state = vm.runInContext('state', context);
   const run = (code) => vm.runInContext(code, context);
-  return { context, state, run, timers };
+  return { context, state, run, timers, listeners };
 }
 
 test('first project asks for a workspace name and keeps template context', () => {
@@ -262,4 +263,76 @@ test('missing read version never sends unconditional PATCH', async () => {
   const h = savingHarness(); delete h.state.activeProject.updatedAt;
   h.run(`api = async () => { throw Error('must not send'); };`);
   assert.equal(await h.run('saveEditor()'), false); assert.equal(h.state.editorDirty, true);
+});
+
+function jsonCopyHarness() {
+  const h = clientHarness();
+  h.state.user = { id: 'designer' };
+  h.state.activeProject = { id: 'project-a', name: 'First project' };
+  h.state.editorText = 'GIVEN\nA designer\n\nWHEN\nThey click Copy\n\nTHEN\nExport JSON';
+  const json = h.run('JSON.stringify(generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject.name)), null, 2)');
+  const output = h.context.document.getElementById('json-code');
+  output.textContent = json;
+  h.run(`globalThis.calls = []; globalThis.toasts = [];
+    api = async (url, {body}) => calls.push([url, body.event]);
+    showToast = (message, type) => toasts.push({ message, type });`);
+  const selected = [];
+  h.context.document.createRange = () => ({ selectNodeContents(node) { this.node = node; } });
+  h.context.window.getSelection = () => ({
+    removeAllRanges() { selected.length = 0; },
+    addRange(range) { selected.push(range.node); }
+  });
+  const click = () => h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action: 'copy-generated-json' } }) }
+  });
+  return { ...h, json, output, selected, click };
+}
+
+test('clipboard rejection selects the matching JSON for manual copy without recording export', async () => {
+  const h = jsonCopyHarness();
+  h.context.navigator.clipboard = { writeText: async () => { throw new Error('Clipboard denied'); } };
+  await h.click();
+  assert.deepEqual(h.selected, [h.output]);
+  assert.match(h.context.toasts[0].message, /Ctrl\+C|Command\+C/);
+  assert.equal(h.context.toasts[0].type, 'info');
+  assert.equal(h.context.calls.length, 0);
+});
+
+test('unavailable clipboard gives instructions without selecting a changed output', async () => {
+  const h = jsonCopyHarness();
+  h.output.textContent = '{"different":true}';
+  await h.click();
+  assert.equal(h.selected.length, 0);
+  assert.match(h.context.toasts[0].message, /select and copy/i);
+  assert.equal(h.context.toasts[0].type, 'error');
+  assert.equal(h.context.calls.length, 0);
+});
+
+test('a successful clipboard copy preserves JSON bytes and records the original project', async () => {
+  const h = jsonCopyHarness();
+  let finish;
+  h.context.navigator.clipboard = { writeText: (value) => {
+    assert.equal(value, h.json);
+    return new Promise(resolve => { finish = resolve; });
+  } };
+  const copy = h.click();
+  h.state.activeProject = { id: 'project-b', name: 'Second project' };
+  finish();
+  await copy;
+  assert.equal(h.context.calls.length, 1);
+  assert.equal(h.context.calls[0][0], '/api/projects/project-a/metrics');
+  assert.equal(h.context.calls[0][1], 'export');
+  assert.equal(h.context.toasts[0].message, 'Generated JSON copied.');
+  assert.equal(h.selected.length, 0);
+});
+
+test('a late clipboard success cannot record an export under a different account', async () => {
+  const h = jsonCopyHarness();
+  let finish;
+  h.context.navigator.clipboard = { writeText: () => new Promise(resolve => { finish = resolve; }) };
+  const copy = h.click();
+  h.state.user = { id: 'other-designer' };
+  finish();
+  await copy;
+  assert.equal(h.context.calls.length, 0);
 });
