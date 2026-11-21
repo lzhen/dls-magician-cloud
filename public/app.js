@@ -2017,9 +2017,27 @@ document.addEventListener('click', async (event) => {
       showToast(`Prototype published with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
       break;
     case 'copy-generated-json': {
+      const projectId = state.activeProject?.id;
+      const userId = state.user?.id;
       const parsed = generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject?.name));
-      await navigator.clipboard.writeText(JSON.stringify(parsed, null, 2));
-      if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
+      const json = JSON.stringify(parsed, null, 2);
+      try {
+        await navigator.clipboard.writeText(json);
+      } catch (_) {
+        const output = document.getElementById('json-code');
+        const selection = window.getSelection();
+        if (selection && state.user?.id === userId && state.activeProject?.id === projectId && output?.textContent === json) {
+          const range = document.createRange();
+          range.selectNodeContents(output);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          showToast('JSON selected. Press Ctrl+C or Command+C to copy.', 'info');
+        } else {
+          showToast('Could not copy automatically. Select and copy the JSON in the Output panel.', 'error');
+        }
+        break;
+      }
+      if (projectId && state.user?.id === userId) void api(`/api/projects/${encodeURIComponent(projectId)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
       showToast('Generated JSON copied.', 'success');
       break;
     }
