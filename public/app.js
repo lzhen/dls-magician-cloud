@@ -2052,10 +2052,23 @@ document.addEventListener('click', async (event) => {
       break;
     }
     case 'back-dashboard':
-    case 'mobile-home':
-      if (!await saveEditor()) break;
+    case 'mobile-home': {
+      const projectId = state.activeProject?.id;
+      const userId = state.user?.id;
+      const loadRevision = state.projectLoadRevision;
+      const hash = window.location.hash;
+      const route = parseRoute();
+      if (!projectId || route.page !== 'project' || route.id !== projectId) break;
+      const isCurrent = () => state.activeProject?.id === projectId
+        && state.user?.id === userId
+        && state.projectLoadRevision === loadRevision
+        && window.location.hash === hash;
+      do {
+        if (!await saveEditor() || !isCurrent()) return;
+      } while (state.editorDirty);
       window.location.hash = '#dashboard';
       break;
+    }
     case 'settings-tab':
       state.settingsTab = actionElement.dataset.tab;
       renderShell('settings');

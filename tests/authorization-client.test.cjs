@@ -252,6 +252,61 @@ test('overlapping saves serialize and preserve typing during a request', async (
   pending[1].resolve({id:'qa',updatedAt:'C',structuredLanguage:'draft C'});
   assert.equal(await second, true); assert.equal(h.state.editorText, 'draft C'); assert.equal(h.state.editorDirty, false);
 });
+function leavingEditorHarness() {
+  const h = savingHarness();
+  const pending = [];
+  h.context.window.location.hash = '#project/qa';
+  h.context.fixtureApi = (url, options) => new Promise((resolve, reject) => {
+    assert.equal(url, '/api/projects/qa');
+    assert.equal(options.method, 'PATCH');
+    pending.push({ resolve, reject, body: options.body });
+  });
+  h.run('api = fixtureApi;');
+  const leave = () => h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action: 'back-dashboard' } }) },
+  });
+  return { ...h, pending, leave };
+}
+test('leaving the editor waits for edits made while the first save is in flight', async () => {
+  const h = leavingEditorHarness();
+  const leaving = h.leave();
+  assert.equal(h.pending.length, 1);
+  assert.equal(h.pending[0].body.structuredLanguage, 'draft B');
+  h.state.editorText = 'draft C';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.context.window.location.hash, '#project/qa');
+  assert.equal(h.pending.length, 2);
+  assert.equal(h.pending[1].body.expectedUpdatedAt, 'B');
+  assert.equal(h.pending[1].body.structuredLanguage, 'draft C');
+  h.pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: 'draft C' });
+  await leaving;
+  assert.equal(h.context.window.location.hash, '#dashboard');
+  assert.equal(h.state.editorDirty, false);
+});
+test('a failed follow-up save keeps the editor and unsaved draft open', async () => {
+  const h = leavingEditorHarness();
+  const leaving = h.leave();
+  h.state.editorText = 'draft C';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.pending.length, 2);
+  h.pending[1].reject(Object.assign(new Error('conflict'), { status: 409 }));
+  await leaving;
+  assert.equal(h.context.window.location.hash, '#project/qa');
+  assert.equal(h.state.editorText, 'draft C');
+  assert.equal(h.state.editorDirty, true);
+  assert.equal(h.state.editorConflict, true);
+});
+test('a late save cannot redirect over a newer route before the editor reloads', async () => {
+  const h = leavingEditorHarness();
+  const leaving = h.leave();
+  h.context.window.location.hash = '#project/another';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await leaving;
+  assert.equal(h.context.window.location.hash, '#project/another');
+  assert.equal(h.pending.length, 1);
+});
 test('late save response cannot replace another project', async () => {
   const h = savingHarness(); let finish;
   h.context.fixtureApi = () => new Promise(resolve => {finish=resolve;}); h.run('api = fixtureApi;');
