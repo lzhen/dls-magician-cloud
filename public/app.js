@@ -948,7 +948,7 @@ function renderEditor() {
           <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
           <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
           <button class="btn btn-primary btn-sm editor-publish" data-action="publish-prototype">${icon('sparkles', 'icon-sm')}<span>Publish prototype</span></button>
-          <button class="btn btn-icon btn-sm" data-action="editor-more" aria-label="More actions" title="More actions">${icon('more', 'icon-sm')}</button>
+          <button class="btn btn-icon btn-sm" data-action="versions" aria-haspopup="dialog" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
         </div>
       </header>
       <section class="editor-body" style="--intent-width:${state.intentWidth}%">
@@ -1190,7 +1190,7 @@ async function afterSavingEditor(action) {
   do {
     if (!await saveEditor() || !isCurrent()) return;
   } while (state.editorDirty);
-  action();
+  return action(isCurrent);
 }
 
 function renderModal() {
@@ -1389,7 +1389,7 @@ function renderVersionsModal() {
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-xl" role="dialog" aria-modal="true" aria-labelledby="versions-title">
-        <header class="modal-header"><div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare, document, and restore changes to “${escapeHtml(project.name)}”.</div></div><div style="display:flex;gap:8px"><button class="btn" data-action="create-version">${icon('save', 'icon-sm')}Save version</button><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button></div></header>
+        <header class="modal-header"><div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare saved versions of “${escapeHtml(project.name)}”.</div></div><div style="display:flex;gap:8px"><button class="btn" data-action="create-version">${icon('save', 'icon-sm')}Save version</button><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button></div></header>
         ${versions.length ? `
           <div class="version-layout">
             <aside class="version-sidebar">
@@ -1408,7 +1408,6 @@ function renderVersionsModal() {
               <div class="detail-group"><div class="detail-label">Author</div><div class="detail-value">${escapeHtml(selected?.user?.name || '—')}</div></div>
               <div class="detail-group"><div class="detail-label">Created</div><div class="detail-value">${fullDate(selected?.createdAt)}</div></div>
               <div class="detail-group"><div class="detail-label">Summary</div><div class="detail-value">${escapeHtml(selected?.message || '—')}</div></div>
-              <div style="margin-top:22px"><button class="btn" style="width:100%" data-action="restore-version" data-version-id="${escapeHtml(selected?.id || '')}">${icon('history', 'icon-sm')}Restore this version</button></div>
             </aside>
           </div>
         ` : `<div class="empty-state"><div><div class="empty-state-icon">${icon('history')}</div><h3>No saved versions</h3><p>Create a named version to establish the first review checkpoint.</p><button class="btn btn-primary" style="margin-top:14px" data-action="create-version">Save first version</button></div></div>`}
@@ -1833,22 +1832,32 @@ async function resolveComment(commentId, resolved) {
 }
 
 async function createVersion() {
-  if (!state.activeProject) return;
-  if (!await saveEditor()) return;
-  const message = window.prompt('Name this version:', 'Review checkpoint');
-  if (message === null) return;
-  try {
-    const version = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/versions`, {
-      method: 'POST',
-      body: { message: message.trim() || 'Review checkpoint' }
-    });
-    state.activeProject.versions.unshift(version);
-    state.selectedVersionId = version.id;
-    renderModal();
-    showToast(`Version ${version.number} saved`);
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
+  await afterSavingEditor(async (isCurrent) => {
+    const { id: projectId, updatedAt: expectedUpdatedAt } = state.activeProject;
+    if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
+      showToast('Reload the project before saving a version.', 'error');
+      return;
+    }
+    const message = window.prompt('Name this version:', 'Review checkpoint');
+    if (message === null) return;
+    try {
+      const { previousUpdatedAt, updatedAt, ...version } = await api(`/api/projects/${encodeURIComponent(projectId)}/versions`, {
+        method: 'POST',
+        body: { message: message.trim() || 'Review checkpoint', expectedUpdatedAt }
+      });
+      if (!isCurrent()) return;
+      if (typeof updatedAt === 'string' && updatedAt && previousUpdatedAt === expectedUpdatedAt
+        && state.activeProject.updatedAt === previousUpdatedAt) {
+        state.activeProject.updatedAt = updatedAt;
+      }
+      state.activeProject.versions.unshift(version);
+      state.selectedVersionId = version.id;
+      renderModal();
+      showToast(`Version ${version.number} saved`);
+    } catch (error) {
+      if (isCurrent()) showToast(error.message, 'error');
+    }
+  });
 }
 
 async function restoreVersion(versionId) {
@@ -2020,10 +2029,11 @@ document.addEventListener('click', async (event) => {
       await resolveComment(actionElement.dataset.commentId, actionElement.dataset.resolved === 'true');
       break;
     case 'versions':
-      if (!await saveEditor()) break;
-      state.selectedVersionId = state.activeProject?.versions?.[0]?.id || null;
-      state.modal = { type: 'versions' };
-      renderModal();
+      await afterSavingEditor(() => {
+        state.selectedVersionId = state.activeProject.versions?.[0]?.id || null;
+        state.modal = { type: 'versions' };
+        renderModal();
+      });
       break;
     case 'select-version':
       state.selectedVersionId = actionElement.dataset.versionId;
@@ -2110,9 +2120,6 @@ document.addEventListener('click', async (event) => {
       break;
     case 'notifications':
       showToast('You are all caught up.', 'info');
-      break;
-    case 'editor-more':
-      showToast('Export, duplicate, archive, and developer handoff actions belong here.', 'info');
       break;
     case 'open-workspace-invite':
       showToast('Open a project and use Share to invite a collaborator with a role.', 'info');

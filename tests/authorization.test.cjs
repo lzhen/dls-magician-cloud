@@ -528,6 +528,33 @@ test('unknown permissions and malformed or duplicate memberships default deny', 
   assert.equal((await h.request('editor', 'PATCH', '/api/projects/a', { structuredLanguage: 'stale again', expectedUpdatedAt: firstVersion })).status, 409);
   assert.equal((await h.request('editor', 'PATCH', '/api/projects/a', { name: 'legacy unguarded' })).status, 200);
  });
+ test('conditional checkpoint captures the requested revision and preserves its transition', async t => {
+  const h = harness(t);
+  const initial = h.db().projects[0].updatedAt;
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    structuredLanguage: 'Checked workflow', expectedUpdatedAt: initial
+  });
+  assert.equal(saved.status, 200);
+  const before = protectedState(h);
+  const stale = await h.request('editor', 'POST', '/api/projects/a/versions', {
+    message: 'Outdated checkpoint', expectedUpdatedAt: initial
+  });
+  assert.equal(stale.status, 409);
+  assert.equal(protectedState(h), before);
+  const version = await h.request('editor', 'POST', '/api/projects/a/versions', {
+    message: 'Checked checkpoint', expectedUpdatedAt: saved.json.updatedAt
+  });
+  assert.equal(version.status, 201);
+  assert.equal(version.json.content, 'Checked workflow');
+  assert.equal(version.json.previousUpdatedAt, saved.json.updatedAt);
+  assert.notEqual(version.json.updatedAt, version.json.previousUpdatedAt);
+  const nextSave = await h.request('editor', 'PATCH', '/api/projects/a', {
+    structuredLanguage: 'Continued workflow', expectedUpdatedAt: version.json.updatedAt
+  });
+  assert.equal(nextSave.status, 200);
+  assert.equal(h.db().projects[0].versions[0].content, 'Checked workflow');
+ });
+
  test('conditional version is checked after the request body arrives and after authorization', async t => {
   const h = harness(t);
   const original = h.db().projects[0].updatedAt;

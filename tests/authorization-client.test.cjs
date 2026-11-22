@@ -410,6 +410,47 @@ test('A late save cannot open Share on a newer editor route', async () => {
   assert.equal(h.state.modal, null);
   assert.equal(h.context.window.location.hash, '#project/another');
 });
+test('Version history waits for the latest draft even if typing continues during the initial save', async () => {
+  const h = editorActionHarness('versions');
+  const opening = h.click();
+  h.state.editorText = 'Latest workflow';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.state.modal, null);
+  assert.equal(h.pending.length, 2);
+  assert.equal(h.pending[1].body.structuredLanguage, 'Latest workflow');
+  h.pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: 'Latest workflow' });
+  await opening;
+  assert.equal(h.state.modal.type, 'versions');
+});
+
+test('saving a named checkpoint advances the revision for the next edit', async () => {
+  const h = savingHarness();
+  h.state.activeProject.versions = [];
+  h.state.editorDirty = false;
+  h.context.window.location.hash = '#project/qa';
+  h.context.window.prompt = () => 'My review';
+  h.run(`
+    globalThis.sent = [];
+    renderModal = () => {};
+    api = async (url, { method, body }) => {
+      sent.push({ url, method, body });
+      if (method === 'POST') return { id: 'checkpoint', number: '1.0.1', previousUpdatedAt: 'A', updatedAt: 'B' };
+      return { id: 'qa', updatedAt: 'C', structuredLanguage: body.structuredLanguage };
+    };
+  `);
+  await h.run('createVersion()');
+  assert.equal(h.context.sent[0].url, '/api/projects/qa/versions');
+  assert.equal(h.context.sent[0].body.expectedUpdatedAt, 'A');
+  assert.equal(h.context.sent[0].body.message, 'My review');
+  assert.equal(h.state.activeProject.versions[0].id, 'checkpoint');
+  assert.equal(h.state.activeProject.updatedAt, 'B');
+  h.state.editorText = 'Edit since checkpoint';
+  h.state.editorDirty = true;
+  assert.equal(await h.run('saveEditor()'), true);
+  assert.equal(h.context.sent[1].body.expectedUpdatedAt, 'B');
+});
+
 test('late save response cannot replace another project', async () => {
   const h = savingHarness(); let finish;
   h.context.fixtureApi = () => new Promise(resolve => {finish=resolve;}); h.run('api = fixtureApi;');

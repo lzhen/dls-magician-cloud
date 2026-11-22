@@ -796,6 +796,11 @@ async function handleApi(req, res, url) {
     if (!authorizeProject(res, project, session)) return;
     const body = await readBody(req);
     if (!authorizeProject(res, project, session, 'edit')) return;
+    if (Object.prototype.hasOwnProperty.call(body, 'expectedUpdatedAt')) {
+      if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt) return sendError(res, 400, 'Invalid expectedUpdatedAt.');
+      if (body.expectedUpdatedAt !== project.updatedAt) return sendError(res, 409, 'Project changed. Reload before saving a version.');
+    }
+    const previousUpdatedAt = project.updatedAt;
     const version = {
       id: `v-${crypto.randomUUID()}`,
       number: versionNumber(project),
@@ -812,7 +817,7 @@ async function handleApi(req, res, url) {
       version: { ...version, user: publicUser(currentUser) },
       activity: activityPayload(activity)
     }, project.id, session.sid);
-    return sendJson(res, 201, { ...version, user: publicUser(currentUser) });
+    return sendJson(res, 201, { ...version, user: publicUser(currentUser), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const restoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
