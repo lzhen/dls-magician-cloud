@@ -567,9 +567,10 @@ test('confirmed restore flushes the draft and keeps later typing out of a pendin
   h.context.fixtureApi = (url, options) => new Promise(resolve => pending.push({ url, options, resolve }));
   h.run('api = fixtureApi;');
   const restoring = h.run('restoreVersion("checkpoint")');
-  await h.run('restoreVersion("checkpoint")');
+  const duplicate = h.run('restoreVersion("checkpoint")');
   assert.equal(pending.length, 1);
   assert.equal(pending[0].options.method, 'PATCH');
+  await duplicate;
   pending[0].resolve({ ...h.state.activeProject, updatedAt: 'B', structuredLanguage: 'draft B' });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(pending.length, 2);
