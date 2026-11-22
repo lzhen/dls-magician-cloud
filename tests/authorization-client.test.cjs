@@ -328,8 +328,8 @@ function editorActionHarness(action) {
   });
   h.run('api = fixtureApi;');
   h.run('renderModal = () => {};');
-  const click = () => h.listeners.get('click')({
-    target: { closest: () => ({ dataset: { action } }) },
+  const click = (clickedAction = action) => h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action: clickedAction } }) },
   });
   return { ...h, pending, click };
 }
@@ -388,6 +388,64 @@ test('Share opens only after edits made during the current save are acknowledged
   assert.equal(h.state.modal.type, 'share');
   assert.equal(h.state.activeProject.structuredLanguage, 'Latest draft');
 });
+
+function workflowSaveHarness() {
+  const h = editorActionHarness();
+  Object.assign(h.state.activeProject, { name: 'Fixture workflow', status: 'Draft', members: [], comments: [] });
+  h.run('renderEditor()');
+  const button = h.context.document.getElementById('app').innerHTML.match(/<button[^>]+class="[^"]*editor-publish[^"]*"[^>]*>(.*?)<\/button>/)?.[0];
+  assert.ok(button);
+  const action = button.match(/data-action="([^"]+)"/)?.[1];
+  assert.ok(action);
+  return { ...h, button, click: () => h.click(action) };
+}
+
+test('the editor workflow save button confirms only after the latest draft is acknowledged', async () => {
+  const h = workflowSaveHarness();
+  const saving = h.click();
+  h.state.editorText = 'Latest draft';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.context.toasts.length, 0);
+  assert.equal(h.pending.length, 2);
+  assert.equal(h.pending[1].body.expectedUpdatedAt, 'B');
+  assert.equal(h.pending[1].body.structuredLanguage, 'Latest draft');
+  h.pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: 'Latest draft' });
+  await saving;
+
+  assert.match(h.button, /<span>Save workflow<\/span>/);
+  assert.equal(h.state.editorDirty, false);
+  assert.equal(h.state.activeProject.structuredLanguage, 'Latest draft');
+  assert.deepEqual(Array.from(h.context.toasts), ['Workflow saved.']);
+});
+
+test('the editor workflow save button preserves the draft when the follow-up write fails', async () => {
+  const h = workflowSaveHarness();
+  const saving = h.click();
+  h.state.editorText = 'Unsaved update';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.pending.length, 2);
+  h.pending[1].reject(new Error('Write failed'));
+  await saving;
+
+  assert.equal(h.state.editorDirty, true);
+  assert.equal(h.state.editorText, 'Unsaved update');
+  assert.deepEqual(Array.from(h.context.toasts), ['Write failed']);
+});
+
+test('the editor workflow save button does not confirm a save after navigating to a different route', async () => {
+  const h = workflowSaveHarness();
+  const saving = h.click();
+  h.context.window.location.hash = '#project/another';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await saving;
+
+  assert.equal(h.pending.length, 1);
+  assert.equal(h.context.toasts.length, 0);
+  assert.equal(h.context.window.location.hash, '#project/another');
+});
+
 test('Share stays closed when the newest save fails', async () => {
   const h = editorActionHarness('share');
   const sharing = h.click();

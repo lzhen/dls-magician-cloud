@@ -949,7 +949,7 @@ function renderEditor() {
         <div class="editor-actions">
           <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
           <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
-          <button class="btn btn-primary btn-sm editor-publish" data-action="publish-prototype">${icon('sparkles', 'icon-sm')}<span>Publish prototype</span></button>
+          <button class="btn btn-primary btn-sm editor-publish" data-action="save-workflow">${icon('sparkles', 'icon-sm')}<span>Save workflow</span></button>
           <button class="btn btn-icon btn-sm" data-action="versions" aria-haspopup="dialog" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
         </div>
       </header>
@@ -2177,9 +2177,10 @@ document.addEventListener('click', async (event) => {
       renderEditor();
       window.requestAnimationFrame(() => document.getElementById(`output-tab-${state.previewMode}`)?.focus());
       break;
-    case 'publish-prototype':
-      if (!await saveEditor()) break;
-      showToast(`Prototype published with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
+    case 'save-workflow':
+      await afterSavingEditor(() => {
+        showToast('Workflow saved.', 'success');
+      });
       break;
     case 'copy-generated-json': {
       const projectId = state.activeProject?.id;
