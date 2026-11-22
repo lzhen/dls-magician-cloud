@@ -2109,20 +2109,36 @@ document.addEventListener('click', async (event) => {
       window.requestAnimationFrame(() => modalRoot.querySelector(`[data-action="share-tab"][data-tab="${state.shareTab}"]`)?.focus());
       break;
     case 'copy-link': {
+      const context = editorContext();
+      const modal = state.modal;
       const input = document.getElementById('share-url');
+      if (!context || modal?.type !== 'share' || state.shareTab !== 'link' || !input?.readOnly || !input.value) break;
+      const url = input.value;
+      const isCurrentDialog = () => context.isCurrent()
+        && state.modal === modal
+        && state.shareTab === 'link'
+        && document.getElementById('share-url') === input
+        && input.readOnly
+        && input.value === url;
       try {
-        await navigator.clipboard.writeText(input?.value || window.location.href);
-        if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
-        showToast('Project link copied');
+        await navigator.clipboard.writeText(url);
       } catch (_) {
-        input?.select();
-        if (document.execCommand('copy')) {
-          if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
-          showToast('Project link copied');
-        } else {
-          showToast('Select the project link and copy it manually.', 'error');
+        if (!isCurrentDialog()) break;
+        input.select();
+        let copied = false;
+        try {
+          copied = document.execCommand?.('copy') === true;
+        } catch (_) {
+          // The selected link is still available for manual copy.
+        }
+        if (!copied) {
+          if (isCurrentDialog()) showToast('Select the project link and copy it manually.', 'error');
+          break;
         }
       }
+      if (!isCurrentDialog()) break;
+      void api(`/api/projects/${encodeURIComponent(context.projectId)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
+      showToast('Project link copied');
       break;
     }
     case 'comments':

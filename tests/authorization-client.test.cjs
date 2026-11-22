@@ -685,3 +685,104 @@ test('a late clipboard success cannot record an export under a different account
   await copy;
   assert.equal(h.context.calls.length, 0);
 });
+
+function linkCopyHarness() {
+  const h = clientHarness();
+  const url = 'https://fixture.example/#project/project-a';
+  h.state.user = { id: 'designer' };
+  h.state.activeProject = { id: 'project-a', name: 'Original project' };
+  h.state.modal = { type: 'share' };
+  h.state.shareTab = 'link';
+  h.context.window.location.hash = '#project/project-a';
+  h.context.window.location.href = url;
+  const input = h.context.document.getElementById('share-url');
+  input.value = url;
+  input.readOnly = true;
+  let selections = 0;
+  input.select = () => { selections++; };
+  h.run(`globalThis.calls = []; globalThis.toasts = [];
+    api = async (url, {body}) => calls.push([url, body.event]);
+    showToast = (message, type) => toasts.push({ message, type });`);
+  const click = () => h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action: 'copy-link' } }) }
+  });
+  return { ...h, url, input, click, selections: () => selections };
+}
+
+test('a confirmed project link copy records the initiating project once', async () => {
+  const h = linkCopyHarness();
+  h.context.navigator.clipboard = { writeText: async (value) => assert.equal(value, h.url) };
+  await h.click();
+  assert.equal(h.context.calls.length, 1);
+  assert.equal(h.context.calls[0].join(' '), '/api/projects/project-a/metrics share');
+  assert.equal(h.context.toasts[0]?.message, 'Project link copied');
+  assert.equal(h.selections(), 0);
+});
+
+test('a late project link copy never records another project or account or acknowledges a closed dialog', async () => {
+  for (const change of ['project', 'account', 'closed dialog']) {
+    const h = linkCopyHarness();
+    let finish;
+    h.context.navigator.clipboard = { writeText: () => new Promise(resolve => { finish = resolve; }) };
+    const pending = h.click();
+    if (change === 'project') {
+      h.state.activeProject = { id: 'project-b' };
+      h.context.window.location.hash = '#project/project-b';
+    } else if (change === 'account') h.state.user = { id: 'other-designer' };
+    else h.state.modal = null;
+    finish();
+    await pending;
+    assert.equal(h.context.calls.length, 0, change);
+    assert.equal(h.context.toasts.length, 0, change);
+  }
+});
+
+test('a late project link rejection skips fallback if the dialog or readonly field changed', async () => {
+  for (const change of ['reopened dialog', 'link tab', 'replacement input', 'changed URL']) {
+    const h = linkCopyHarness();
+    let deny;
+    let fallbackCalls = 0;
+    h.context.navigator.clipboard = { writeText: () => new Promise((_, reject) => { deny = reject; }) };
+    h.context.document.execCommand = () => { fallbackCalls++; return true; };
+    const pending = h.click();
+    if (change === 'reopened dialog') h.state.modal = { type: 'share' };
+    else if (change === 'link tab') h.state.shareTab = 'invite';
+    else if (change === 'replacement input') {
+      const getElement = h.context.document.getElementById;
+      const replacement = { ...h.input };
+      h.context.document.getElementById = id => id === 'share-url' ? replacement : getElement(id);
+    } else h.input.value = 'https://fixture.example/#project/different';
+    deny(new Error('Clipboard denied'));
+    await pending;
+    assert.equal(fallbackCalls, 0, change);
+    assert.equal(h.selections(), 0, change);
+    assert.equal(h.context.calls.length, 0, change);
+    assert.equal(h.context.toasts.length, 0, change);
+  }
+});
+
+test('project link copy handles true, false, unavailable and throwing legacy fallback', async () => {
+  for (const mode of ['true', 'false', 'missing', 'throws']) {
+    const h = linkCopyHarness();
+    const commands = [];
+    if (mode !== 'missing') {
+      h.context.document.execCommand = (command) => {
+        commands.push([command, h.selections()]);
+        if (mode === 'throws') throw new Error('Legacy copy unavailable');
+        return mode === 'true';
+      };
+    }
+    await h.click();
+    assert.deepEqual(commands, mode === 'missing' ? [] : [['copy', 1]]);
+    assert.equal(h.selections(), 1, mode);
+    assert.equal(h.context.toasts.length, 1, mode);
+    if (mode === 'true') {
+      assert.equal(h.context.calls.length, 1);
+      assert.equal(h.context.calls[0].join(' '), '/api/projects/project-a/metrics share');
+      assert.equal(h.context.toasts[0].message, 'Project link copied');
+    } else {
+      assert.equal(h.context.calls.length, 0, mode);
+      assert.match(h.context.toasts[0].message, /copy it manually/i);
+    }
+  }
+});
