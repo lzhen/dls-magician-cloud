@@ -410,6 +410,92 @@ test('A late save cannot open Share on a newer editor route', async () => {
   assert.equal(h.state.modal, null);
   assert.equal(h.context.window.location.hash, '#project/another');
 });
+test('Comments waits for all current editor changes to save before opening', async () => {
+  const h = editorActionHarness('comments');
+  const opening = h.click();
+  h.state.editorText = 'Latest workflow';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.state.modal, null);
+  assert.equal(h.pending.length, 2);
+  assert.equal(h.pending[1].body.structuredLanguage, 'Latest workflow');
+  h.pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: 'Latest workflow' });
+  await opening;
+  assert.equal(h.state.modal.type, 'comments');
+});
+
+function commentHarness() {
+  const h = savingHarness();
+  h.context.window.location.hash = '#project/qa';
+  h.state.activeProject.comments = [];
+  h.state.editorDirty = false;
+  h.context.FormData = class { get(name) { return { body: 'Review note', anchor: 'WHEN' }[name]; } };
+  h.context.fixtureForm = { dataset: { form: 'new-comment' } };
+  h.run('renderModal = () => {};');
+  return h;
+}
+
+test('an edit while posting a comment saves once the comment revision arrives', async () => {
+  const h = commentHarness();
+  const pending = [];
+  h.context.fixtureApi = (url, options) => new Promise(resolve => pending.push({ resolve, url, ...options }));
+  h.run('api = fixtureApi;');
+  h.state.modal = { type: 'comments' };
+  const posting = h.listeners.get('submit')({ target: h.context.fixtureForm, preventDefault() {} });
+  assert.equal(pending[0].url, '/api/projects/qa/comments');
+  h.state.modal = null;
+  h.state.editorText = 'Edit made while posting';
+  h.state.editorDirty = true;
+  const saving = h.run('saveEditor()');
+  assert.equal(pending.length, 1);
+  pending[0].resolve({ id: 'note', body: 'Review note', previousUpdatedAt: 'A', updatedAt: 'B' });
+  await posting;
+  assert.equal(h.state.activeProject.comments[0].id, 'note');
+  assert.equal(typeof h.state.activeProject.comments[0].updatedAt, 'undefined');
+  assert.equal(h.state.modal, null);
+  assert.equal(pending[1].body.expectedUpdatedAt, 'B');
+  assert.equal(pending[1].body.structuredLanguage, 'Edit made while posting');
+  pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: pending[1].body.structuredLanguage });
+  assert.equal(await saving, true);
+});
+
+test('resolving a comment cannot adopt a revision with an unseen collaborator edit', async () => {
+  const h = commentHarness();
+  h.state.activeProject.comments = [{ id: 'note', resolved: false }];
+  h.run(`
+    globalThis.sent = [];
+    api = async (url, { method, body }) => {
+      sent.push({ url, method, body });
+      if (url.endsWith('/comments/note')) return { id: 'note', resolved: true, previousUpdatedAt: 'B', updatedAt: 'C' };
+      throw Object.assign(new Error('conflict'), { status: 409 });
+    };
+  `);
+  await h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action: 'resolve-comment', commentId: 'note', resolved: 'false' } }) },
+  });
+  assert.equal(h.state.activeProject.comments[0].resolved, true);
+  assert.equal(h.state.activeProject.updatedAt, 'A');
+  h.state.editorText = 'Local draft';
+  h.state.editorDirty = true;
+  assert.equal(await h.run('saveEditor()'), false);
+  assert.equal(h.context.sent[1].body.expectedUpdatedAt, 'A');
+  assert.equal(h.state.editorText, 'Local draft');
+});
+
+test('an earlier Comments response cannot update a newly opened editor', async () => {
+  const h = commentHarness();
+  h.run('api = () => new Promise(resolve => { globalThis.completeComment = resolve; });');
+  const posting = h.run('addComment(fixtureForm)');
+  h.context.window.location.hash = '#project/other';
+  h.state.projectLoadRevision++;
+  h.state.activeProject = { id: 'other', updatedAt: 'Z', comments: [] };
+  h.context.completeComment({ id: 'note', previousUpdatedAt: 'A', updatedAt: 'B' });
+  await posting;
+  assert.deepEqual(h.state.activeProject.comments, []);
+  assert.equal(h.state.activeProject.updatedAt, 'Z');
+  assert.equal(h.context.toasts.length, 0);
+});
+
 test('Version history waits for the latest draft even if typing continues during the initial save', async () => {
   const h = editorActionHarness('versions');
   const opening = h.click();

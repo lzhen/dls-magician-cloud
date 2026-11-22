@@ -266,6 +266,26 @@ test('new authentication never autojoins a workspace or project, including metad
   assert.equal(protectedState(h), before);
 });
 
+test('posting and resolving a comment returns the revision for subsequent saves', async t => {
+  const h = harness(t);
+  const initialRevision = (await h.request('editor', 'GET', '/api/projects/a')).json.updatedAt;
+  const posted = await h.request('editor', 'POST', '/api/projects/a/comments', { body: 'Review note', anchor: 'WHEN' });
+  assert.equal(posted.status, 201);
+  assert.equal(posted.json.previousUpdatedAt, initialRevision);
+  assert.notEqual(posted.json.updatedAt, initialRevision);
+  const resolved = await h.request('editor', 'PATCH', `/api/projects/a/comments/${posted.json.id}`, { resolved: true });
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.json.previousUpdatedAt, posted.json.updatedAt);
+  assert.notEqual(resolved.json.updatedAt, posted.json.updatedAt);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    structuredLanguage: 'Workflow refined after review', expectedUpdatedAt: resolved.json.updatedAt
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.json.structuredLanguage, 'Workflow refined after review');
+  assert.equal(saved.json.comments[0].resolved, true);
+  assert.equal(saved.json.comments[0].updatedAt, undefined);
+});
+
 test('confirmed invitee can claim an explicit invitation and receives only the assigned project access', async (t) => {
   const h = harness(t);
   const invited = await h.request('editor', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Commenter' });

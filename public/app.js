@@ -92,6 +92,7 @@ const state = {
   editorDirty: false,
   editorConflict: false,
   editorSaveRequest: null,
+  editorCommentRequest: null,
   autosaveTimer: null,
   streamController: null,
   presenceTimer: null,
@@ -1120,6 +1121,11 @@ function scheduleAutosave() {
 async function saveEditor() {
   if (!state.activeProject) return false;
   if (state.editorConflict) return false;
+  const comment = state.editorCommentRequest;
+  if (comment?.isCurrent()) {
+    await comment.promise;
+    return comment.isCurrent() && saveEditor();
+  }
   if (state.editorSaveRequest) {
     const previous = state.editorSaveRequest;
     const ok = await previous.promise;
@@ -1176,7 +1182,7 @@ async function saveEditor() {
   return request.promise;
 }
 
-async function afterSavingEditor(action) {
+function editorContext() {
   const projectId = state.activeProject?.id;
   const userId = state.user?.id;
   const loadRevision = state.projectLoadRevision;
@@ -1187,6 +1193,13 @@ async function afterSavingEditor(action) {
     && state.user?.id === userId
     && state.projectLoadRevision === loadRevision
     && window.location.hash === hash;
+  return { projectId, isCurrent };
+}
+
+async function afterSavingEditor(action) {
+  const context = editorContext();
+  if (!context) return;
+  const { isCurrent } = context;
   do {
     if (!await saveEditor() || !isCurrent()) return;
   } while (state.editorDirty);
@@ -1800,35 +1813,57 @@ async function inviteMember(form) {
   }
 }
 
+async function mutateComment(method, body, commentId) {
+  const context = editorContext();
+  if (!context) return;
+  const { projectId, isCurrent } = context;
+  const previousComment = state.editorCommentRequest;
+  const pendingSave = state.editorSaveRequest;
+  const request = { isCurrent, promise: null };
+  state.editorCommentRequest = request;
+  request.promise = (async () => {
+    try {
+      // Finish earlier writes before starting this one. Autosaves wait for this response.
+      if (previousComment?.isCurrent()) await previousComment.promise;
+      if (pendingSave?.projectId === projectId) await pendingSave.promise;
+      if (!isCurrent()) return;
+      const commentsPath = `/api/projects/${encodeURIComponent(projectId)}/comments`;
+      const path = commentId ? `${commentsPath}/${encodeURIComponent(commentId)}` : commentsPath;
+      const { previousUpdatedAt, updatedAt, ...comment } = await api(path, { method, body });
+      if (!isCurrent()) return;
+      const project = state.activeProject;
+      // A comment only acknowledges its own revision change, never an unseen edit.
+      if (typeof previousUpdatedAt === 'string' && previousUpdatedAt
+        && typeof updatedAt === 'string' && updatedAt && project.updatedAt === previousUpdatedAt) {
+        project.updatedAt = updatedAt;
+      }
+      const index = project.comments.findIndex(item => item.id === comment.id);
+      if (index >= 0) project.comments[index] = comment;
+      else if (method === 'POST') project.comments.unshift(comment);
+      if (state.modal?.type === 'comments') renderModal();
+      if (method === 'POST') showToast('Comment added');
+    } catch (error) {
+      if (isCurrent()) showToast(error.message, 'error');
+    } finally {
+      if (state.editorCommentRequest === request) state.editorCommentRequest = null;
+    }
+  })();
+  return request.promise;
+}
+
 async function addComment(form) {
-  if (!state.activeProject) return;
+  if (form.dataset.submitting) return;
   const data = new FormData(form);
+  form.dataset.submitting = 'true';
   try {
-    const comment = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/comments`, {
-      method: 'POST',
-      body: { body: data.get('body'), anchor: data.get('anchor') }
-    });
-    state.activeProject.comments.unshift(comment);
-    renderModal();
-    showToast('Comment added');
-  } catch (error) {
-    showToast(error.message, 'error');
+    await mutateComment('POST', { body: data.get('body'), anchor: data.get('anchor') });
+  } finally {
+    delete form.dataset.submitting;
   }
 }
 
 async function resolveComment(commentId, resolved) {
-  if (!state.activeProject) return;
-  try {
-    const updated = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/comments/${encodeURIComponent(commentId)}`, {
-      method: 'PATCH',
-      body: { resolved: !resolved }
-    });
-    const index = state.activeProject.comments.findIndex((comment) => comment.id === commentId);
-    if (index >= 0) state.activeProject.comments[index] = updated;
-    renderModal();
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
+  await mutateComment('PATCH', { resolved: !resolved }, commentId);
 }
 
 async function createVersion() {
@@ -2021,9 +2056,10 @@ document.addEventListener('click', async (event) => {
       break;
     }
     case 'comments':
-      if (!await saveEditor()) break;
-      state.modal = { type: 'comments' };
-      renderModal();
+      await afterSavingEditor(() => {
+        state.modal = { type: 'comments' };
+        renderModal();
+      });
       break;
     case 'resolve-comment':
       await resolveComment(actionElement.dataset.commentId, actionElement.dataset.resolved === 'true');

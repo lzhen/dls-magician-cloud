@@ -699,6 +699,7 @@ async function handleApi(req, res, url) {
       resolved: false,
       createdAt: nowIso()
     };
+    const previousUpdatedAt = project.updatedAt;
     project.comments.unshift(comment);
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'comment', `commented on ${comment.anchor}`);
@@ -707,7 +708,7 @@ async function handleApi(req, res, url) {
       comment: { ...comment, user: publicUser(currentUser) },
       activity: activityPayload(activity)
     }, project.id, session.sid);
-    return sendJson(res, 201, { ...comment, user: publicUser(currentUser) });
+    return sendJson(res, 201, { ...comment, user: publicUser(currentUser), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const resolveCommentMatch = pathname.match(/^\/api\/projects\/([^/]+)\/comments\/([^/]+)$/);
@@ -718,11 +719,12 @@ async function handleApi(req, res, url) {
     if (!comment) return sendError(res, 404, 'Comment not found.');
     const body = await readBody(req);
     if (!authorizeProject(res, project, session, 'comment')) return;
+    const previousUpdatedAt = project.updatedAt;
     comment.resolved = Boolean(body.resolved);
     project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
     broadcast('comment_updated', { comment: { ...comment, user: publicUser(getUser(comment.userId)) } }, project.id, session.sid);
-    return sendJson(res, 200, { ...comment, user: publicUser(getUser(comment.userId)) });
+    return sendJson(res, 200, { ...comment, user: publicUser(getUser(comment.userId)), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const shareMatch = pathname.match(/^\/api\/projects\/([^/]+)\/share$/);
