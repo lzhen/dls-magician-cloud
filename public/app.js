@@ -1769,20 +1769,35 @@ async function createProject(form) {
 }
 
 async function inviteMember(form) {
-  if (!state.activeProject) return;
+  const projectId = state.activeProject?.id;
+  if (!projectId) return;
+  const userId = state.user?.id;
+  const loadRevision = state.projectLoadRevision;
+  const hash = window.location.hash;
+  const isCurrent = () => state.activeProject?.id === projectId
+    && state.user?.id === userId
+    && state.projectLoadRevision === loadRevision
+    && window.location.hash === hash;
   const data = new FormData(form);
   try {
-    const member = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/share`, {
+    const { previousUpdatedAt, updatedAt, ...member } = await api(`/api/projects/${encodeURIComponent(projectId)}/share`, {
       method: 'POST',
       body: { email: data.get('email'), role: data.get('role') }
     });
+    if (!isCurrent()) return;
+    // Adopt only this invitation's revision, preserving conflicts from unseen edits.
+    const hasRevisionPair = typeof previousUpdatedAt === 'string' && previousUpdatedAt
+      && typeof updatedAt === 'string' && updatedAt;
+    if (hasRevisionPair && state.activeProject.updatedAt === previousUpdatedAt) {
+      state.activeProject.updatedAt = updatedAt;
+    }
     const index = state.activeProject.members.findIndex((item) => item.userId === member.userId);
     if (index >= 0) state.activeProject.members[index] = member;
     else state.activeProject.members.push(member);
     renderModal();
     showToast(`${member.user.name} was invited as ${member.role}`);
   } catch (error) {
-    showToast(error.message, 'error');
+    if (isCurrent()) showToast(error.message, 'error');
   }
 }
 

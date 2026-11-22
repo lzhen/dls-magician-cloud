@@ -252,6 +252,71 @@ test('overlapping saves serialize and preserve typing during a request', async (
   pending[1].resolve({id:'qa',updatedAt:'C',structuredLanguage:'draft C'});
   assert.equal(await second, true); assert.equal(h.state.editorText, 'draft C'); assert.equal(h.state.editorDirty, false);
 });
+function inviteHarness() {
+  const h = savingHarness();
+  h.state.activeProject.members = [];
+  h.context.window.location.hash = '#project/qa';
+  h.context.fixtureMember = { userId: 'guest', role: 'Viewer', user: { name: 'Guest' } };
+  h.run(`
+    globalThis.inviteRenderCount = 0;
+    globalThis.FormData = class { get(name) { return { email: 'guest@example.invalid', role: 'Viewer' }[name]; } };
+    renderModal = () => { inviteRenderCount++; };
+  `);
+  return h;
+}
+
+test('a successful invite acknowledges its revision for the next editor save', async () => {
+  const h = inviteHarness();
+  h.run(`
+    globalThis.sent = [];
+    api = async (url, options) => {
+      sent.push({ url, ...options });
+      if (options.method === 'POST') return { ...fixtureMember, previousUpdatedAt: 'A', updatedAt: 'B' };
+      return { id: 'qa', updatedAt: 'C', structuredLanguage: options.body.structuredLanguage };
+    };
+  `);
+  await h.run('inviteMember({})');
+  assert.equal(h.context.sent[0].url, '/api/projects/qa/share');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.state.activeProject.members)), [h.context.fixtureMember]);
+  assert.equal(h.state.activeProject.updatedAt, 'B');
+  assert.equal(await h.run('saveEditor()'), true);
+  assert.equal(h.context.sent[1].body.expectedUpdatedAt, 'B');
+});
+
+test('an invite cannot adopt a revision that includes an unseen edit', async () => {
+  const h = inviteHarness();
+  h.run(`
+    globalThis.sent = [];
+    api = async (url, options) => {
+      if (options.method === 'POST') return { ...fixtureMember, previousUpdatedAt: 'B', updatedAt: 'C' };
+      sent.push(options.body);
+      throw Object.assign(new Error('conflict'), { status: 409 });
+    };
+  `);
+  await h.run('inviteMember({})');
+  assert.equal(h.state.activeProject.members[0].userId, 'guest');
+  assert.equal(h.state.activeProject.updatedAt, 'A');
+  assert.equal(await h.run('saveEditor()'), false);
+  assert.equal(h.context.sent[0].expectedUpdatedAt, 'A');
+  assert.equal(h.state.editorConflict, true);
+  assert.equal(h.state.editorText, 'draft B');
+});
+
+test('a late invite response cannot update a different editor context', async () => {
+  const h = inviteHarness();
+  h.run(`
+    api = () => new Promise(resolve => { globalThis.completeInvite = resolve; });
+  `);
+  const invitation = h.run('inviteMember({})');
+  h.context.window.location.hash = '#project/elsewhere';
+  h.context.completeInvite({ ...h.context.fixtureMember, previousUpdatedAt: 'A', updatedAt: 'B' });
+  await invitation;
+  assert.equal(h.state.activeProject.updatedAt, 'A');
+  assert.deepEqual(h.state.activeProject.members, []);
+  assert.equal(h.context.inviteRenderCount, 0);
+  assert.equal(h.context.toasts.length, 0);
+});
+
 function editorActionHarness(action) {
   const h = savingHarness();
   const pending = [];

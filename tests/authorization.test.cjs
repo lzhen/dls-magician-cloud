@@ -279,6 +279,25 @@ test('confirmed invitee can claim an explicit invitation and receives only the a
   assert.equal(h.db().users.find((u) => u.id === invited.json.userId).authUserId, 'invitee');
 });
 
+test('invitation reports the exact project revision transition used by the next save', async (t) => {
+  const h = harness(t);
+  const before = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  const invited = await h.request('owner-a', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Viewer' });
+  assert.equal(invited.status, 201);
+  assert.equal(invited.json.role, 'Viewer');
+  assert.equal(invited.json.user.email, 'invitee@example.invalid');
+  assert.equal(invited.json.previousUpdatedAt, before.updatedAt);
+  assert.notEqual(invited.json.updatedAt, before.updatedAt);
+  const after = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  assert.equal(invited.json.updatedAt, after.updatedAt);
+  assert.equal(after.structuredLanguage, before.structuredLanguage);
+  const saved = await h.request('owner-a', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: invited.json.updatedAt, structuredLanguage: 'GIVEN\nA new edit\nWHEN\nSave\nTHEN\nPreserve it'
+  });
+  assert.equal(saved.status, 200);
+  assert.match(saved.json.structuredLanguage, /A new edit/);
+});
+
 test('unconfirmed email cannot claim invitation; same email cannot hijack an already bound subject', async (t) => {
   const h = harness(t);
   await h.request('owner-a', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Editor' });

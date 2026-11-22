@@ -761,17 +761,16 @@ async function handleApi(req, res, url) {
       db.users.push(user);
     }
 
+    const previousUpdatedAt = project.updatedAt;
     if (existing) existing.role = role;
     else project.members.push({ userId: user.id, role });
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'share', `invited ${user.name} as ${role}`);
     recordMetric(db, 'share');
     saveDb();
-    broadcast('member_invited', {
-      member: { userId: user.id, role, user: publicUser(user) },
-      activity: activityPayload(activity)
-    }, project.id, session.sid);
-    return sendJson(res, 201, { userId: user.id, role, user: publicUser(user) });
+    const member = { userId: user.id, role, user: publicUser(user) };
+    broadcast('member_invited', { member, activity: activityPayload(activity) }, project.id, session.sid);
+    return sendJson(res, 201, { ...member, previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const memberMatch = pathname.match(/^\/api\/projects\/([^/]+)\/members\/([^/]+)$/);
