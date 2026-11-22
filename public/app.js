@@ -1176,6 +1176,23 @@ async function saveEditor() {
   return request.promise;
 }
 
+async function afterSavingEditor(action) {
+  const projectId = state.activeProject?.id;
+  const userId = state.user?.id;
+  const loadRevision = state.projectLoadRevision;
+  const hash = window.location.hash;
+  const route = parseRoute();
+  if (!projectId || route.page !== 'project' || route.id !== projectId) return;
+  const isCurrent = () => state.activeProject?.id === projectId
+    && state.user?.id === userId
+    && state.projectLoadRevision === loadRevision
+    && window.location.hash === hash;
+  do {
+    if (!await saveEditor() || !isCurrent()) return;
+  } while (state.editorDirty);
+  action();
+}
+
 function renderModal() {
   if (!state.modal) {
     modalRoot.innerHTML = '';
@@ -1951,10 +1968,11 @@ document.addEventListener('click', async (event) => {
       closeModal();
       break;
     case 'share':
-      if (!await saveEditor()) break;
-      state.shareTab = 'invite';
-      state.modal = { type: 'share' };
-      renderModal();
+      await afterSavingEditor(() => {
+        state.shareTab = 'invite';
+        state.modal = { type: 'share' };
+        renderModal();
+      });
       break;
     case 'share-tab':
       state.shareTab = actionElement.dataset.tab;
@@ -2052,23 +2070,11 @@ document.addEventListener('click', async (event) => {
       break;
     }
     case 'back-dashboard':
-    case 'mobile-home': {
-      const projectId = state.activeProject?.id;
-      const userId = state.user?.id;
-      const loadRevision = state.projectLoadRevision;
-      const hash = window.location.hash;
-      const route = parseRoute();
-      if (!projectId || route.page !== 'project' || route.id !== projectId) break;
-      const isCurrent = () => state.activeProject?.id === projectId
-        && state.user?.id === userId
-        && state.projectLoadRevision === loadRevision
-        && window.location.hash === hash;
-      do {
-        if (!await saveEditor() || !isCurrent()) return;
-      } while (state.editorDirty);
-      window.location.hash = '#dashboard';
+    case 'mobile-home':
+      await afterSavingEditor(() => {
+        window.location.hash = '#dashboard';
+      });
       break;
-    }
     case 'settings-tab':
       state.settingsTab = actionElement.dataset.tab;
       renderShell('settings');

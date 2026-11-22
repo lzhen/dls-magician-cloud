@@ -252,7 +252,7 @@ test('overlapping saves serialize and preserve typing during a request', async (
   pending[1].resolve({id:'qa',updatedAt:'C',structuredLanguage:'draft C'});
   assert.equal(await second, true); assert.equal(h.state.editorText, 'draft C'); assert.equal(h.state.editorDirty, false);
 });
-function leavingEditorHarness() {
+function editorActionHarness(action) {
   const h = savingHarness();
   const pending = [];
   h.context.window.location.hash = '#project/qa';
@@ -262,14 +262,15 @@ function leavingEditorHarness() {
     pending.push({ resolve, reject, body: options.body });
   });
   h.run('api = fixtureApi;');
-  const leave = () => h.listeners.get('click')({
-    target: { closest: () => ({ dataset: { action: 'back-dashboard' } }) },
+  h.run('renderModal = () => {};');
+  const click = () => h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action } }) },
   });
-  return { ...h, pending, leave };
+  return { ...h, pending, click };
 }
 test('leaving the editor waits for edits made while the first save is in flight', async () => {
-  const h = leavingEditorHarness();
-  const leaving = h.leave();
+  const h = editorActionHarness('back-dashboard');
+  const leaving = h.click();
   assert.equal(h.pending.length, 1);
   assert.equal(h.pending[0].body.structuredLanguage, 'draft B');
   h.state.editorText = 'draft C';
@@ -285,8 +286,8 @@ test('leaving the editor waits for edits made while the first save is in flight'
   assert.equal(h.state.editorDirty, false);
 });
 test('a failed follow-up save keeps the editor and unsaved draft open', async () => {
-  const h = leavingEditorHarness();
-  const leaving = h.leave();
+  const h = editorActionHarness('back-dashboard');
+  const leaving = h.click();
   h.state.editorText = 'draft C';
   h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
   await new Promise(resolve => setImmediate(resolve));
@@ -299,13 +300,50 @@ test('a failed follow-up save keeps the editor and unsaved draft open', async ()
   assert.equal(h.state.editorConflict, true);
 });
 test('a late save cannot redirect over a newer route before the editor reloads', async () => {
-  const h = leavingEditorHarness();
-  const leaving = h.leave();
+  const h = editorActionHarness('back-dashboard');
+  const leaving = h.click();
   h.context.window.location.hash = '#project/another';
   h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
   await leaving;
   assert.equal(h.context.window.location.hash, '#project/another');
   assert.equal(h.pending.length, 1);
+});
+test('Share opens only after edits made during the current save are acknowledged', async () => {
+  const h = editorActionHarness('share');
+  const sharing = h.click();
+  h.state.editorText = 'Latest draft';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.state.modal, null);
+  assert.equal(h.pending.length, 2);
+  assert.equal(h.pending[1].body.expectedUpdatedAt, 'B');
+  assert.equal(h.pending[1].body.structuredLanguage, 'Latest draft');
+  h.pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: 'Latest draft' });
+  await sharing;
+  assert.equal(h.state.modal.type, 'share');
+  assert.equal(h.state.activeProject.structuredLanguage, 'Latest draft');
+});
+test('Share stays closed when the newest save fails', async () => {
+  const h = editorActionHarness('share');
+  const sharing = h.click();
+  h.state.editorText = 'Keep this draft';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.pending.length, 2);
+  h.pending[1].reject(Object.assign(new Error('conflict'), { status: 409 }));
+  await sharing;
+  assert.equal(h.state.modal, null);
+  assert.equal(h.state.editorConflict, true);
+  assert.equal(h.state.editorText, 'Keep this draft');
+});
+test('A late save cannot open Share on a newer editor route', async () => {
+  const h = editorActionHarness('share');
+  const sharing = h.click();
+  h.context.window.location.hash = '#project/another';
+  h.pending[0].resolve({ id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' });
+  await sharing;
+  assert.equal(h.state.modal, null);
+  assert.equal(h.context.window.location.hash, '#project/another');
 });
 test('late save response cannot replace another project', async () => {
   const h = savingHarness(); let finish;
