@@ -223,6 +223,18 @@ for (const id of ['owner-a', 'project-admin', 'workspace-admin', 'editor', 'comm
   }
 }
 
+test('restoring with a legacy empty body also retains the prior workflow in history', async t => {
+  const h = harness(t);
+  const original = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  const route = '/api/projects/a/versions/version/restore';
+  assert.equal((await h.request('owner-a', 'POST', route, { expectedUpdatedAt: null })).status, 400);
+  const restored = await h.request('owner-a', 'POST', route);
+  assert.equal(restored.status, 200);
+  assert.equal(restored.json.structuredLanguage, original.versions[0].content);
+  assert.equal(restored.json.versions[0].content, original.structuredLanguage);
+  assert.equal(restored.json.versions[1].id, original.versions[0].id);
+});
+
 test('read and presence work for members, owners and workspace administrators', async (t) => {
   const h = harness(t);
   for (const id of ['owner-a', 'project-admin', 'workspace-admin', 'editor', 'commenter', 'viewer', 'guest']) {

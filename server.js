@@ -475,6 +475,19 @@ function versionNumber(project) {
   return parts.join('.');
 }
 
+function checkpointVersion(project, userId, message) {
+  const version = {
+    id: `v-${crypto.randomUUID()}`,
+    number: versionNumber(project),
+    userId,
+    message,
+    createdAt: nowIso(),
+    content: project.structuredLanguage
+  };
+  project.versions.unshift(version);
+  return version;
+}
+
 function activePresence(projectId) {
   const projectPresence = presence.get(projectId) || new Map();
   const cutoff = Date.now() - 45_000;
@@ -803,15 +816,7 @@ async function handleApi(req, res, url) {
       if (body.expectedUpdatedAt !== project.updatedAt) return sendError(res, 409, 'Project changed. Reload before saving a version.');
     }
     const previousUpdatedAt = project.updatedAt;
-    const version = {
-      id: `v-${crypto.randomUUID()}`,
-      number: versionNumber(project),
-      userId: session.userId,
-      message: String(body.message || 'Saved a new version.').trim(),
-      createdAt: nowIso(),
-      content: project.structuredLanguage
-    };
-    project.versions.unshift(version);
+    const version = checkpointVersion(project, session.userId, String(body.message || 'Saved a new version.').trim());
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'version', `saved version ${version.number}`);
     saveDb();
@@ -824,11 +829,21 @@ async function handleApi(req, res, url) {
 
   const restoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
   if (restoreMatch && req.method === 'POST') {
-    const project = getProject(decodeURIComponent(restoreMatch[1]));
-    if (!authorizeProject(res, project, session)) return;
+    const projectId = decodeURIComponent(restoreMatch[1]);
+    if (!authorizeProject(res, getProject(projectId), session, 'edit')) return;
+    const body = await readBody(req);
+    const project = getProject(projectId);
     if (!authorizeProject(res, project, session, 'edit')) return;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendError(res, 400, 'Invalid restore request.');
+    // Older clients omit the revision. They still get a recovery checkpoint.
+    if (Object.prototype.hasOwnProperty.call(body, 'expectedUpdatedAt')) {
+      if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt) return sendError(res, 400, 'Invalid expectedUpdatedAt.');
+      if (body.expectedUpdatedAt !== project.updatedAt) return sendError(res, 409, 'Project changed. Reload before restoring a version.');
+    }
     const version = project.versions.find((item) => item.id === decodeURIComponent(restoreMatch[2]));
-    if (!version) return sendError(res, 404, 'Version not found.');
+    if (!version || typeof version.content !== 'string') return sendError(res, 404, 'Version not found.');
+    // Commit the recovery point and restored content in the same storage write.
+    checkpointVersion(project, session.userId, `Before restoring version ${version.number}`);
     project.structuredLanguage = version.content;
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'restore', `restored version ${version.number}`);

@@ -93,6 +93,7 @@ const state = {
   editorConflict: false,
   editorSaveRequest: null,
   editorCommentRequest: null,
+  editorRestoreRequest: null,
   autosaveTimer: null,
   streamController: null,
   presenceTimer: null,
@@ -1121,6 +1122,8 @@ function scheduleAutosave() {
 async function saveEditor() {
   if (!state.activeProject) return false;
   if (state.editorConflict) return false;
+  const restore = state.editorRestoreRequest;
+  if (restore?.isCurrent() && restore.restoring) return false;
   const comment = state.editorCommentRequest;
   if (comment?.isCurrent()) {
     await comment.promise;
@@ -1393,16 +1396,36 @@ function renderCommentsDrawer() {
   `;
 }
 
+function canRestoreVersion(project) {
+  const userId = state.user?.id;
+  if (!userId) return false;
+  if (project.ownerId === userId) return true;
+  const memberships = (project.members || []).filter(member => member.userId === userId);
+  return memberships.length === 1 && ['Admin', 'Editor'].includes(memberships[0].role);
+}
+
 function renderVersionsModal() {
   const project = state.activeProject;
   if (!project) return '';
   const versions = project.versions || [];
   const selected = versions.find((version) => version.id === state.selectedVersionId) || versions[0];
   const selectedContent = selected?.content || '';
+  const restorePending = state.editorRestoreRequest?.isCurrent();
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-xl" role="dialog" aria-modal="true" aria-labelledby="versions-title">
-        <header class="modal-header"><div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare saved versions of “${escapeHtml(project.name)}”.</div></div><div style="display:flex;gap:8px"><button class="btn" data-action="create-version">${icon('save', 'icon-sm')}Save version</button><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button></div></header>
+        <header class="modal-header">
+          <div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare saved versions of “${escapeHtml(project.name)}”.</div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px">
+              <button type="button" class="btn" data-action="create-version"${restorePending ? ' disabled' : ''}>${icon('save', 'icon-sm')}Save version</button>
+              ${selected?.id && typeof selected.content === 'string' && canRestoreVersion(project)
+                ? `<button type="button" class="btn" data-action="restore-version" data-version-id="${escapeHtml(selected.id)}"${restorePending ? ' disabled' : ''}>Restore this version</button>`
+                : ''}
+            </div>
+            <button type="button" class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button>
+          </div>
+        </header>
         ${versions.length ? `
           <div class="version-layout">
             <aside class="version-sidebar">
@@ -1867,6 +1890,7 @@ async function resolveComment(commentId, resolved) {
 }
 
 async function createVersion() {
+  if (state.editorRestoreRequest?.isCurrent()) return;
   await afterSavingEditor(async (isCurrent) => {
     const { id: projectId, updatedAt: expectedUpdatedAt } = state.activeProject;
     if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
@@ -1896,19 +1920,65 @@ async function createVersion() {
 }
 
 async function restoreVersion(versionId) {
-  if (!state.activeProject || !versionId) return;
-  const confirmed = window.confirm('Restore this version? Your current content will remain available in version history only if it was previously saved.');
-  if (!confirmed) return;
+  const context = editorContext();
+  const modal = state.modal;
+  if (!context || modal?.type !== 'versions' || state.editorRestoreRequest?.isCurrent()) return;
+  const version = state.activeProject.versions.find(item => item.id === versionId);
+  if (!version || typeof version.content !== 'string' || !canRestoreVersion(state.activeProject)) return;
+  if (!window.confirm('Restore this version? Your current workflow will be saved as a recovery checkpoint.')) return;
+
+  const { projectId, isCurrent } = context;
+  const request = { isCurrent, restoring: false };
+  state.editorRestoreRequest = request;
   try {
-    const project = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
-    state.activeProject = { ...project, presence: state.activeProject.presence || [] };
-    state.editorText = project.structuredLanguage;
-    state.editorDirty = false;
-    closeModal();
-    renderEditor();
-    showToast('Version restored');
+    renderModal();
+    window.requestAnimationFrame(() => {
+      if (isCurrent() && state.modal === modal) modalRoot.querySelector('[aria-label="Close version history"]')?.focus();
+    });
+    await afterSavingEditor(async () => {
+      if (state.modal !== modal) return;
+      const expectedUpdatedAt = state.activeProject.updatedAt;
+      if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
+        showToast('Reload the project before restoring a version.', 'error');
+        return;
+      }
+      request.restoring = true;
+      const project = await api(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/restore`, {
+        method: 'POST', body: { expectedUpdatedAt }
+      });
+      if (!isCurrent()) return;
+      // A newer realtime update may have arrived before this response.
+      if (!(Date.parse(state.activeProject.updatedAt) > Date.parse(project.updatedAt))) {
+        state.activeProject = { ...project, presence: state.activeProject.presence || [] };
+      }
+      if (state.editorDirty) {
+        state.editorConflict = true;
+        clearTimeout(state.autosaveTimer);
+      } else {
+        state.editorText = state.activeProject.structuredLanguage;
+      }
+      const summary = state.projects.find(item => item.id === projectId);
+      if (summary) summary.updatedAt = state.activeProject.updatedAt;
+      const closeHistory = state.modal === modal;
+      if (closeHistory) closeModal();
+      renderEditor();
+      if (closeHistory) window.requestAnimationFrame(() => app.querySelector('[data-action="versions"]')?.focus());
+      showToast(state.editorConflict ? 'Version restored. ' + editorConflictMessage : 'Version restored. Your previous workflow is in Version history.',
+        state.editorConflict ? 'info' : 'success');
+    });
   } catch (error) {
-    showToast(error.message, 'error');
+    if (isCurrent()) {
+      showToast(error.message, 'error');
+      if (state.editorDirty) scheduleAutosave();
+    }
+  } finally {
+    if (state.editorRestoreRequest === request) state.editorRestoreRequest = null;
+    if (isCurrent() && state.modal === modal) {
+      renderModal();
+      window.requestAnimationFrame(() => {
+        if (isCurrent() && state.modal === modal) modalRoot.querySelector('[data-action="restore-version"]')?.focus();
+      });
+    }
   }
 }
 

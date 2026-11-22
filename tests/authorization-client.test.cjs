@@ -537,6 +537,69 @@ test('saving a named checkpoint advances the revision for the next edit', async 
   assert.equal(h.context.sent[1].body.expectedUpdatedAt, 'B');
 });
 
+function restoreHarness() {
+  const h = savingHarness();
+  h.state.activeProject.ownerId = h.state.user.id;
+  h.state.activeProject.versions = [{ id: 'checkpoint', number: '1.0.1', content: 'Earlier workflow', createdAt: '2026-01-01' }];
+  h.state.modal = { type: 'versions' };
+  h.context.window.location.hash = '#project/qa';
+  h.context.window.confirm = () => true;
+  h.context.window.requestAnimationFrame = () => {};
+  h.run('renderModal = () => {}; renderEditor = () => {};');
+  return h;
+}
+
+test('Version history offers restore only for a version the current user can edit', () => {
+  const h = restoreHarness();
+  assert.match(h.run('renderVersionsModal()'), /data-action="restore-version" data-version-id="checkpoint"/);
+  h.state.activeProject.ownerId = 'other';
+  h.state.activeProject.members = [{ userId: h.state.user.id, role: 'Viewer' }];
+  assert.doesNotMatch(h.run('renderVersionsModal()'), /data-action="restore-version"/);
+  h.state.activeProject.members[0].role = 'Editor';
+  assert.match(h.run('renderVersionsModal()'), /Restore this version/);
+  h.state.activeProject.versions = [];
+  assert.doesNotMatch(h.run('renderVersionsModal()'), /data-action="restore-version"/);
+});
+
+test('confirmed restore flushes the draft and keeps later typing out of a pending restore', async () => {
+  const h = restoreHarness();
+  const pending = [];
+  h.context.fixtureApi = (url, options) => new Promise(resolve => pending.push({ url, options, resolve }));
+  h.run('api = fixtureApi;');
+  const restoring = h.run('restoreVersion("checkpoint")');
+  await h.run('restoreVersion("checkpoint")');
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].options.method, 'PATCH');
+  pending[0].resolve({ ...h.state.activeProject, updatedAt: 'B', structuredLanguage: 'draft B' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(pending.length, 2);
+  assert.equal(pending[1].url, '/api/projects/qa/versions/checkpoint/restore');
+  assert.equal(pending[1].options.body.expectedUpdatedAt, 'B');
+
+  h.state.modal = { type: 'preview' };
+  h.state.editorText = 'Text typed while the restore was pending';
+  h.state.editorDirty = true;
+  assert.equal(await h.run('saveEditor()'), false);
+  pending[1].resolve({ ...h.state.activeProject, updatedAt: 'C', structuredLanguage: 'Earlier workflow' });
+  await restoring;
+  assert.equal(h.state.activeProject.updatedAt, 'C');
+  assert.equal(h.state.modal.type, 'preview');
+  assert.equal(h.state.editorText, 'Text typed while the restore was pending');
+  assert.equal(h.state.editorConflict, true);
+  assert.equal(await h.run('saveEditor()'), false);
+  assert.equal(pending.length, 2);
+});
+
+test('cancelling restore neither flushes local edits nor calls the restore API', async () => {
+  const h = restoreHarness();
+  h.context.window.confirm = () => false;
+  h.run(`globalThis.calls = 0; api = async () => { calls++; throw Error('unexpected request'); };`);
+  await h.run('restoreVersion("checkpoint")');
+  assert.equal(h.context.calls, 0);
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.state.editorDirty, true);
+});
+
 test('late save response cannot replace another project', async () => {
   const h = savingHarness(); let finish;
   h.context.fixtureApi = () => new Promise(resolve => {finish=resolve;}); h.run('api = fixtureApi;');
