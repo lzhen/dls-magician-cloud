@@ -2301,16 +2301,23 @@ document.addEventListener('click', async (event) => {
       });
       break;
     case 'copy-generated-json': {
-      const projectId = state.activeProject?.id;
+      const context = editorContext();
+      const output = document.getElementById('json-code');
+      if (!context || state.previewMode !== 'json' || !output) break;
       const userId = state.user?.id;
+      const outputText = output.textContent;
       const parsed = generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject?.name));
       const json = JSON.stringify(parsed, null, 2);
+      const isCurrentOutput = () => context.isCurrent()
+        && state.previewMode === 'json'
+        && document.getElementById('json-code') === output
+        && output.textContent === outputText;
       try {
         await navigator.clipboard.writeText(json);
       } catch (_) {
-        const output = document.getElementById('json-code');
+        if (!isCurrentOutput()) break;
         const selection = window.getSelection();
-        if (selection && state.user?.id === userId && state.activeProject?.id === projectId && output?.textContent === json) {
+        if (selection && outputText === json) {
           const range = document.createRange();
           range.selectNodeContents(output);
           selection.removeAllRanges();
@@ -2321,8 +2328,8 @@ document.addEventListener('click', async (event) => {
         }
         break;
       }
-      if (projectId && state.user?.id === userId) void api(`/api/projects/${encodeURIComponent(projectId)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
-      showToast('Generated JSON copied.', 'success');
+      if (state.user?.id === userId) void api(`/api/projects/${encodeURIComponent(context.projectId)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
+      if (isCurrentOutput()) showToast('Generated JSON copied.', 'success');
       break;
     }
     case 'run-prototype':

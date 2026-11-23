@@ -914,6 +914,8 @@ function jsonCopyHarness() {
   const h = clientHarness();
   h.state.user = { id: 'designer' };
   h.state.activeProject = { id: 'project-a', name: 'First project' };
+  h.state.previewMode = 'json';
+  h.context.window.location.hash = '#project/project-a';
   h.state.editorText = 'GIVEN\nA designer\n\nWHEN\nThey click Copy\n\nTHEN\nExport JSON';
   const json = h.run('JSON.stringify(generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject.name)), null, 2)');
   const output = h.context.document.getElementById('json-code');
@@ -953,7 +955,17 @@ test('unavailable clipboard gives instructions without selecting a changed outpu
   assert.equal(h.context.calls.length, 0);
 });
 
-test('a successful clipboard copy preserves JSON bytes and records the original project', async () => {
+test('a confirmed JSON copy records the active project and acknowledges the current output', async () => {
+  const h = jsonCopyHarness();
+  h.context.navigator.clipboard = { writeText: async value => assert.equal(value, h.json) };
+  await h.click();
+  assert.equal(h.context.calls.length, 1);
+  assert.equal(h.context.calls[0].join(' '), '/api/projects/project-a/metrics export');
+  assert.equal(h.context.toasts[0]?.message, 'Generated JSON copied.');
+  assert.equal(h.selected.length, 0);
+});
+
+test('a delayed JSON copy records the initiating project without acknowledging a different editor', async () => {
   const h = jsonCopyHarness();
   let finish;
   h.context.navigator.clipboard = { writeText: (value) => {
@@ -962,12 +974,13 @@ test('a successful clipboard copy preserves JSON bytes and records the original 
   } };
   const copy = h.click();
   h.state.activeProject = { id: 'project-b', name: 'Second project' };
+  h.context.window.location.hash = '#project/project-b';
   finish();
   await copy;
   assert.equal(h.context.calls.length, 1);
   assert.equal(h.context.calls[0][0], '/api/projects/project-a/metrics');
   assert.equal(h.context.calls[0][1], 'export');
-  assert.equal(h.context.toasts[0].message, 'Generated JSON copied.');
+  assert.equal(h.context.toasts.length, 0);
   assert.equal(h.selected.length, 0);
 });
 
@@ -980,6 +993,41 @@ test('a late clipboard success cannot record an export under a different account
   finish();
   await copy;
   assert.equal(h.context.calls.length, 0);
+  assert.equal(h.context.toasts.length, 0);
+});
+
+test('a delayed JSON copy emits no feedback or selection after leaving its output', async () => {
+  const changes = {
+    dashboard: h => { h.context.window.location.hash = '#dashboard'; },
+    account: h => { h.state.user = { id: 'other-designer' }; },
+    reloadedProject: h => { h.state.projectLoadRevision++; },
+    outputTab: h => { h.state.previewMode = 'interface'; },
+    replacedOutput: h => {
+      const getElement = h.context.document.getElementById;
+      h.context.document.getElementById = id => id === 'json-code' ? { textContent: h.json } : getElement(id);
+    },
+    updatedOutput: h => { h.output.textContent = '{"newOutput":true}'; }
+  };
+  for (const [change, leaveOutput] of Object.entries(changes)) {
+    for (const outcome of ['success', 'denied']) {
+      const h = jsonCopyHarness();
+      let settle;
+      h.context.navigator.clipboard = { writeText: () => new Promise((resolve, reject) => {
+        settle = outcome === 'success' ? resolve : () => reject(new Error('Clipboard denied'));
+      }) };
+      const copy = h.click();
+      leaveOutput(h);
+      settle();
+      await copy;
+      const label = `${change}: ${outcome}`;
+      assert.equal(h.selected.length, 0, label);
+      assert.equal(h.context.toasts.length, 0, label);
+      if (outcome === 'success' && change !== 'account') {
+        assert.equal(h.context.calls.length, 1, label);
+        assert.equal(h.context.calls[0].join(' '), '/api/projects/project-a/metrics export', label);
+      } else assert.equal(h.context.calls.length, 0, label);
+    }
+  }
 });
 
 function linkCopyHarness() {
