@@ -11,18 +11,24 @@ function clientHarness() {
   assert.match(source, /\nboot\(\);\s*$/);
   const timers = [];
   const listeners = new Map();
+  const windowListeners = new Map();
   const elements = new Map();
   const context = vm.createContext({
     console, URL, AbortController, clearTimeout() {},
     localStorage: { getItem() { return null; }, setItem() {} },
     navigator: {},
-    window: { location: { hash: '#dashboard' }, addEventListener() {}, setTimeout(fn) { timers.push(fn); } },
+    window: {
+      location: { hash: '#dashboard' },
+      history: { state: null, length: 1, replaceState(state) { this.state = state; } },
+      addEventListener(type, listener) { windowListeners.set(type, listener); },
+      setTimeout(fn) { timers.push(fn); }
+    },
     document: { documentElement: { dataset: {} }, addEventListener(type, listener) { listeners.set(type, listener); }, getElementById(id) { if (!elements.has(id)) elements.set(id, { innerHTML: '', textContent: '', setAttribute() {} }); return elements.get(id); } }
   });
   vm.runInContext(source.replace(/\nboot\(\);\s*$/, '\n'), context, { filename: 'public/app.js' });
   const state = vm.runInContext('state', context);
   const run = (code) => vm.runInContext(code, context);
-  return { context, state, run, timers, listeners };
+  return { context, state, run, timers, listeners, windowListeners };
 }
 
 test('first project asks for a workspace name and keeps template context', () => {
@@ -373,6 +379,168 @@ test('a late save cannot redirect over a newer route before the editor reloads',
   assert.equal(h.context.window.location.hash, '#project/another');
   assert.equal(h.pending.length, 1);
 });
+
+test('browser history waits for the draft, preserves its entry on error, and follows the latest route', async (t) => {
+  async function historyHarness({ indexed = false, rapid = false, unmarked = false } = {}) {
+    const h = clientHarness();
+    const { window } = h.context;
+    const entries = ['#projects', '#dashboard', '#project/qa']
+      .map((hash, index) => ({ hash, state: null, browserEntry: { index } }));
+    const restorations = [];
+    const pending = [];
+    let index = 0;
+    let length = 1;
+    let project = { id: 'qa', updatedAt: 'A', structuredLanguage: 'original' };
+    window.history = {
+      get state() { return entries[index].state; },
+      get length() { return length; },
+      replaceState(state) { entries[index].state = state; },
+      go(distance) { restorations.push(distance); },
+      pushState(state, _title, hash) {
+        const previous = index++;
+        entries.splice(index, length, { hash, state });
+        length = index + 1;
+        window.location.hash = hash;
+        assert.equal(entries[previous].hash, '#dashboard');
+      }
+    };
+    if (indexed) window.navigation = { get currentEntry() { return entries[index].browserEntry; } };
+    const traverse = (next) => {
+      length = Math.max(length, next + 1);
+      index = next;
+      window.location.hash = entries[index].hash;
+      return h.windowListeners.get('hashchange')();
+    };
+    h.state.user = { id: 'fixture-user' };
+    h.context.fixtureApi = (url, options) => {
+      assert.equal(url, '/api/projects/qa');
+      if (!options) return project;
+      assert.equal(options.method, 'PATCH');
+      return new Promise((resolve, reject) => pending.push({ resolve, reject, body: options.body }));
+    };
+    h.run(`
+      globalThis.pages = [];
+      api = fixtureApi;
+      renderShell = page => pages.push(page);
+      renderEditor = () => pages.push('editor');
+      connectStream = () => {};
+      startPresence = () => {};
+      showToast = () => {};
+    `);
+    await traverse(0);
+    if (!rapid) await traverse(1);
+    await traverse(2);
+    if (unmarked) entries[1].state = null;
+    h.state.editorText = 'draft B';
+    h.state.editorDirty = true;
+    const accept = (request, updatedAt) => {
+      project = { ...project, updatedAt, structuredLanguage: request.body.structuredLanguage };
+      request.resolve(project);
+    };
+    return { ...h, accept, pending, restorations, traverse };
+  }
+
+  await t.test('multiple Back navigations wait for the latest edit and preserve Forward', async () => {
+    const h = await historyHarness();
+    const leaving = h.traverse(1);
+    assert.equal(h.pending[0].body.structuredLanguage, 'draft B');
+    h.state.editorText = 'draft C';
+    await h.traverse(0);
+    h.accept(h.pending[0], 'B');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(h.pending.length, 2);
+    assert.equal(h.pending[1].body.structuredLanguage, 'draft C');
+    assert.equal(h.pending[1].body.expectedUpdatedAt, 'B');
+    assert.equal(h.context.pages.at(-1), 'editor');
+    h.accept(h.pending[1], 'C');
+    await leaving;
+    assert.equal(h.context.pages.at(-1), 'projects');
+    assert.deepEqual(h.restorations, []);
+    await h.traverse(1);
+    assert.equal(h.context.pages.at(-1), 'dashboard');
+    await h.traverse(2);
+    assert.equal(h.context.pages.at(-1), 'editor');
+    assert.equal(h.state.editorText, 'draft C');
+  });
+
+  for (const status of [500, 409]) {
+    await t.test(`a ${status} response keeps the draft and returns to the original entry`, async () => {
+      const h = await historyHarness();
+      const leaving = h.traverse(1);
+      await h.traverse(0);
+      h.state.editorText = 'keep my latest draft';
+      h.pending[0].reject(Object.assign(new Error('Save failed'), { status }));
+      await leaving;
+      assert.deepEqual(h.restorations, [2]);
+      await h.traverse(2);
+      assert.deepEqual(Array.from(h.context.pages), ['projects', 'dashboard', 'editor']);
+      assert.equal(h.state.editorDirty, true);
+      assert.equal(h.state.editorConflict, status === 409);
+      assert.equal(h.state.editorText, 'keep my latest draft');
+    });
+  }
+
+  await t.test('a failed Back accounts for an intermediate hash that never rendered', async () => {
+    const h = await historyHarness({ rapid: true });
+    const leaving = h.traverse(1);
+    await h.traverse(0);
+    h.pending[0].reject(new Error('Save failed'));
+    await leaving;
+    assert.deepEqual(h.restorations, [2]);
+    assert.equal(h.pending.length, 1);
+  });
+
+  await t.test('a recovery traversal that misses the editor never retries the failed save', async () => {
+    const h = await historyHarness({ rapid: true });
+    const leaving = h.traverse(0);
+    h.pending[0].reject(new Error('Save failed'));
+    await leaving;
+    assert.deepEqual(h.restorations, [2]);
+    await h.traverse(1);
+    assert.equal(h.pending.length, 1);
+    assert.equal(h.context.window.location.hash, '#project/qa');
+    assert.equal(h.state.editorText, 'draft B');
+  });
+
+  await t.test('a browser history index can restore the editor from an unmarked destination', async () => {
+    const h = await historyHarness({ indexed: true, unmarked: true });
+    const leaving = h.traverse(1);
+    h.pending[0].reject(new Error('Save failed'));
+    await leaving;
+    assert.deepEqual(h.restorations, [1]);
+    assert.equal(h.context.window.location.hash, '#dashboard');
+    await h.traverse(2);
+    assert.equal(h.state.editorText, 'draft B');
+  });
+
+  await t.test('an older browser recovers from unmarked history without overwriting the destination', async () => {
+    const h = await historyHarness({ unmarked: true });
+    const leaving = h.traverse(1);
+    h.pending[0].reject(new Error('Save failed'));
+    await leaving;
+    assert.deepEqual(h.restorations, []);
+    assert.equal(h.context.window.location.hash, '#project/qa');
+    assert.equal(h.state.editorText, 'draft B');
+    const retry = h.traverse(1);
+    h.accept(h.pending[1], 'B');
+    await retry;
+    assert.equal(h.context.pages.at(-1), 'dashboard');
+  });
+
+  await t.test('Forward during a pending save returns to the same mounted editor', async () => {
+    const h = await historyHarness();
+    const leaving = h.traverse(1);
+    await h.traverse(2);
+    h.pending[0].reject(new Error('Save failed'));
+    await leaving;
+    assert.equal(h.pending.length, 1);
+    assert.deepEqual(h.restorations, []);
+    assert.deepEqual(Array.from(h.context.pages), ['projects', 'dashboard', 'editor']);
+    assert.equal(h.state.editorText, 'draft B');
+    assert.equal(h.state.editorDirty, true);
+  });
+});
+
 test('Share opens only after edits made during the current save are acknowledged', async () => {
   const h = editorActionHarness('share');
   const sharing = h.click();

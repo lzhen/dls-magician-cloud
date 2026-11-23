@@ -113,6 +113,10 @@ const state = {
   theme: localStorage.getItem('dls-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
 };
 let deferredInstallPrompt = null;
+let routeHistoryPosition = 0;
+let routeHistoryLength = 0;
+let editorRouteEntry = null;
+let pendingEditorNavigation = null;
 document.documentElement.dataset.theme = state.theme;
 let supabaseClient = null;
 
@@ -372,7 +376,88 @@ function parseRoute() {
   return { page, id };
 }
 
+function rememberRouteEntry() {
+  const { history, location, navigation } = window;
+  const position = history.state?.dlsRoutePosition;
+  if (Number.isInteger(position)) {
+    routeHistoryPosition = position;
+  } else {
+    // Several fragment entries can be added before the browser delivers hashchange.
+    routeHistoryPosition += Math.max(1, history.length - routeHistoryLength);
+    history.replaceState({ ...history.state, dlsRoutePosition: routeHistoryPosition }, '');
+  }
+  routeHistoryLength = history.length;
+  return { hash: location.hash, position: routeHistoryPosition, browserEntry: navigation?.currentEntry };
+}
+
+function returnToEditorEntry(editor) {
+  const { history, navigation } = window;
+  const { entry } = editor;
+  let position = entry.position;
+  let currentPosition = history.state?.dlsRoutePosition;
+  // The Navigation API also knows the positions of entries created outside this app.
+  if (entry.browserEntry && navigation?.currentEntry) {
+    position = entry.browserEntry.index;
+    currentPosition = navigation.currentEntry.index;
+  }
+  if (!editor.returning && Number.isInteger(position) && Number.isInteger(currentPosition)
+    && position >= 0 && currentPosition >= 0 && position !== currentPosition) {
+    editor.returning = true;
+    history.go(position - currentPosition);
+    return;
+  }
+  // The original entry may be gone or its position unknown. Preserve the attempted destination.
+  editor.returning = false;
+  history.pushState(null, '', entry.hash);
+  editor.entry = { hash: entry.hash, browserEntry: navigation?.currentEntry };
+  routeHistoryLength = history.length;
+}
+
+async function handleHashChange(event) {
+  if (event?.newURL && new URL(event.newURL).hash !== window.location.hash) return;
+  const editor = editorRouteEntry;
+  const isCurrent = () => editor && editor === editorRouteEntry
+    && state.activeProject?.id === editor.projectId && state.user?.id === editor.userId
+    && state.projectLoadRevision === editor.loadRevision;
+  if (!isCurrent()) return handleRoute();
+
+  const isEditorRoute = () => {
+    const route = parseRoute();
+    return route.page === 'project' && route.id === editor.projectId;
+  };
+  if (isEditorRoute()) {
+    editor.returning = false;
+    editor.entry = rememberRouteEntry();
+    return;
+  }
+  // A legacy traversal can land on an unmarked entry. Recover without retrying the failed save.
+  if (editor.returning) return returnToEditorEntry(editor);
+  if (pendingEditorNavigation === editor) return;
+  if (!state.editorDirty) return handleRoute();
+
+  // The browser has moved already. Keep the mounted editor until its latest draft is saved.
+  pendingEditorNavigation = editor;
+  clearTimeout(state.autosaveTimer);
+  try {
+    do {
+      const saved = await saveEditor();
+      if (!isCurrent() || isEditorRoute()) return;
+      if (!saved) {
+        clearTimeout(state.autosaveTimer);
+        returnToEditorEntry(editor);
+        return;
+      }
+    } while (state.editorDirty);
+    clearTimeout(state.autosaveTimer);
+    return handleRoute();
+  } finally {
+    if (pendingEditorNavigation === editor) pendingEditorNavigation = null;
+  }
+}
+
 async function handleRoute() {
+  editorRouteEntry = null;
+  const entry = rememberRouteEntry();
   const route = parseRoute();
   if (!state.user) {
     disconnectStream();
@@ -382,6 +467,7 @@ async function handleRoute() {
 
   if (route.page === 'project' && route.id) {
     if (!await loadProject(route.id)) return;
+    editorRouteEntry = { entry, projectId: route.id, userId: state.user.id, loadRevision: state.projectLoadRevision };
     renderEditor();
     connectStream(route.id);
     startPresence(route.id);
@@ -1647,7 +1733,7 @@ async function handleRealtimeMessage(message) {
     try {
       await loadBootstrap();
       const route = parseRoute();
-      if (route.page !== 'project') renderShell(route.page || 'dashboard');
+      if (!state.activeProject && route.page !== 'project') renderShell(route.page || 'dashboard');
     } catch (error) {
       console.error(error);
     }
@@ -2409,7 +2495,7 @@ document.addEventListener('dblclick', (event) => {
   showToast('Panel widths reset.', 'info');
 });
 
-window.addEventListener('hashchange', handleRoute);
+window.addEventListener('hashchange', handleHashChange);
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;
