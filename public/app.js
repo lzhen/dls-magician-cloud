@@ -1011,7 +1011,7 @@ function settingsToggle(key, title, description, on, iconName, customMark = '') 
   `;
 }
 
-function renderEditor() {
+function renderEditor({ preserveCommentsDrawer = false } = {}) {
   const project = state.activeProject;
   if (!project) return;
   const generated = parseStructuredLanguage(state.editorText, project.name);
@@ -1033,7 +1033,7 @@ function renderEditor() {
           <span id="presence-avatars">${avatarStack(members, members.length)}</span>
         </div>
         <div class="editor-actions">
-          <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
+          <button id="comments-button" class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span id="comments-button-label">Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
           <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
           <button class="btn btn-primary btn-sm editor-publish" data-action="save-workflow">${icon('sparkles', 'icon-sm')}<span>Save workflow</span></button>
           <button class="btn btn-icon btn-sm" data-action="versions" aria-haspopup="dialog" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
@@ -1056,7 +1056,12 @@ function renderEditor() {
       </section>
     </main>
   `;
-  renderModal();
+  if (preserveCommentsDrawer && state.modal?.type === 'comments') {
+    if (state.modalReturnFocus?.id === 'comments-button') state.modalReturnFocus = document.getElementById('comments-button');
+    refreshComments();
+  } else {
+    renderModal();
+  }
 }
 
 function renderIntentBlocks(steps) {
@@ -1462,17 +1467,8 @@ function renderCommentsDrawer() {
   return `
     <div class="modal-backdrop" data-action="close-modal" style="place-items:stretch end;padding:0;background:rgba(0,0,0,.38)">
       <aside class="comments-drawer" role="dialog" aria-modal="true" aria-labelledby="comments-title">
-        <header class="drawer-header"><div class="drawer-title" id="comments-title">${icon('comment')}Comments <span class="badge">${comments.filter((comment) => !comment.resolved).length} open</span></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close comments">${icon('close')}</button></header>
-        <div class="drawer-body">
-          ${comments.length ? comments.map((comment) => `
-            <article class="comment-card" style="${comment.resolved ? 'opacity:.62' : ''}">
-              <div class="comment-head">${avatar(comment.user, 'avatar-sm')}<span class="comment-author">${escapeHtml(comment.user.name)}</span><span class="comment-time">${relativeTime(comment.createdAt)}</span></div>
-              <span class="comment-anchor">${escapeHtml(comment.anchor)}</span>
-              <div class="comment-body">${escapeHtml(comment.body)}</div>
-              <div class="comment-actions"><button class="btn btn-sm btn-ghost" data-action="resolve-comment" data-comment-id="${escapeHtml(comment.id)}" data-resolved="${comment.resolved}">${icon(comment.resolved ? 'refresh' : 'check', 'icon-sm')}${comment.resolved ? 'Reopen' : 'Resolve'}</button></div>
-            </article>
-          `).join('') : `<div class="empty-state"><div><div class="empty-state-icon">${icon('comment')}</div><h3>No comments yet</h3><p>Start a review thread for the structured language, generated JSON, or flow preview.</p></div></div>`}
-        </div>
+        <header class="drawer-header"><div class="drawer-title" id="comments-title">${icon('comment')}Comments <span class="badge" id="comments-open-count">${comments.filter((comment) => !comment.resolved).length} open</span></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close comments">${icon('close')}</button></header>
+        <div class="drawer-body" id="comment-list">${renderCommentList(comments)}</div>
         <form class="drawer-composer" data-form="new-comment">
           <label class="sr-only" for="comment-body">Comment</label><textarea id="comment-body" class="textarea" name="body" placeholder="Add a comment…" required></textarea>
           <div class="composer-row"><label class="sr-only" for="comment-anchor">Comment location</label><select id="comment-anchor" class="select" name="anchor"><option>General</option><option>GIVEN</option><option>WHEN</option><option>THEN</option><option>Generated JSON</option><option>Live preview</option></select><button class="btn btn-primary" type="submit">Comment</button></div>
@@ -1480,6 +1476,37 @@ function renderCommentsDrawer() {
       </aside>
     </div>
   `;
+}
+
+function renderCommentList(comments) {
+  if (!comments.length) return `<div class="empty-state"><div><div class="empty-state-icon">${icon('comment')}</div><h3>No comments yet</h3><p>Start a review thread for the structured language, generated JSON, or flow preview.</p></div></div>`;
+  return comments.map((comment) => `
+    <article class="comment-card" style="${comment.resolved ? 'opacity:.62' : ''}">
+      <div class="comment-head">${avatar(comment.user, 'avatar-sm')}<span class="comment-author">${escapeHtml(comment.user.name)}</span><span class="comment-time">${relativeTime(comment.createdAt)}</span></div>
+      <span class="comment-anchor">${escapeHtml(comment.anchor)}</span>
+      <div class="comment-body">${escapeHtml(comment.body)}</div>
+      <div class="comment-actions"><button class="btn btn-sm btn-ghost" data-action="resolve-comment" data-comment-id="${escapeHtml(comment.id)}" data-resolved="${comment.resolved}">${icon(comment.resolved ? 'refresh' : 'check', 'icon-sm')}${comment.resolved ? 'Reopen' : 'Resolve'}</button></div>
+    </article>
+  `).join('');
+}
+
+function refreshComments() {
+  const comments = state.activeProject.comments;
+  const unresolved = comments.filter((comment) => !comment.resolved).length;
+  const toolbarLabel = document.getElementById('comments-button-label');
+  if (toolbarLabel) toolbarLabel.textContent = `Comments${unresolved ? ` · ${unresolved}` : ''}`;
+  if (state.modal?.type !== 'comments') return;
+  const list = document.getElementById('comment-list');
+  const badge = document.getElementById('comments-open-count');
+  if (!list || !badge) return;
+  const focused = document.activeElement;
+  const focusedCommentId = focused && list.contains(focused) ? focused.dataset.commentId : null;
+  list.innerHTML = renderCommentList(comments);
+  badge.textContent = `${unresolved} open`;
+  if (focusedCommentId) {
+    [...list.querySelectorAll('[data-comment-id]')]
+      .find((button) => button.dataset.commentId === focusedCommentId)?.focus();
+  }
 }
 
 function canRestoreVersion(project) {
@@ -1654,7 +1681,7 @@ async function streamEvents(projectId, controller) {
       const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
       if (!line) continue;
       try {
-        handleRealtimeMessage(JSON.parse(line.slice(6)));
+        handleRealtimeMessage(JSON.parse(line.slice(6)), controller);
       } catch (error) {
         console.error('Invalid realtime message', error);
       }
@@ -1669,7 +1696,7 @@ function disconnectStream() {
   }
 }
 
-async function handleRealtimeMessage(message) {
+async function handleRealtimeMessage(message, controller = state.streamController) {
   if (!message || message.type === 'connected') return;
   const payload = message.payload || {};
 
@@ -1679,17 +1706,18 @@ async function handleRealtimeMessage(message) {
     return;
   }
 
-  if (message.type === 'comment_added' && state.activeProject) {
-    state.activeProject.comments.unshift(payload.comment);
-    if (state.modal?.type === 'comments') renderModal();
-    showToast(`${payload.comment.user.name} added a comment`, 'info');
-    return;
-  }
-
-  if (message.type === 'comment_updated' && state.activeProject) {
-    const index = state.activeProject.comments.findIndex((item) => item.id === payload.comment.id);
-    if (index >= 0) state.activeProject.comments[index] = payload.comment;
-    if (state.modal?.type === 'comments') renderModal();
+  if (message.type === 'comment_added' || message.type === 'comment_updated') {
+    const context = editorContext();
+    if (controller !== state.streamController || !context || message.projectId !== context.projectId) return;
+    const comments = state.activeProject.comments;
+    if (message.type === 'comment_added') {
+      comments.unshift(payload.comment);
+      showToast(`${payload.comment.user.name} added a comment`, 'info');
+    } else {
+      const index = comments.findIndex((item) => item.id === payload.comment.id);
+      if (index >= 0) comments[index] = payload.comment;
+    }
+    refreshComments();
     return;
   }
 
@@ -1723,7 +1751,7 @@ async function handleRealtimeMessage(message) {
     } else {
       state.activeProject = { ...payload.project, presence: state.activeProject.presence || [] };
       state.editorText = payload.project.structuredLanguage;
-      renderEditor();
+      renderEditor({ preserveCommentsDrawer: true });
       showToast(`${payload.actor?.name || 'A collaborator'} updated the workflow`, 'info');
     }
     return;
@@ -1949,8 +1977,9 @@ async function mutateComment(method, body, commentId) {
       const index = project.comments.findIndex(item => item.id === comment.id);
       if (index >= 0) project.comments[index] = comment;
       else if (method === 'POST') project.comments.unshift(comment);
-      if (state.modal?.type === 'comments') renderModal();
+      refreshComments();
       if (method === 'POST') showToast('Comment added');
+      return true;
     } catch (error) {
       if (isCurrent()) showToast(error.message, 'error');
     } finally {
@@ -1963,9 +1992,12 @@ async function mutateComment(method, body, commentId) {
 async function addComment(form) {
   if (form.dataset.submitting) return;
   const data = new FormData(form);
+  const body = data.get('body');
+  const anchor = data.get('anchor');
   form.dataset.submitting = 'true';
   try {
-    await mutateComment('POST', { body: data.get('body'), anchor: data.get('anchor') });
+    const posted = await mutateComment('POST', { body, anchor });
+    if (posted && form.isConnected && form.elements.body.value === body && form.elements.anchor.value === anchor) form.reset();
   } finally {
     delete form.dataset.submitting;
   }

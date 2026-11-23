@@ -655,8 +655,19 @@ function commentHarness() {
   h.context.window.location.hash = '#project/qa';
   h.state.activeProject.comments = [];
   h.state.editorDirty = false;
-  h.context.FormData = class { get(name) { return { body: 'Review note', anchor: 'WHEN' }[name]; } };
-  h.context.fixtureForm = { dataset: { form: 'new-comment' } };
+  h.context.FormData = class {
+    constructor(form) { this.form = form; }
+    get(name) { return this.form.elements[name].value; }
+  };
+  h.context.fixtureForm = {
+    isConnected: true,
+    dataset: { form: 'new-comment' },
+    elements: { body: { value: 'Review note' }, anchor: { value: 'WHEN' } },
+    reset() {
+      this.elements.body.value = '';
+      this.elements.anchor.value = 'General';
+    }
+  };
   h.run('renderModal = () => {};');
   return h;
 }
@@ -670,6 +681,7 @@ test('an edit while posting a comment saves once the comment revision arrives', 
   const posting = h.listeners.get('submit')({ target: h.context.fixtureForm, preventDefault() {} });
   assert.equal(pending[0].url, '/api/projects/qa/comments');
   h.state.modal = null;
+  h.context.fixtureForm.isConnected = false;
   h.state.editorText = 'Edit made while posting';
   h.state.editorDirty = true;
   const saving = h.run('saveEditor()');
@@ -683,6 +695,64 @@ test('an edit while posting a comment saves once the comment revision arrives', 
   assert.equal(pending[1].body.structuredLanguage, 'Edit made while posting');
   pending[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: pending[1].body.structuredLanguage });
   assert.equal(await saving, true);
+});
+
+test('realtime comments refresh the visible discussion without replacing the drawer', async () => {
+  const h = commentHarness();
+  const { document } = h.context;
+  const modal = document.getElementById('modal-root');
+  const list = document.getElementById('comment-list');
+  const badge = document.getElementById('comments-open-count');
+  const toolbar = document.getElementById('comments-button-label');
+  h.state.modal = { type: 'comments' };
+  modal.innerHTML = h.run('renderCommentsDrawer()');
+  const originalDrawer = modal.innerHTML;
+  h.run('renderModal = () => { throw new Error("Must keep the mounted Comments drawer"); };');
+  h.context.fixtureNote = { id: 'note', body: '<Review>', anchor: 'WHEN', user: { name: 'Reviewer' }, resolved: false };
+
+  await h.run(`handleRealtimeMessage({ type: 'comment_added', projectId: 'qa', payload: { comment: fixtureNote } })`);
+  assert.equal(modal.innerHTML, originalDrawer);
+  assert.match(list.innerHTML, /&lt;Review&gt;/);
+  assert.equal(badge.textContent, '1 open');
+  assert.equal(toolbar.textContent, 'Comments · 1');
+
+  await h.run(`handleRealtimeMessage({ type: 'comment_updated', projectId: 'qa', payload: { comment: { ...fixtureNote, resolved: true } } })`);
+  assert.match(list.innerHTML, /Reopen/);
+  assert.equal(badge.textContent, '0 open');
+  assert.equal(toolbar.textContent, 'Comments');
+
+  const currentList = list.innerHTML;
+  await h.run(`
+    handleRealtimeMessage({ type: 'comment_added', projectId: 'old-project', payload: { comment: fixtureNote } });
+    const oldController = new AbortController();
+    state.streamController = new AbortController();
+    handleRealtimeMessage({ type: 'comment_added', projectId: 'qa', payload: { comment: fixtureNote } }, oldController);
+  `);
+  assert.equal(h.state.activeProject.comments.length, 1);
+  assert.equal(list.innerHTML, currentList);
+  assert.deepEqual(Array.from(h.context.toasts), ['Reviewer added a comment']);
+});
+
+test('a successful comment clears only the submitted draft still in the composer', async () => {
+  const h = commentHarness();
+  const form = h.context.fixtureForm;
+  h.run('api = () => new Promise(resolve => { globalThis.completeComment = resolve; });');
+  const first = h.run('addComment(fixtureForm)');
+  form.elements.body.value = 'Next review';
+  form.elements.anchor.value = 'THEN';
+  await h.run('addComment(fixtureForm)');
+  h.context.completeComment({ id: 'first', body: 'Review note', anchor: 'WHEN' });
+  await first;
+  assert.equal(form.elements.body.value, 'Next review');
+  assert.equal(form.elements.anchor.value, 'THEN');
+  assert.equal(h.state.activeProject.comments.length, 1);
+
+  const second = h.run('addComment(fixtureForm)');
+  h.context.completeComment({ id: 'second', body: 'Next review', anchor: 'THEN' });
+  await second;
+  assert.equal(form.elements.body.value, '');
+  assert.equal(form.elements.anchor.value, 'General');
+  assert.equal(h.state.activeProject.comments.length, 2);
 });
 
 test('resolving a comment cannot adopt a revision with an unseen collaborator edit', async () => {

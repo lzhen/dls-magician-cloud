@@ -2,7 +2,7 @@
 
 const APP_BASE_PATH = new URL(self.location.href).pathname.replace(/\/sw\.js$/, '');
 const CACHE_PREFIX = `dls-magician${APP_BASE_PATH.replaceAll('/', '-')}-`;
-const CACHE_VERSION = `${CACHE_PREFIX}browser-back-save-20261123-v1`;
+const CACHE_VERSION = `${CACHE_PREFIX}comment-draft-20261123-v1`;
 const appPath = path => `${APP_BASE_PATH}${path}`;
 const APP_SHELL = [
   '/icons/dls-32-20261008.png',
@@ -13,7 +13,7 @@ const APP_SHELL = [
   '/',
   '/index.html',
   '/styles.css?v=brand-lockup-20261021-original-svg-editor-checkpoint-20261121',
-  '/app.js?v=browser-back-save-20261123',
+  '/app.js?v=comment-draft-20261123',
   '/interaction-engine.js?v=inline-and-1',
   '/component-preview.js?v=inline-and-1',
   '/component-preview.css?v=inline-and-1',
