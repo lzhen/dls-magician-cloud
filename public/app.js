@@ -1723,9 +1723,10 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
   }
 
   if (message.type === 'comment_added' || message.type === 'comment_updated') {
-    const context = editorContext();
-    if (controller !== state.streamController || !context || message.projectId !== context.projectId) return;
-    const comments = state.activeProject.comments;
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const comments = project.comments;
     if (message.type === 'comment_added') {
       comments.unshift(payload.comment);
       showToast(`${payload.comment.user.name} added a comment`, 'info');

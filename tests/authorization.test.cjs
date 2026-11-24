@@ -298,6 +298,39 @@ test('posting and resolving a comment returns the revision for subsequent saves'
   assert.equal(saved.json.comments[0].updatedAt, undefined);
 });
 
+test('collaborator comment events report the persisted revisions for the editor’s next save', async t => {
+  const h = harness(t);
+  const before = (await h.request('editor', 'GET', '/api/projects/a')).json;
+  const commenterToken = h.token('commenter');
+  const commenterStream = await h.request('commenter', 'GET', '/api/events?projectId=a', undefined, commenterToken);
+  const editorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const readPersistedProject = () => vm.runInContext("storage.read().snapshot.projects.find(project => project.id === 'a')", h.context);
+  const posted = await h.request('commenter', 'POST', '/api/projects/a/comments', { body: 'Review note', anchor: 'WHEN' }, commenterToken);
+  assert.equal(posted.status, 201);
+  const addedProject = readPersistedProject();
+  const resolved = await h.request('commenter', 'PATCH', '/api/projects/a/comments/' + posted.json.id, { resolved: true }, commenterToken);
+  assert.equal(resolved.status, 200);
+  const resolvedProject = readPersistedProject();
+  assert.equal(resolvedProject.structuredLanguage, before.structuredLanguage);
+  assert.ok(Date.parse(addedProject.updatedAt) > Date.parse(before.updatedAt));
+  assert.ok(Date.parse(resolvedProject.updatedAt) > Date.parse(addedProject.updatedAt));
+  assert.deepEqual(commenterStream.events.map(event => event.type), ['connected']);
+
+  const commentEvents = editorStream.events.filter(event => ['comment_added', 'comment_updated'].includes(event.type));
+  assert.deepEqual(commentEvents.map(({ type, projectId, payload }) => ({
+    type, projectId, id: payload.comment.id, resolved: payload.comment.resolved,
+    previousUpdatedAt: payload.previousUpdatedAt, updatedAt: payload.updatedAt
+  })), [
+    { type: 'comment_added', projectId: 'a', id: posted.json.id, resolved: false, previousUpdatedAt: before.updatedAt, updatedAt: addedProject.updatedAt },
+    { type: 'comment_updated', projectId: 'a', id: posted.json.id, resolved: true, previousUpdatedAt: addedProject.updatedAt, updatedAt: resolvedProject.updatedAt }
+  ]);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: commentEvents[1].payload.updatedAt, structuredLanguage: 'Workflow refined after review'
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.json.structuredLanguage, 'Workflow refined after review');
+});
+
 test('confirmed invitee can claim an explicit invitation and receives only the assigned project access', async (t) => {
   const h = harness(t);
   const invited = await h.request('editor', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Commenter' });

@@ -719,7 +719,9 @@ async function handleApi(req, res, url) {
     saveDb();
     broadcast('comment_added', {
       comment: { ...comment, user: publicUser(currentUser) },
-      activity: activityPayload(activity)
+      activity: activityPayload(activity),
+      previousUpdatedAt,
+      updatedAt: project.updatedAt
     }, project.id, session.sid);
     return sendJson(res, 201, { ...comment, user: publicUser(currentUser), previousUpdatedAt, updatedAt: project.updatedAt });
   }
@@ -736,7 +738,11 @@ async function handleApi(req, res, url) {
     comment.resolved = Boolean(body.resolved);
     project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
-    broadcast('comment_updated', { comment: { ...comment, user: publicUser(getUser(comment.userId)) } }, project.id, session.sid);
+    broadcast('comment_updated', {
+      comment: { ...comment, user: publicUser(getUser(comment.userId)) },
+      previousUpdatedAt,
+      updatedAt: project.updatedAt
+    }, project.id, session.sid);
     return sendJson(res, 200, { ...comment, user: publicUser(getUser(comment.userId)), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 

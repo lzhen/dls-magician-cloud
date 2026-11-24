@@ -746,8 +746,10 @@ test('an edit while posting a comment saves once the comment revision arrives', 
   assert.equal(await saving, true);
 });
 
-test('realtime comments refresh the visible discussion without replacing the drawer', async () => {
-  const h = commentHarness();
+test('realtime comments refresh the visible discussion without replacing the drawer', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  await h.open();
   const { document } = h.context;
   const modal = document.getElementById('modal-root');
   const list = document.getElementById('comment-list');
@@ -757,26 +759,21 @@ test('realtime comments refresh the visible discussion without replacing the dra
   modal.innerHTML = h.run('renderCommentsDrawer()');
   const originalDrawer = modal.innerHTML;
   h.run('renderModal = () => { throw new Error("Must keep the mounted Comments drawer"); };');
-  h.context.fixtureNote = { id: 'note', body: '<Review>', anchor: 'WHEN', user: { name: 'Reviewer' }, resolved: false };
-
-  await h.run(`handleRealtimeMessage({ type: 'comment_added', projectId: 'qa', payload: { comment: fixtureNote } })`);
+  await h.commentAdded();
   assert.equal(modal.innerHTML, originalDrawer);
   assert.match(list.innerHTML, /&lt;Review&gt;/);
   assert.equal(badge.textContent, '1 open');
   assert.equal(toolbar.textContent, 'Comments · 1');
 
-  await h.run(`handleRealtimeMessage({ type: 'comment_updated', projectId: 'qa', payload: { comment: { ...fixtureNote, resolved: true } } })`);
+  await h.commentUpdated();
   assert.match(list.innerHTML, /Reopen/);
   assert.equal(badge.textContent, '0 open');
   assert.equal(toolbar.textContent, 'Comments');
 
   const currentList = list.innerHTML;
-  await h.run(`
-    handleRealtimeMessage({ type: 'comment_added', projectId: 'old-project', payload: { comment: fixtureNote } });
-    const oldController = new AbortController();
-    state.streamController = new AbortController();
-    handleRealtimeMessage({ type: 'comment_added', projectId: 'qa', payload: { comment: fixtureNote } }, oldController);
-  `);
+  await h.commentAdded(undefined, 'old-project');
+  h.state.streamController = new AbortController();
+  await h.commentAdded();
   assert.equal(h.state.activeProject.comments.length, 1);
   assert.equal(list.innerHTML, currentList);
   assert.deepEqual(Array.from(h.context.toasts), ['Reviewer added a comment']);
@@ -887,10 +884,12 @@ function editorStreamHarness() {
   const original = '2026-11-24T00:00:00.000Z';
   const updated = '2026-11-24T00:00:01.000Z';
   const version = { id: 'checkpoint', number: '1.0.1', user: { name: 'Collaborator' } };
+  const note = { id: 'note', body: '<Review>', anchor: 'WHEN', user: { name: 'Reviewer' }, resolved: false };
   h.context.window.location.hash = '#project/qa';
   h.state.activeProject.updatedAt = original;
   h.state.activeProject.versions = [];
   h.state.activeProject.members = [];
+  h.state.activeProject.comments = [];
   h.context.TextDecoder = TextDecoder;
   let stream;
   h.context.fetch = async (url) => {
@@ -921,8 +920,42 @@ function editorStreamHarness() {
     const member = { userId: 'invitee', role: 'Commenter', user: { name: 'New member' } };
     return receive({ type: 'member_updated', projectId, payload: { member, ...revision } });
   }
-  return { ...h, original, updated, open, receive, checkpoint, invitation, memberUpdate, close: () => stream?.close() };
+  function commentAdded(revision = { previousUpdatedAt: original, updatedAt: updated }, projectId = 'qa') {
+    return receive({ type: 'comment_added', projectId, payload: { comment: note, ...revision } });
+  }
+  function commentUpdated(revision = { previousUpdatedAt: original, updatedAt: updated }, projectId = 'qa') {
+    return receive({ type: 'comment_updated', projectId, payload: { comment: { ...note, resolved: true }, ...revision } });
+  }
+  return { ...h, original, updated, note, open, receive, checkpoint, invitation, memberUpdate, commentAdded, commentUpdated, close: () => stream?.close() };
 }
+
+test('a collaborator posting or resolving a comment lets the pending autosave keep its draft', async t => {
+  for (const [label, resolved] of [['posting', false], ['resolving', true]]) {
+    await t.test(label, async subtest => {
+      const h = editorStreamHarness();
+      subtest.after(h.close);
+      if (resolved) h.state.activeProject.comments.push(h.note);
+      const calls = [];
+      h.context.fixtureApi = async (_url, { body }) => {
+        calls.push(body);
+        if (body.expectedUpdatedAt !== h.updated) throw Object.assign(new Error('conflict'), { status: 409 });
+        return { ...h.state.activeProject, updatedAt: 'saved', structuredLanguage: body.structuredLanguage };
+      };
+      h.run('api = fixtureApi; scheduleAutosave();');
+      const [autosave] = h.timers;
+      await h.open();
+      await (resolved ? h.commentUpdated() : h.commentAdded());
+      assert.equal(h.state.activeProject.comments[0].resolved, resolved);
+      assert.equal(h.state.activeProject.structuredLanguage, 'original');
+      assert.equal(h.state.editorText, 'draft B');
+      assert.equal(h.state.editorDirty, true);
+      assert.equal(await autosave(), true);
+      assert.equal(calls[0].expectedUpdatedAt, h.updated);
+      assert.equal(calls[0].structuredLanguage, 'draft B');
+      assert.equal(h.state.editorConflict, false);
+    });
+  }
+});
 
 test('a collaborator role change lets the pending autosave keep its draft', async t => {
   const h = editorStreamHarness();
@@ -1005,19 +1038,31 @@ test('metadata events after an unseen workflow edit preserve the conditional sav
   const h = editorStreamHarness();
   t.after(h.close);
   const later = '2026-11-24T00:00:02.000Z';
-  h.run(`api = async () => { throw Object.assign(new Error('conflict'), { status: 409 }); };`);
+  const latest = '2026-11-24T00:00:03.000Z';
+  const calls = [];
+  h.context.fixtureApi = async (_url, { body }) => {
+    calls.push(body);
+    if (body.expectedUpdatedAt !== latest) throw Object.assign(new Error('conflict'), { status: 409 });
+    return { ...h.state.activeProject, updatedAt: 'saved', structuredLanguage: body.structuredLanguage };
+  };
+  h.run('api = fixtureApi;');
   await h.open();
   await h.receive({ type: 'project_updated', projectId: 'qa', payload: { project: { updatedAt: h.updated, structuredLanguage: 'remote edit' } } });
   await h.checkpoint({ previousUpdatedAt: h.updated, updatedAt: later });
   await h.invitation({ previousUpdatedAt: h.updated, updatedAt: later });
   await h.memberUpdate({ previousUpdatedAt: h.updated, updatedAt: later });
+  await h.commentAdded({ previousUpdatedAt: h.updated, updatedAt: later });
+  await h.commentUpdated({ previousUpdatedAt: later, updatedAt: latest });
   assert.equal(h.state.activeProject.updatedAt, h.original);
   assert.equal(await h.run('saveEditor()'), false);
+  assert.equal(calls[0].expectedUpdatedAt, h.original);
   assert.equal(h.state.editorText, 'draft B');
   assert.equal(h.state.editorConflict, true);
   await h.checkpoint();
   await h.invitation();
   await h.memberUpdate();
+  await h.commentAdded();
+  await h.commentUpdated();
   assert.equal(h.state.activeProject.updatedAt, h.original);
   assert.equal(h.state.editorConflict, true);
 });
@@ -1029,9 +1074,12 @@ test('legacy and delayed metadata events update UI without changing the current 
   await h.checkpoint({});
   await h.invitation({});
   await h.memberUpdate({});
+  await h.commentAdded({});
+  await h.commentUpdated({});
   assert.equal(h.state.activeProject.versions.length, 1);
   assert.equal(h.state.activeProject.members[0].userId, 'invitee');
   assert.equal(h.state.activeProject.members[0].role, 'Commenter');
+  assert.equal(h.state.activeProject.comments[0].resolved, true);
   assert.equal(h.state.activeProject.updatedAt, h.original);
   const later = '2026-11-24T00:00:02.000Z';
   h.state.activeProject.updatedAt = later;
@@ -1040,10 +1088,12 @@ test('legacy and delayed metadata events update UI without changing the current 
   await h.invitation();
   await h.invitation({ previousUpdatedAt: later, updatedAt: h.updated });
   await h.memberUpdate({ previousUpdatedAt: later, updatedAt: h.updated });
+  await h.commentAdded();
+  await h.commentUpdated({ previousUpdatedAt: later, updatedAt: h.updated });
   assert.equal(h.state.activeProject.updatedAt, later);
 });
 
-test('checkpoint, invitation and role events apply only to the connected editor', async t => {
+test('metadata events apply only to the connected editor', async t => {
   const cases = [
     ['another project', { projectId: 'other' }],
     ['changed route', { change: h => { h.context.window.location.hash = '#dashboard'; } }],
@@ -1057,15 +1107,20 @@ test('checkpoint, invitation and role events apply only to the connected editor'
       const h = editorStreamHarness();
       subtest.after(h.close);
       h.state.activeProject.members = [{ userId: 'invitee', role: 'Viewer' }];
+      h.state.activeProject.comments.push(h.note);
       await h.open(userId);
       change?.(h);
       await h.checkpoint(undefined, projectId);
       await h.invitation(undefined, projectId);
       await h.memberUpdate(undefined, projectId);
+      await h.commentAdded(undefined, projectId);
+      await h.commentUpdated(undefined, projectId);
       assert.equal(h.state.activeProject.updatedAt, h.original);
       assert.equal(h.state.activeProject.versions.length, 0);
       assert.equal(h.state.activeProject.members.length, 1);
       assert.equal(h.state.activeProject.members[0].role, 'Viewer');
+      assert.equal(h.state.activeProject.comments.length, 1);
+      assert.equal(h.state.activeProject.comments[0].resolved, false);
       assert.equal(h.state.editorText, 'draft B');
     });
   }
