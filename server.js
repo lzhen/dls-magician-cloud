@@ -784,7 +784,12 @@ async function handleApi(req, res, url) {
     recordMetric(db, 'share');
     saveDb();
     const member = { userId: user.id, role, user: publicUser(user) };
-    broadcast('member_invited', { member, activity: activityPayload(activity) }, project.id, session.sid);
+    broadcast('member_invited', {
+      member,
+      previousUpdatedAt,
+      updatedAt: project.updatedAt,
+      activity: activityPayload(activity)
+    }, project.id, session.sid);
     return sendJson(res, 201, { ...member, previousUpdatedAt, updatedAt: project.updatedAt });
   }
 

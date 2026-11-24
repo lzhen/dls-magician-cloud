@@ -311,10 +311,13 @@ test('confirmed invitee can claim an explicit invitation and receives only the a
   assert.equal(h.db().users.find((u) => u.id === invited.json.userId).authUserId, 'invitee');
 });
 
-test('invitation reports the exact project revision transition used by the next save', async (t) => {
+test('invitation reports the exact project revision transition to the inviter and collaborators', async (t) => {
   const h = harness(t);
   const before = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
-  const invited = await h.request('owner-a', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Viewer' });
+  const inviterToken = h.token('owner-a');
+  const inviterStream = await h.request('owner-a', 'GET', '/api/events?projectId=a', undefined, inviterToken);
+  const editorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const invited = await h.request('owner-a', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Viewer' }, inviterToken);
   assert.equal(invited.status, 201);
   assert.equal(invited.json.role, 'Viewer');
   assert.equal(invited.json.user.email, 'invitee@example.invalid');
@@ -323,8 +326,14 @@ test('invitation reports the exact project revision transition used by the next 
   const after = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
   assert.equal(invited.json.updatedAt, after.updatedAt);
   assert.equal(after.structuredLanguage, before.structuredLanguage);
-  const saved = await h.request('owner-a', 'PATCH', '/api/projects/a', {
-    expectedUpdatedAt: invited.json.updatedAt, structuredLanguage: 'GIVEN\nA new edit\nWHEN\nSave\nTHEN\nPreserve it'
+  assert.deepEqual(inviterStream.events.map(event => event.type), ['connected']);
+  const event = editorStream.events.find(event => event.type === 'member_invited');
+  assert.equal(event.projectId, 'a');
+  assert.equal(event.payload.member.userId, invited.json.userId);
+  assert.equal(event.payload.previousUpdatedAt, invited.json.previousUpdatedAt);
+  assert.equal(event.payload.updatedAt, invited.json.updatedAt);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: event.payload.updatedAt, structuredLanguage: 'GIVEN\nA new edit\nWHEN\nSave\nTHEN\nPreserve it'
   });
   assert.equal(saved.status, 200);
   assert.match(saved.json.structuredLanguage, /A new edit/);

@@ -1704,6 +1704,14 @@ function disconnectStream() {
   }
 }
 
+function applyRealtimeMetadataRevision(project, { previousUpdatedAt, updatedAt }) {
+  // A gap between revisions may include a workflow edit the draft has not seen.
+  if (!state.editorConflict && typeof previousUpdatedAt === 'string' && project.updatedAt === previousUpdatedAt
+    && typeof updatedAt === 'string' && Date.parse(updatedAt) > Date.parse(previousUpdatedAt)) {
+    project.updatedAt = updatedAt;
+  }
+}
+
 async function handleRealtimeMessage(message, controller = state.streamController, streamEditor = null) {
   if (!message || message.type === 'connected') return;
   const payload = message.payload || {};
@@ -1730,9 +1738,12 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
   }
 
   if (message.type === 'member_invited' && state.activeProject) {
-    const existing = state.activeProject.members.findIndex((member) => member.userId === payload.member.userId);
-    if (existing >= 0) state.activeProject.members[existing] = payload.member;
-    else state.activeProject.members.push(payload.member);
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const existing = project.members.findIndex((member) => member.userId === payload.member.userId);
+    if (existing >= 0) project.members[existing] = payload.member;
+    else project.members.push(payload.member);
     if (state.modal?.type === 'share') renderModal();
     showToast(`${payload.member.user.name} joined the project`, 'info');
     return;
@@ -1747,13 +1758,9 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
 
   if (message.type === 'version_created' && state.activeProject) {
     if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
-    const { version, previousUpdatedAt, updatedAt } = payload;
+    const { version } = payload;
     const project = state.activeProject;
-    // A gap between revisions may include a workflow edit the draft has not seen.
-    if (!state.editorConflict && typeof previousUpdatedAt === 'string' && project.updatedAt === previousUpdatedAt
-      && typeof updatedAt === 'string' && Date.parse(updatedAt) > Date.parse(previousUpdatedAt)) {
-      project.updatedAt = updatedAt;
-    }
+    applyRealtimeMetadataRevision(project, payload);
     project.versions.unshift(version);
     state.selectedVersionId = version.id;
     if (state.modal?.type === 'versions') renderModal();

@@ -833,7 +833,7 @@ test('saving a named checkpoint advances the revision for the next edit', async 
   assert.equal(h.context.sent[1].body.expectedUpdatedAt, 'B');
 });
 
-function checkpointStreamHarness() {
+function editorStreamHarness() {
   const h = savingHarness();
   const original = '2026-11-24T00:00:00.000Z';
   const updated = '2026-11-24T00:00:01.000Z';
@@ -841,6 +841,7 @@ function checkpointStreamHarness() {
   h.context.window.location.hash = '#project/qa';
   h.state.activeProject.updatedAt = original;
   h.state.activeProject.versions = [];
+  h.state.activeProject.members = [];
   h.context.TextDecoder = TextDecoder;
   let stream;
   h.context.fetch = async (url) => {
@@ -849,7 +850,7 @@ function checkpointStreamHarness() {
   };
   h.run(`
     supabaseClient = { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } };
-    renderEditor = () => { throw new Error('Checkpoint must keep the mounted editor'); };
+    renderEditor = () => { throw new Error('Metadata event must keep the mounted editor'); };
   `);
   async function receive(message) {
     stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(message)}\n\n`));
@@ -863,11 +864,43 @@ function checkpointStreamHarness() {
   function checkpoint(revision = { previousUpdatedAt: original, updatedAt: updated }, projectId = 'qa') {
     return receive({ type: 'version_created', projectId, payload: { version, ...revision } });
   }
-  return { ...h, original, updated, open, receive, checkpoint, close: () => stream?.close() };
+  function invitation(revision = { previousUpdatedAt: original, updatedAt: updated }, projectId = 'qa') {
+    const member = { userId: 'invitee', role: 'Viewer', user: { name: 'New member' } };
+    return receive({ type: 'member_invited', projectId, payload: { member, ...revision } });
+  }
+  return { ...h, original, updated, open, receive, checkpoint, invitation, close: () => stream?.close() };
 }
 
+test('a collaborator invitation lets the pending autosave continue without changing the draft', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  h.context.serverRevision = h.updated;
+  h.run(`
+    globalThis.sent = [];
+    api = async (url, { body }) => {
+      sent.push(body);
+      if (body.expectedUpdatedAt !== serverRevision) throw Object.assign(new Error('conflict'), { status: 409 });
+      return { ...state.activeProject, updatedAt: 'saved', structuredLanguage: body.structuredLanguage };
+    };
+    scheduleAutosave();
+  `);
+  const [autosave] = h.timers;
+  await h.open();
+  await h.invitation();
+  assert.equal(h.state.activeProject.members[0].userId, 'invitee');
+  assert.match(h.context.toasts[0], /New member joined the project/);
+  assert.equal(h.state.activeProject.structuredLanguage, 'original');
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.state.editorDirty, true);
+  assert.equal(h.timers.length, 1);
+  assert.equal(await autosave(), true);
+  assert.equal(h.context.sent[0].expectedUpdatedAt, h.updated);
+  assert.equal(h.context.sent[0].structuredLanguage, 'draft B');
+  assert.equal(h.state.editorConflict, false);
+});
+
 test('a collaborator checkpoint lets the pending autosave keep its draft and use the new revision', async t => {
-  const h = checkpointStreamHarness();
+  const h = editorStreamHarness();
   t.after(h.close);
   h.context.serverRevision = h.updated;
   h.run(`
@@ -893,38 +926,44 @@ test('a collaborator checkpoint lets the pending autosave keep its draft and use
   assert.equal(h.state.editorConflict, false);
 });
 
-test('a checkpoint after an unseen workflow edit preserves the conditional save conflict', async t => {
-  const h = checkpointStreamHarness();
+test('metadata events after an unseen workflow edit preserve the conditional save conflict', async t => {
+  const h = editorStreamHarness();
   t.after(h.close);
   const later = '2026-11-24T00:00:02.000Z';
   h.run(`api = async () => { throw Object.assign(new Error('conflict'), { status: 409 }); };`);
   await h.open();
   await h.receive({ type: 'project_updated', projectId: 'qa', payload: { project: { updatedAt: h.updated, structuredLanguage: 'remote edit' } } });
   await h.checkpoint({ previousUpdatedAt: h.updated, updatedAt: later });
+  await h.invitation({ previousUpdatedAt: h.updated, updatedAt: later });
   assert.equal(h.state.activeProject.updatedAt, h.original);
   assert.equal(await h.run('saveEditor()'), false);
   assert.equal(h.state.editorText, 'draft B');
   assert.equal(h.state.editorConflict, true);
   await h.checkpoint();
+  await h.invitation();
   assert.equal(h.state.activeProject.updatedAt, h.original);
   assert.equal(h.state.editorConflict, true);
 });
 
-test('legacy and delayed checkpoint events reach history without changing the current revision', async t => {
-  const h = checkpointStreamHarness();
+test('legacy and delayed metadata events update UI without changing the current revision', async t => {
+  const h = editorStreamHarness();
   t.after(h.close);
   await h.open();
   await h.checkpoint({});
+  await h.invitation({});
   assert.equal(h.state.activeProject.versions.length, 1);
+  assert.equal(h.state.activeProject.members[0].userId, 'invitee');
   assert.equal(h.state.activeProject.updatedAt, h.original);
   const later = '2026-11-24T00:00:02.000Z';
   h.state.activeProject.updatedAt = later;
   await h.checkpoint();
   await h.checkpoint({ previousUpdatedAt: later, updatedAt: h.updated });
+  await h.invitation();
+  await h.invitation({ previousUpdatedAt: later, updatedAt: h.updated });
   assert.equal(h.state.activeProject.updatedAt, later);
 });
 
-test('checkpoint events apply only to the connected project, account, route, and load', async t => {
+test('checkpoint and invitation events apply only to the connected project, account, route, and load', async t => {
   const cases = [
     ['another project', { projectId: 'other' }],
     ['changed route', { change: h => { h.context.window.location.hash = '#dashboard'; } }],
@@ -935,13 +974,15 @@ test('checkpoint events apply only to the connected project, account, route, and
   ];
   for (const [label, { change, projectId, userId }] of cases) {
     await t.test(label, async subtest => {
-      const h = checkpointStreamHarness();
+      const h = editorStreamHarness();
       subtest.after(h.close);
       await h.open(userId);
       change?.(h);
       await h.checkpoint(undefined, projectId);
+      await h.invitation(undefined, projectId);
       assert.equal(h.state.activeProject.updatedAt, h.original);
       assert.equal(h.state.activeProject.versions.length, 0);
+      assert.equal(h.state.activeProject.members.length, 0);
       assert.equal(h.state.editorText, 'draft B');
     });
   }
