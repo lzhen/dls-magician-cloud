@@ -1659,6 +1659,8 @@ function connectStream(projectId = null) {
 }
 
 async function streamEvents(projectId, controller) {
+  const editor = editorContext();
+  const userId = state.user?.id;
   const { data } = await supabaseClient.auth.getSession();
   if (!data.session?.access_token) return;
   const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
@@ -1671,6 +1673,7 @@ async function streamEvents(projectId, controller) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let streamEditor = null;
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -1681,7 +1684,12 @@ async function streamEvents(projectId, controller) {
       const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
       if (!line) continue;
       try {
-        handleRealtimeMessage(JSON.parse(line.slice(6)), controller);
+        const message = JSON.parse(line.slice(6));
+        if (message?.type === 'connected') {
+          streamEditor = userId && editor?.projectId === projectId && message.payload?.userId === userId ? editor : null;
+          continue;
+        }
+        handleRealtimeMessage(message, controller, streamEditor);
       } catch (error) {
         console.error('Invalid realtime message', error);
       }
@@ -1696,7 +1704,7 @@ function disconnectStream() {
   }
 }
 
-async function handleRealtimeMessage(message, controller = state.streamController) {
+async function handleRealtimeMessage(message, controller = state.streamController, streamEditor = null) {
   if (!message || message.type === 'connected') return;
   const payload = message.payload || {};
 
@@ -1738,10 +1746,18 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
   }
 
   if (message.type === 'version_created' && state.activeProject) {
-    state.activeProject.versions.unshift(payload.version);
-    state.selectedVersionId = payload.version.id;
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const { version, previousUpdatedAt, updatedAt } = payload;
+    const project = state.activeProject;
+    // A gap between revisions may include a workflow edit the draft has not seen.
+    if (!state.editorConflict && typeof previousUpdatedAt === 'string' && project.updatedAt === previousUpdatedAt
+      && typeof updatedAt === 'string' && Date.parse(updatedAt) > Date.parse(previousUpdatedAt)) {
+      project.updatedAt = updatedAt;
+    }
+    project.versions.unshift(version);
+    state.selectedVersionId = version.id;
     if (state.modal?.type === 'versions') renderModal();
-    showToast(`${payload.version.user.name} saved version ${payload.version.number}`, 'info');
+    showToast(`${version.user.name} saved version ${version.number}`, 'info');
     return;
   }
 

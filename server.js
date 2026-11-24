@@ -822,6 +822,8 @@ async function handleApi(req, res, url) {
     saveDb();
     broadcast('version_created', {
       version: { ...version, user: publicUser(currentUser) },
+      previousUpdatedAt,
+      updatedAt: project.updatedAt,
       activity: activityPayload(activity)
     }, project.id, session.sid);
     return sendJson(res, 201, { ...version, user: publicUser(currentUser), previousUpdatedAt, updatedAt: project.updatedAt });

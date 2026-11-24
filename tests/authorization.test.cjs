@@ -563,9 +563,13 @@ test('unknown permissions and malformed or duplicate memberships default deny', 
  test('conditional checkpoint captures the requested revision and preserves its transition', async t => {
   const h = harness(t);
   const initial = h.db().projects[0].updatedAt;
-  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+  const authorToken = h.token('owner-a');
+  const authorStream = await h.request('owner-a', 'GET', '/api/events?projectId=a', undefined, authorToken);
+  const siblingStream = await h.request('owner-a', 'GET', '/api/events?projectId=a');
+  const collaboratorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const saved = await h.request('owner-a', 'PATCH', '/api/projects/a', {
     structuredLanguage: 'Checked workflow', expectedUpdatedAt: initial
-  });
+  }, authorToken);
   assert.equal(saved.status, 200);
   const before = protectedState(h);
   const stale = await h.request('editor', 'POST', '/api/projects/a/versions', {
@@ -573,15 +577,23 @@ test('unknown permissions and malformed or duplicate memberships default deny', 
   });
   assert.equal(stale.status, 409);
   assert.equal(protectedState(h), before);
-  const version = await h.request('editor', 'POST', '/api/projects/a/versions', {
+  const version = await h.request('owner-a', 'POST', '/api/projects/a/versions', {
     message: 'Checked checkpoint', expectedUpdatedAt: saved.json.updatedAt
-  });
+  }, authorToken);
   assert.equal(version.status, 201);
   assert.equal(version.json.content, 'Checked workflow');
   assert.equal(version.json.previousUpdatedAt, saved.json.updatedAt);
   assert.notEqual(version.json.updatedAt, version.json.previousUpdatedAt);
+  assert.deepEqual(authorStream.events.map(event => event.type), ['connected']);
+  assert.deepEqual(siblingStream.events.map(event => event.type), ['connected']);
+  const event = collaboratorStream.events.find(event => event.type === 'version_created');
+  assert.equal(event.projectId, 'a');
+  assert.equal(event.payload.version.id, version.json.id);
+  assert.equal(event.payload.previousUpdatedAt, version.json.previousUpdatedAt);
+  assert.equal(event.payload.updatedAt, version.json.updatedAt);
+  assert.equal(h.db().projects[0].structuredLanguage, 'Checked workflow');
   const nextSave = await h.request('editor', 'PATCH', '/api/projects/a', {
-    structuredLanguage: 'Continued workflow', expectedUpdatedAt: version.json.updatedAt
+    structuredLanguage: 'Continued workflow', expectedUpdatedAt: event.payload.updatedAt
   });
   assert.equal(nextSave.status, 200);
   assert.equal(h.db().projects[0].versions[0].content, 'Checked workflow');
