@@ -929,6 +929,58 @@ function editorStreamHarness() {
   return { ...h, original, updated, note, open, receive, checkpoint, invitation, memberUpdate, commentAdded, commentUpdated, close: () => stream?.close() };
 }
 
+test('collaboration updates the member list without remounting the invite form or other share tabs', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  await h.open();
+  const { document } = h.context;
+  const modal = document.getElementById('modal-root');
+  const list = document.getElementById('share-member-list');
+  const address = document.getElementById('invite-email');
+  const formRole = document.getElementById('invite-role');
+  let modalRenders = 0;
+  Object.defineProperty(modal, 'innerHTML', {
+    set() {
+      modalRenders++;
+      address.value = '';
+      formRole.value = 'Editor';
+      document.activeElement = null;
+    }
+  });
+  h.run('activateModal = () => {};');
+  h.state.modal = { type: 'share' };
+  h.state.shareTab = 'invite';
+  address.value = 'unsent@example.test';
+  formRole.value = 'Commenter';
+  document.activeElement = address;
+  list.contains = element => element !== address;
+
+  await h.invitation();
+  assert.equal(modalRenders, 0);
+  assert.equal(address.value, 'unsent@example.test');
+  assert.equal(formRole.value, 'Commenter');
+  assert.equal(document.activeElement, address);
+  assert.match(list.innerHTML, /New member/);
+  assert.match(list.innerHTML, /<option selected>Viewer<\/option>/);
+
+  const memberRole = { dataset: { userId: 'invitee' }, focus() { document.activeElement = this; } };
+  document.activeElement = { dataset: { userId: 'invitee' } };
+  list.querySelectorAll = () => [memberRole];
+  await h.memberUpdate({ previousUpdatedAt: h.updated, updatedAt: '2026-11-24T00:00:02.000Z' });
+  assert.equal(modalRenders, 0);
+  assert.equal(address.value, 'unsent@example.test');
+  assert.equal(formRole.value, 'Commenter');
+  assert.equal(document.activeElement, memberRole);
+  assert.match(list.innerHTML, /<option selected>Commenter<\/option>/);
+
+  const currentList = list.innerHTML;
+  h.state.shareTab = 'link';
+  await h.invitation();
+  assert.equal(modalRenders, 0);
+  assert.equal(list.innerHTML, currentList);
+  assert.equal(h.state.activeProject.members[0].role, 'Viewer');
+});
+
 test('a collaborator posting or resolving a comment lets the pending autosave keep its draft', async t => {
   for (const [label, resolved] of [['posting', false], ['resolving', true]]) {
     await t.test(label, async subtest => {

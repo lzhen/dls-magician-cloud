@@ -1416,18 +1416,35 @@ function renderInviteTab(project) {
       <button class="btn btn-primary" type="submit">Invite</button>
     </form>
     <h3>People with access</h3>
-    <div class="people-list">
-      ${project.members.map((member) => `
-        <div class="people-row">
-          ${avatar(member.user)}
-          <div><div class="person-name">${escapeHtml(member.user.name)}${member.user.id === state.user.id ? ' (you)' : ''}</div><div class="person-email">${escapeHtml(member.user.email)}</div></div>
-          <select class="select" data-action="member-role" data-user-id="${escapeHtml(member.userId)}" aria-label="Role for ${escapeHtml(member.user.name)}">
-            ${['Admin', 'Editor', 'Commenter', 'Viewer'].map((role) => `<option ${member.role === role ? 'selected' : ''}>${role}</option>`).join('')}
-          </select>
-        </div>
-      `).join('')}
+    <div class="people-list" id="share-member-list">
+      ${renderShareMembers(project.members)}
     </div>
   `;
+}
+
+function renderShareMembers(members) {
+  return members.map((member) => `
+    <div class="people-row">
+      ${avatar(member.user)}
+      <div><div class="person-name">${escapeHtml(member.user.name)}${member.user.id === state.user.id ? ' (you)' : ''}</div><div class="person-email">${escapeHtml(member.user.email)}</div></div>
+      <select class="select" data-action="member-role" data-user-id="${escapeHtml(member.userId)}" aria-label="Role for ${escapeHtml(member.user.name)}">
+        ${['Admin', 'Editor', 'Commenter', 'Viewer'].map((role) => `<option ${member.role === role ? 'selected' : ''}>${role}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+}
+
+function refreshShareMembers(members) {
+  if (state.modal?.type !== 'share' || state.shareTab !== 'invite') return;
+  const list = document.getElementById('share-member-list');
+  if (!list) return;
+  const focused = document.activeElement;
+  const focusedUserId = focused && list.contains(focused) ? focused.dataset.userId : null;
+  list.innerHTML = renderShareMembers(members);
+  if (focusedUserId) {
+    [...list.querySelectorAll('[data-action="member-role"]')]
+      .find((control) => control.dataset.userId === focusedUserId)?.focus({ preventScroll: true });
+  }
 }
 
 function renderShareLinkTab(project) {
@@ -1745,7 +1762,7 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
     const existing = project.members.findIndex((member) => member.userId === payload.member.userId);
     if (existing >= 0) project.members[existing] = payload.member;
     else project.members.push(payload.member);
-    if (state.modal?.type === 'share') renderModal();
+    refreshShareMembers(project.members);
     showToast(`${payload.member.user.name} joined the project`, 'info');
     return;
   }
@@ -1756,7 +1773,7 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
     applyRealtimeMetadataRevision(project, payload);
     const existing = project.members.findIndex((member) => member.userId === payload.member.userId);
     if (existing >= 0) project.members[existing] = payload.member;
-    if (state.modal?.type === 'share') renderModal();
+    refreshShareMembers(project.members);
     return;
   }
 
