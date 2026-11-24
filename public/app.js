@@ -264,9 +264,18 @@ function brandLockup() {
   return `<span class="brand-lockup" role="img" aria-label="DLS Magician Cloud"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">Magician</span></span></span>`;
 }
 
+function themeToggleAppearance() {
+  const switchToDark = state.theme === 'light';
+  return {
+    label: `Switch to ${switchToDark ? 'dark' : 'light'} mode`,
+    title: switchToDark ? 'Dark mode' : 'Light mode',
+    graphic: icon(switchToDark ? 'moon' : 'sun')
+  };
+}
+
 function themeToggle(className = '') {
-  const light = state.theme === 'light';
-  return `<button class="btn btn-icon btn-ghost theme-toggle ${className}" data-action="toggle-theme" aria-label="Switch to ${light ? 'dark' : 'light'} mode" title="${light ? 'Dark' : 'Light'} mode">${icon(light ? 'moon' : 'sun')}</button>`;
+  const { label, title, graphic } = themeToggleAppearance();
+  return `<button class="btn btn-icon btn-ghost theme-toggle ${className}" data-action="toggle-theme" aria-label="${label}" title="${title}">${graphic}</button>`;
 }
 
 async function api(path, options = {}) {
@@ -2228,12 +2237,18 @@ document.addEventListener('click', async (event) => {
       scheduleAutosave();
       break;
     }
-    case 'toggle-theme':
+    case 'toggle-theme': {
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;
       localStorage.setItem('dls-theme', state.theme);
-      await handleRoute();
+      const { label, title, graphic } = themeToggleAppearance();
+      for (const toggle of document.querySelectorAll('[data-action="toggle-theme"]')) {
+        toggle.setAttribute('aria-label', label);
+        toggle.title = title;
+        toggle.innerHTML = graphic;
+      }
       break;
+    }
     case 'auth-provider':
       await authenticate(actionElement.dataset.provider);
       break;

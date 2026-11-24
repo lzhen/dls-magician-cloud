@@ -31,6 +31,64 @@ function clientHarness() {
   return { context, state, run, timers, listeners, windowListeners };
 }
 
+test('switching theme keeps the sign-in email and Projects filter mounted', async (t) => {
+  for (const page of ['login', 'projects']) {
+    await t.test(page, async () => {
+      const h = clientHarness();
+      const { document, window, localStorage } = h.context;
+      window.location.hash = '#' + page;
+      if (page === 'login') {
+        h.state.magicOpen = true;
+        h.run('renderLogin()');
+      } else {
+        h.state.user = { id: 'designer', name: 'Fixture Designer', initials: 'FD', color: 'violet' };
+        h.run('renderShell("projects")');
+      }
+      h.run('globalThis.streamChanges = 0; connectStream = disconnectStream = () => { streamChanges++; };');
+      const app = document.getElementById('app');
+      const html = app.innerHTML;
+      assert.match(html, /data-action="toggle-theme"/);
+      assert.match(html, page === 'login' ? /name="email"/ : /id="project-filter"/);
+      let redraws = 0;
+      Object.defineProperty(app, 'innerHTML', { get: () => html, set: () => { redraws++; } });
+      const labels = new Map();
+      const toggle = { dataset: {action: 'toggle-theme'}, setAttribute(name, value) { labels.set(name, value); } };
+      const rows = ['alpha design', 'beta design'].map(projectName => ({ dataset: { projectName }, style: {} }));
+      document.querySelectorAll = (selector) => {
+        if (selector === '#project-table-body tr') return rows;
+        assert.equal(selector, '[data-action="toggle-theme"]');
+        return [toggle];
+      };
+      if (page === 'projects') {
+        const target = { id: 'project-filter', value: 'alpha', matches: () => false };
+        h.listeners.get('input')({ target });
+        assert.deepEqual(rows.map(row => row.style.display), ['', 'none']);
+      }
+      const preferences = [];
+      localStorage.setItem = (key, value) => preferences.push([key, value]);
+      const click = () => h.listeners.get('click')({ target: { closest: () => toggle } });
+
+      await click();
+      assert.equal(redraws, 0);
+      assert.equal(document.documentElement.dataset.theme, 'light');
+      assert.equal(labels.get('aria-label'), 'Switch to dark mode');
+      assert.equal(toggle.title, 'Dark mode');
+      assert.equal(toggle.innerHTML, h.run('icon("moon")'));
+
+      await click();
+      assert.equal(redraws, 0);
+      assert.equal(document.documentElement.dataset.theme, 'dark');
+      assert.equal(labels.get('aria-label'), 'Switch to light mode');
+      assert.equal(toggle.title, 'Light mode');
+      assert.equal(toggle.innerHTML, h.run('icon("sun")'));
+      assert.deepEqual(preferences, [['dls-theme', 'light'], ['dls-theme', 'dark']]);
+      assert.equal(window.location.hash, '#' + page);
+      assert.equal(h.context.streamChanges, 0);
+      if (page === 'projects') assert.deepEqual(rows.map(row => row.style.display), ['', 'none']);
+    });
+  }
+});
+
 test('first project asks for a workspace name and keeps template context', () => {
   const h = clientHarness();
   h.state.user = { id: 'new-user', name: 'New user' };
