@@ -1750,8 +1750,11 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
   }
 
   if (message.type === 'member_updated' && state.activeProject) {
-    const existing = state.activeProject.members.findIndex((member) => member.userId === payload.member.userId);
-    if (existing >= 0) state.activeProject.members[existing] = payload.member;
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const existing = project.members.findIndex((member) => member.userId === payload.member.userId);
+    if (existing >= 0) project.members[existing] = payload.member;
     if (state.modal?.type === 'share') renderModal();
     return;
   }
@@ -2124,16 +2127,22 @@ async function restoreVersion(versionId) {
 }
 
 async function updateMemberRole(userId, role) {
-  if (!state.activeProject) return;
+  const context = editorContext();
+  if (!context) return;
+  const { projectId, isCurrent } = context;
   try {
-    const member = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/members/${encodeURIComponent(userId)}`, {
+    const { previousUpdatedAt, updatedAt, ...member } = await api(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
       method: 'PATCH',
       body: { role }
     });
-    const index = state.activeProject.members.findIndex((item) => item.userId === userId);
-    if (index >= 0) state.activeProject.members[index] = member;
-    showToast(`${member.user.name} is now ${role}`);
+    if (!isCurrent()) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, { previousUpdatedAt, updatedAt });
+    const index = project.members.findIndex((item) => item.userId === userId);
+    if (index >= 0) project.members[index] = member;
+    showToast(`${member.user.name} is now ${member.role}`);
   } catch (error) {
+    if (!isCurrent()) return;
     renderModal();
     showToast(error.message, 'error');
   }

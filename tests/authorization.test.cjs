@@ -339,6 +339,34 @@ test('invitation reports the exact project revision transition to the inviter an
   assert.match(saved.json.structuredLanguage, /A new edit/);
 });
 
+test('a role change reports its exact project revision to the administrator and collaborators', async t => {
+  const h = harness(t);
+  const before = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  const adminToken = h.token('owner-a');
+  const adminStream = await h.request('owner-a', 'GET', '/api/events?projectId=a', undefined, adminToken);
+  const editorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const updated = await h.request('owner-a', 'PATCH', '/api/projects/a/members/guest', { role: 'Commenter' }, adminToken);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.json.role, 'Commenter');
+  const after = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  assert.equal(after.structuredLanguage, before.structuredLanguage);
+  assert.equal(updated.json.previousUpdatedAt, before.updatedAt);
+  assert.equal(updated.json.updatedAt, after.updatedAt);
+  assert.ok(Date.parse(after.updatedAt) > Date.parse(before.updatedAt));
+  assert.deepEqual(adminStream.events.map(event => event.type), ['connected']);
+  const event = editorStream.events.find(event => event.type === 'member_updated');
+  assert.equal(event.projectId, 'a');
+  assert.equal(event.payload.member.userId, 'guest');
+  assert.equal(event.payload.member.role, 'Commenter');
+  assert.equal(event.payload.previousUpdatedAt, updated.json.previousUpdatedAt);
+  assert.equal(event.payload.updatedAt, updated.json.updatedAt);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: event.payload.updatedAt, structuredLanguage: 'GIVEN\nA draft\nWHEN\nSave\nTHEN\nPreserve it'
+  });
+  assert.equal(saved.status, 200);
+  assert.match(saved.json.structuredLanguage, /A draft/);
+});
+
 test('unconfirmed email cannot claim invitation; same email cannot hijack an already bound subject', async (t) => {
   const h = harness(t);
   await h.request('owner-a', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Editor' });

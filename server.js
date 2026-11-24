@@ -803,11 +803,14 @@ async function handleApi(req, res, url) {
     if (!authorizeProject(res, project, session, 'administer')) return;
     if (!ROLES.includes(body.role)) return sendError(res, 400, 'Invalid role.');
     if (member.userId === project.ownerId && body.role !== 'Admin') return sendError(res, 409, 'The project owner must remain an administrator.');
+    const previousUpdatedAt = project.updatedAt;
     member.role = body.role;
     project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
-    broadcast('member_updated', { member: { ...member, user: publicUser(getUser(member.userId)) } }, project.id, session.sid);
-    return sendJson(res, 200, { ...member, user: publicUser(getUser(member.userId)) });
+    const updatedMember = { ...member, user: publicUser(getUser(member.userId)) };
+    const revision = { previousUpdatedAt, updatedAt: project.updatedAt };
+    broadcast('member_updated', { member: updatedMember, ...revision }, project.id, session.sid);
+    return sendJson(res, 200, { ...updatedMember, ...revision });
   }
 
   const versionMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions$/);

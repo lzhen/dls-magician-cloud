@@ -271,6 +271,55 @@ function inviteHarness() {
   return h;
 }
 
+test('a role change receipt advances autosave while keeping the draft', async () => {
+  const h = inviteHarness();
+  const before = '2026-11-24T00:00:00.000Z';
+  const after = '2026-11-24T00:00:01.000Z';
+  h.state.activeProject.updatedAt = before;
+  h.state.activeProject.members.push(h.context.fixtureMember);
+  const receipt = { ...h.context.fixtureMember, role: 'Commenter', previousUpdatedAt: before, updatedAt: after };
+  const calls = [];
+  h.context.fixtureApi = async (url, options) => {
+    calls.push({ url, ...options });
+    if (url.endsWith('/members/guest')) return receipt;
+    if (options.body.expectedUpdatedAt !== after) throw Object.assign(new Error('conflict'), { status: 409 });
+    return { id: 'qa', updatedAt: 'saved', structuredLanguage: options.body.structuredLanguage };
+  };
+  h.run('api = fixtureApi;');
+  await h.run('updateMemberRole("guest", "Commenter")');
+  assert.equal(calls[0].url, '/api/projects/qa/members/guest');
+  assert.equal(calls[0].body.role, 'Commenter');
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.state.editorDirty, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.state.activeProject.members)), [{ ...h.context.fixtureMember, role: 'Commenter' }]);
+  assert.equal(await h.run('saveEditor()'), true);
+  assert.equal(calls[1].body.expectedUpdatedAt, after);
+});
+
+test('a delayed role receipt or error cannot update a replaced editor', async t => {
+  for (const response of ['success', 'error']) {
+    await t.test(response, async () => {
+      const h = inviteHarness();
+      h.state.activeProject.members.push(h.context.fixtureMember);
+      h.run(`
+        api = () => new Promise((resolve, reject) => {
+          globalThis.finishRole = resolve;
+          globalThis.failRole = reject;
+        });
+      `);
+      const pending = h.run('updateMemberRole("guest", "Commenter")');
+      h.state.projectLoadRevision += 1;
+      if (response === 'success') h.context.finishRole({ ...h.context.fixtureMember, role: 'Commenter' });
+      else h.context.failRole(new Error('Role update failed'));
+      await pending;
+      assert.equal(h.state.activeProject.members[0].role, 'Viewer');
+      assert.equal(h.state.activeProject.updatedAt, 'A');
+      assert.equal(h.context.inviteRenderCount, 0);
+      assert.equal(h.context.toasts.length, 0);
+    });
+  }
+});
+
 test('a successful invite acknowledges its revision for the next editor save', async () => {
   const h = inviteHarness();
   h.run(`
@@ -868,8 +917,34 @@ function editorStreamHarness() {
     const member = { userId: 'invitee', role: 'Viewer', user: { name: 'New member' } };
     return receive({ type: 'member_invited', projectId, payload: { member, ...revision } });
   }
-  return { ...h, original, updated, open, receive, checkpoint, invitation, close: () => stream?.close() };
+  function memberUpdate(revision = { previousUpdatedAt: original, updatedAt: updated }, projectId = 'qa') {
+    const member = { userId: 'invitee', role: 'Commenter', user: { name: 'New member' } };
+    return receive({ type: 'member_updated', projectId, payload: { member, ...revision } });
+  }
+  return { ...h, original, updated, open, receive, checkpoint, invitation, memberUpdate, close: () => stream?.close() };
 }
+
+test('a collaborator role change lets the pending autosave keep its draft', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  h.state.activeProject.members = [{ userId: 'invitee', role: 'Viewer' }];
+  const calls = [];
+  h.context.fixtureApi = async (_url, { body }) => {
+    calls.push(body);
+    if (body.expectedUpdatedAt !== h.updated) throw Object.assign(new Error('conflict'), { status: 409 });
+    return { ...h.state.activeProject, updatedAt: 'saved', structuredLanguage: body.structuredLanguage };
+  };
+  h.run('api = fixtureApi; scheduleAutosave();');
+  const [autosave] = h.timers;
+  await h.open();
+  await h.memberUpdate();
+  assert.equal(h.state.activeProject.members[0].role, 'Commenter');
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.state.editorDirty, true);
+  assert.equal(await autosave(), true);
+  assert.equal(calls[0].expectedUpdatedAt, h.updated);
+  assert.equal(calls[0].structuredLanguage, 'draft B');
+});
 
 test('a collaborator invitation lets the pending autosave continue without changing the draft', async t => {
   const h = editorStreamHarness();
@@ -935,12 +1010,14 @@ test('metadata events after an unseen workflow edit preserve the conditional sav
   await h.receive({ type: 'project_updated', projectId: 'qa', payload: { project: { updatedAt: h.updated, structuredLanguage: 'remote edit' } } });
   await h.checkpoint({ previousUpdatedAt: h.updated, updatedAt: later });
   await h.invitation({ previousUpdatedAt: h.updated, updatedAt: later });
+  await h.memberUpdate({ previousUpdatedAt: h.updated, updatedAt: later });
   assert.equal(h.state.activeProject.updatedAt, h.original);
   assert.equal(await h.run('saveEditor()'), false);
   assert.equal(h.state.editorText, 'draft B');
   assert.equal(h.state.editorConflict, true);
   await h.checkpoint();
   await h.invitation();
+  await h.memberUpdate();
   assert.equal(h.state.activeProject.updatedAt, h.original);
   assert.equal(h.state.editorConflict, true);
 });
@@ -951,8 +1028,10 @@ test('legacy and delayed metadata events update UI without changing the current 
   await h.open();
   await h.checkpoint({});
   await h.invitation({});
+  await h.memberUpdate({});
   assert.equal(h.state.activeProject.versions.length, 1);
   assert.equal(h.state.activeProject.members[0].userId, 'invitee');
+  assert.equal(h.state.activeProject.members[0].role, 'Commenter');
   assert.equal(h.state.activeProject.updatedAt, h.original);
   const later = '2026-11-24T00:00:02.000Z';
   h.state.activeProject.updatedAt = later;
@@ -960,10 +1039,11 @@ test('legacy and delayed metadata events update UI without changing the current 
   await h.checkpoint({ previousUpdatedAt: later, updatedAt: h.updated });
   await h.invitation();
   await h.invitation({ previousUpdatedAt: later, updatedAt: h.updated });
+  await h.memberUpdate({ previousUpdatedAt: later, updatedAt: h.updated });
   assert.equal(h.state.activeProject.updatedAt, later);
 });
 
-test('checkpoint and invitation events apply only to the connected project, account, route, and load', async t => {
+test('checkpoint, invitation and role events apply only to the connected editor', async t => {
   const cases = [
     ['another project', { projectId: 'other' }],
     ['changed route', { change: h => { h.context.window.location.hash = '#dashboard'; } }],
@@ -976,13 +1056,16 @@ test('checkpoint and invitation events apply only to the connected project, acco
     await t.test(label, async subtest => {
       const h = editorStreamHarness();
       subtest.after(h.close);
+      h.state.activeProject.members = [{ userId: 'invitee', role: 'Viewer' }];
       await h.open(userId);
       change?.(h);
       await h.checkpoint(undefined, projectId);
       await h.invitation(undefined, projectId);
+      await h.memberUpdate(undefined, projectId);
       assert.equal(h.state.activeProject.updatedAt, h.original);
       assert.equal(h.state.activeProject.versions.length, 0);
-      assert.equal(h.state.activeProject.members.length, 0);
+      assert.equal(h.state.activeProject.members.length, 1);
+      assert.equal(h.state.activeProject.members[0].role, 'Viewer');
       assert.equal(h.state.editorText, 'draft B');
     });
   }
