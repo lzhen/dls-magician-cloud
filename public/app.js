@@ -92,6 +92,7 @@ const state = {
   editorDirty: false,
   editorConflict: false,
   editorSaveRequest: null,
+  editorSaveFailure: null,
   editorCommentRequest: null,
   editorRestoreRequest: null,
   autosaveTimer: null,
@@ -487,12 +488,14 @@ async function handleRoute() {
   stopPresence();
   state.activeProject = null;
   state.editorText = '';
+  state.editorSaveFailure = null;
   connectStream(null);
   renderShell(route.page || 'dashboard');
 }
 
 async function loadProject(projectId, { silent = false } = {}) {
   const revision = ++state.projectLoadRevision;
+  state.editorSaveFailure = null;
   const userId = state.user?.id;
   const isCurrent = () => {
     const route = parseRoute();
@@ -1027,11 +1030,7 @@ function renderEditor({ preserveCommentsDrawer = false } = {}) {
   const generated = parseStructuredLanguage(state.editorText, project.name);
   const members = project.presence?.length ? project.presence : project.members.map((member) => member.user);
   const unresolved = project.comments.filter((comment) => !comment.resolved).length;
-  const request = state.editorSaveRequest;
-  const savingCurrentDraft = request?.isCurrent() && request.text === state.editorText;
-  const saveStatus = state.editorConflict ? editorConflictMessage
-    : savingCurrentDraft ? 'Saving…'
-    : state.editorDirty ? 'Unsaved changes…' : `Saved ${relativeTime(project.updatedAt)}`;
+  const saveStatus = editorSaveStatus();
 
   app.innerHTML = `
     <main class="editor-shell">
@@ -1214,10 +1213,20 @@ function updateEditorOutputs() {
     validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'Valid' : 'Needs input'}`;
   }
   if (lineNumbers) lineNumbers.innerHTML = renderLineNumbers(state.editorText);
-  updateEditorSaveStatus(state.editorConflict ? editorConflictMessage : 'Unsaved changes…');
+  if (state.editorSaveFailure?.text !== state.editorText) state.editorSaveFailure = null;
+  updateEditorSaveStatus(editorSaveStatus());
 }
 
 const editorConflictMessage = 'Save conflict: your draft is kept here. Copy it before reloading the latest version, then merge your changes. Autosave is paused.';
+
+function editorSaveStatus() {
+  if (state.editorConflict) return editorConflictMessage;
+  const request = state.editorSaveRequest;
+  if (request?.text === state.editorText && request.isCurrent()) return 'Saving…';
+  if (!state.editorDirty) return `Saved ${relativeTime(state.activeProject.updatedAt)}`;
+  const failure = state.editorSaveFailure;
+  return failure?.text === state.editorText && failure.isCurrent() ? failure.message : 'Unsaved changes…';
+}
 
 function updateEditorSaveStatus(message, status) {
   const saveState = document.getElementById('editor-save-state');
@@ -1254,10 +1263,16 @@ async function saveEditor() {
   const text = state.editorText;
   const expectedUpdatedAt = state.activeProject.updatedAt;
   const isCurrent = () => state.activeProject?.id === projectId && state.user?.id === userId && state.projectLoadRevision === loadRevision;
+  function reportFailure(message) {
+    if (state.editorText !== text) return;
+    state.editorSaveFailure = { text, isCurrent, message };
+    updateEditorSaveStatus(message);
+  }
   if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
-    updateEditorSaveStatus('Save unavailable: copy your draft, then reload the project.');
+    reportFailure('Save unavailable: copy your draft, then reload the project.');
     return false;
   }
+  state.editorSaveFailure = null;
   updateEditorSaveStatus('Saving…');
   const request = { projectId, text, isCurrent, promise: null };
   state.editorSaveRequest = request;
@@ -1281,7 +1296,7 @@ async function saveEditor() {
         updateEditorSaveStatus(editorConflictMessage, '409');
         showToast(editorConflictMessage, 'error', 10000);
       } else {
-        updateEditorSaveStatus('Save failed — your draft is kept here.');
+        reportFailure('Save failed — your draft is kept here.');
         showToast(error.message, 'error');
       }
       return false;
@@ -1911,6 +1926,7 @@ async function authenticate(provider, email = '') {
 
 async function logout(signOut = true) {
   state.projectLoadRevision += 1;
+  state.editorSaveFailure = null;
   if (signOut && supabaseClient) await supabaseClient.auth.signOut();
   disconnectStream();
   stopPresence();

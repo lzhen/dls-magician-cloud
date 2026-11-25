@@ -387,17 +387,23 @@ test('reconnecting resumes autosave for the current mounted draft', async (t) =>
 });
 
 test('switching Output views keeps the mounted autosave status in sync', async (t) => {
-  const success = { id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' };
+  const success = { id: 'qa', updatedAt: '2026-11-25T00:00:00Z', structuredLanguage: 'draft B', name: 'Fixture', members: [], comments: [] };
   const outcomes = [
     { name: 'save succeeds', value: success, message: 'Saved just now', dirty: false },
     { name: 'newer edit waits to save', value: success, edit: 'draft C', message: 'Unsaved changes…', dirty: true },
-    { name: 'network error', code: 503, message: /Save failed/, dirty: true },
+    { name: 'network error', code: 503, message: /Save failed/, dirty: true, retry: true },
+    { name: 'editing after a network error', code: 503, message: /Save failed/, dirty: true, editAfterFailure: true },
+    { name: 'changing accounts after a network error', code: 503, message: /Save failed/, dirty: true, switchAccount: true },
+    { name: 'loading another project after a network error', code: 503, message: /Save failed/, dirty: true, switchProject: true },
+    { name: 'network error for earlier draft', code: 503, edit: 'draft C', message: 'Unsaved changes…', dirty: true },
+    { name: 'missing revision', unavailable: true, message: /Save unavailable/, dirty: true },
     { name: 'revision conflict', code: 409, message: /Save conflict/, dirty: true },
   ];
   for (const scenario of outcomes) {
     await t.test(scenario.name, async () => {
       const h = savingHarness();
       Object.assign(h.state.activeProject, { name: 'Fixture', members: [], comments: [] });
+      if (scenario.unavailable) delete h.state.activeProject.updatedAt;
       const { document, window } = h.context;
       window.location.hash = '#project/qa';
       window.requestAnimationFrame = () => {};
@@ -424,26 +430,65 @@ test('switching Output views keeps the mounted autosave status in sync', async (
       h.run('api = fixtureApi; renderEditor();');
       const firstStatus = attachedStatus;
       const saving = h.run('saveEditor()');
-      assert.equal(firstStatus.textContent, 'Saving…');
+      if (!scenario.unavailable) assert.equal(firstStatus.textContent, 'Saving…');
       if (scenario.edit) {
         h.state.editorText = scenario.edit;
         h.run('updateEditorOutputs()');
       }
+      const switchView = mode => h.listeners.get('click')({ target: { closest: () => ({ dataset: { action: 'preview-mode', mode } }) } });
       for (const mode of ['json', 'flow']) {
-        await h.listeners.get('click')({ target: { closest: () => ({ dataset: { action: 'preview-mode', mode } }) } });
+        await switchView(mode);
         assert.equal(h.state.previewMode, mode);
       }
       const statusWhilePending = attachedStatus.textContent;
       assert.notEqual(attachedStatus, firstStatus);
       if (scenario.code) rejectSave(Object.assign(new Error('Fixture save failed'), { status: scenario.code }));
-      else resolveSave(scenario.value);
-      assert.equal(await saving, !scenario.code);
+      else if (!scenario.unavailable) resolveSave(scenario.value);
+      assert.equal(await saving, !scenario.code && !scenario.unavailable);
       if (typeof scenario.message === 'string') assert.equal(attachedStatus.textContent, scenario.message);
       else assert.match(attachedStatus.textContent, scenario.message);
-      assert.equal(statusWhilePending, scenario.edit ? 'Unsaved changes…' : 'Saving…');
+      if (!scenario.unavailable) assert.equal(statusWhilePending, scenario.edit ? 'Unsaved changes…' : 'Saving…');
       assert.equal(h.state.editorText, scenario.edit ?? 'draft B');
       assert.equal(h.state.editorDirty, scenario.dirty);
       assert.equal(attachedStatus['data-http-status'], scenario.code === 409 ? '409' : undefined);
+
+      if (scenario.dirty) {
+        await switchView('interface');
+        if (typeof scenario.message === 'string') assert.equal(attachedStatus.textContent, scenario.message);
+        else assert.match(attachedStatus.textContent, scenario.message);
+      }
+      if (scenario.retry) {
+        const retrying = h.run('saveEditor()');
+        assert.equal(attachedStatus.textContent, 'Saving…');
+        resolveSave(success);
+        assert.equal(await retrying, true);
+        assert.equal(attachedStatus.textContent, 'Saved just now');
+        h.run('renderEditor()');
+        assert.match(attachedStatus.textContent, /^Saved /);
+      }
+      if (scenario.editAfterFailure) {
+        for (const text of ['draft C', 'draft B']) {
+          h.state.editorText = text;
+          h.run('updateEditorOutputs()');
+          assert.equal(attachedStatus.textContent, 'Unsaved changes…');
+        }
+        await switchView('json');
+        assert.equal(attachedStatus.textContent, 'Unsaved changes…');
+      }
+      if (scenario.switchAccount) {
+        h.state.user = { id: 'another-user' };
+        await switchView('json');
+        assert.equal(attachedStatus.textContent, 'Unsaved changes…');
+      }
+      if (scenario.switchProject) {
+        window.location.hash = '#project/other';
+        h.context.nextProject = { ...success, id: 'other' };
+        h.run('api = async () => nextProject;');
+        assert.equal(await h.run('loadProject("other", { silent: true })'), true);
+        h.state.editorDirty = true;
+        await switchView('json');
+        assert.equal(attachedStatus.textContent, 'Unsaved changes…');
+      }
     });
   }
 });
