@@ -1026,6 +1026,11 @@ function renderEditor({ preserveCommentsDrawer = false } = {}) {
   const generated = parseStructuredLanguage(state.editorText, project.name);
   const members = project.presence?.length ? project.presence : project.members.map((member) => member.user);
   const unresolved = project.comments.filter((comment) => !comment.resolved).length;
+  const request = state.editorSaveRequest;
+  const savingCurrentDraft = request?.isCurrent() && request.text === state.editorText;
+  const saveStatus = state.editorConflict ? editorConflictMessage
+    : savingCurrentDraft ? 'Saving…'
+    : state.editorDirty ? 'Unsaved changes…' : `Saved ${relativeTime(project.updatedAt)}`;
 
   app.innerHTML = `
     <main class="editor-shell">
@@ -1034,7 +1039,7 @@ function renderEditor({ preserveCommentsDrawer = false } = {}) {
           <button class="editor-brand-button" data-action="back-dashboard" aria-label="Back to workspace"><span class="brand-symbol" style="transform:scale(.75)"></span></button>
           <div class="editor-project-meta">
             <div class="editor-project-name"><h1>${escapeHtml(project.name)}</h1><span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span></div>
-            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">${state.editorConflict ? escapeHtml(editorConflictMessage) : state.editorDirty ? 'Unsaved changes…' : `Saved ${relativeTime(project.updatedAt)}`}</div>
+            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">${escapeHtml(saveStatus)}</div>
           </div>
         </div>
         <div class="editor-collaborators">
@@ -1202,17 +1207,23 @@ function updateEditorOutputs() {
   const generatedPreview = document.getElementById('generated-preview');
   const validation = document.getElementById('validation-state');
   const lineNumbers = document.getElementById('line-numbers');
-  const saveState = document.getElementById('editor-save-state');
   if (generatedPreview) generatedPreview.innerHTML = renderOutput(parsed);
   if (validation) {
     validation.className = `validation-state ${parsed.valid ? 'valid' : 'invalid'}`;
     validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'Valid' : 'Needs input'}`;
   }
   if (lineNumbers) lineNumbers.innerHTML = renderLineNumbers(state.editorText);
-  if (saveState) saveState.textContent = state.editorConflict ? editorConflictMessage : 'Unsaved changes…';
+  updateEditorSaveStatus(state.editorConflict ? editorConflictMessage : 'Unsaved changes…');
 }
 
 const editorConflictMessage = 'Save conflict: your draft is kept here. Copy it before reloading the latest version, then merge your changes. Autosave is paused.';
+
+function updateEditorSaveStatus(message, status) {
+  const saveState = document.getElementById('editor-save-state');
+  if (!saveState) return;
+  saveState.textContent = message;
+  if (status) saveState.setAttribute('data-http-status', status);
+}
 
 function scheduleAutosave() {
   clearTimeout(state.autosaveTimer);
@@ -1242,13 +1253,12 @@ async function saveEditor() {
   const text = state.editorText;
   const expectedUpdatedAt = state.activeProject.updatedAt;
   const isCurrent = () => state.activeProject?.id === projectId && state.user?.id === userId && state.projectLoadRevision === loadRevision;
-  const saveState = document.getElementById('editor-save-state');
   if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
-    if (saveState) saveState.textContent = 'Save unavailable: copy your draft, then reload the project.';
+    updateEditorSaveStatus('Save unavailable: copy your draft, then reload the project.');
     return false;
   }
-  if (saveState) saveState.textContent = 'Saving…';
-  const request = { projectId, promise: null };
+  updateEditorSaveStatus('Saving…');
+  const request = { projectId, text, isCurrent, promise: null };
   state.editorSaveRequest = request;
   request.promise = (async () => {
     try {
@@ -1258,7 +1268,7 @@ async function saveEditor() {
       if (!isCurrent()) return false;
       state.activeProject = { ...updated, presence: state.activeProject.presence || [] };
       state.editorDirty = state.editorText !== text;
-      if (saveState) saveState.textContent = state.editorDirty ? 'Unsaved changes…' : 'Saved just now';
+      updateEditorSaveStatus(state.editorDirty ? 'Unsaved changes…' : 'Saved just now');
       const summary = state.projects.find((project) => project.id === updated.id);
       if (summary) summary.updatedAt = updated.updatedAt;
       return true;
@@ -1267,13 +1277,10 @@ async function saveEditor() {
       if (error.status === 409) {
         state.editorConflict = true;
         clearTimeout(state.autosaveTimer);
-        if (saveState) {
-          saveState.textContent = editorConflictMessage;
-          saveState.setAttribute('data-http-status', '409');
-        }
+        updateEditorSaveStatus(editorConflictMessage, '409');
         showToast(editorConflictMessage, 'error', 10000);
       } else {
-        if (saveState) saveState.textContent = 'Save failed — your draft is kept here.';
+        updateEditorSaveStatus('Save failed — your draft is kept here.');
         showToast(error.message, 'error');
       }
       return false;
