@@ -498,9 +498,17 @@ function inviteHarness() {
   h.state.activeProject.members = [];
   h.context.window.location.hash = '#project/qa';
   h.context.fixtureMember = { userId: 'guest', role: 'Viewer', user: { name: 'Guest' } };
+  h.context.inviteForm = {
+    dataset: {}, isConnected: true,
+    elements: { email: { value: 'guest@example.invalid' }, role: { value: 'Viewer' } },
+    reset() { this.elements.email.value = ''; this.elements.role.value = 'Editor'; }
+  };
   h.run(`
     globalThis.inviteRenderCount = 0;
-    globalThis.FormData = class { get(name) { return { email: 'guest@example.invalid', role: 'Viewer' }[name]; } };
+    globalThis.FormData = class {
+      constructor(form) { this.values = { email: form.elements.email.value, role: form.elements.role.value }; }
+      get(name) { return this.values[name]; }
+    };
     renderModal = () => { inviteRenderCount++; };
   `);
   return h;
@@ -565,7 +573,7 @@ test('a successful invite acknowledges its revision for the next editor save', a
       return { id: 'qa', updatedAt: 'C', structuredLanguage: options.body.structuredLanguage };
     };
   `);
-  await h.run('inviteMember({})');
+  await h.run('inviteMember(inviteForm)');
   assert.equal(h.context.sent[0].url, '/api/projects/qa/share');
   assert.deepEqual(JSON.parse(JSON.stringify(h.state.activeProject.members)), [h.context.fixtureMember]);
   assert.equal(h.state.activeProject.updatedAt, 'B');
@@ -583,7 +591,7 @@ test('an invite cannot adopt a revision that includes an unseen edit', async () 
       throw Object.assign(new Error('conflict'), { status: 409 });
     };
   `);
-  await h.run('inviteMember({})');
+  await h.run('inviteMember(inviteForm)');
   assert.equal(h.state.activeProject.members[0].userId, 'guest');
   assert.equal(h.state.activeProject.updatedAt, 'A');
   assert.equal(await h.run('saveEditor()'), false);
@@ -597,7 +605,7 @@ test('a late invite response cannot update a different editor context', async ()
   h.run(`
     api = () => new Promise(resolve => { globalThis.completeInvite = resolve; });
   `);
-  const invitation = h.run('inviteMember({})');
+  const invitation = h.run('inviteMember(inviteForm)');
   h.context.window.location.hash = '#project/elsewhere';
   h.context.completeInvite({ ...h.context.fixtureMember, previousUpdatedAt: 'A', updatedAt: 'B' });
   await invitation;
@@ -605,6 +613,69 @@ test('a late invite response cannot update a different editor context', async ()
   assert.deepEqual(h.state.activeProject.members, []);
   assert.equal(h.context.inviteRenderCount, 0);
   assert.equal(h.context.toasts.length, 0);
+});
+
+test('an invitation receipt updates the member list without erasing a newer invite draft', async t => {
+  for (const scenario of ['unchanged', 'email changed', 'role changed', 'form reopened', 'request failed']) {
+    await t.test(scenario, async () => {
+      const h = inviteHarness();
+      const { document, inviteForm } = h.context;
+      const { email, role } = inviteForm.elements;
+      const list = document.getElementById('share-member-list');
+      list.contains = () => false;
+      h.state.modal = { type: 'share' };
+      h.state.shareTab = 'invite';
+      document.activeElement = email;
+      h.run(`
+        globalThis.requests = [];
+        api = (url, { body }) => new Promise((resolve, reject) => requests.push({ body, resolve, reject }));
+      `);
+
+      const pending = h.run('inviteMember(inviteForm)');
+      assert.deepEqual({ ...h.context.requests[0].body }, { email: 'guest@example.invalid', role: 'Viewer' });
+      if (scenario === 'email changed') email.value = 'next@example.invalid';
+      if (scenario === 'role changed') role.value = 'Commenter';
+      if (scenario === 'form reopened') {
+        inviteForm.isConnected = false;
+        document.activeElement = { value: 'new-dialog@example.invalid' };
+      }
+      const focused = document.activeElement;
+      if (scenario === 'request failed') h.context.requests[0].reject(new Error('Invitation unavailable'));
+      else h.context.requests[0].resolve(h.context.fixtureMember);
+      await pending;
+
+      assert.equal(h.context.inviteRenderCount, 0);
+      assert.equal(document.activeElement, focused);
+      if (scenario === 'request failed') {
+        assert.equal(list.innerHTML, '');
+        assert.equal(h.context.toasts[0], 'Invitation unavailable');
+      } else {
+        assert.match(list.innerHTML, /Guest/);
+      }
+      assert.equal(email.value, scenario === 'unchanged' ? '' : scenario === 'email changed' ? 'next@example.invalid' : 'guest@example.invalid');
+      assert.equal(role.value, scenario === 'unchanged' ? 'Editor' : scenario === 'role changed' ? 'Commenter' : 'Viewer');
+    });
+  }
+});
+
+test('the same invite form submits one request at a time and can retry after failure', async () => {
+  const h = inviteHarness();
+  h.run(`
+    globalThis.requests = [];
+    api = () => new Promise((resolve, reject) => requests.push({ resolve, reject }));
+  `);
+  const pending = h.run('inviteMember(inviteForm)');
+  const duplicate = h.run('inviteMember(inviteForm)');
+  for (const request of h.context.requests) request.reject(new Error('Invitation unavailable'));
+  await Promise.all([pending, duplicate]);
+  assert.equal(h.context.requests.length, 1);
+  assert.equal(h.context.inviteForm.elements.email.value, 'guest@example.invalid');
+
+  const retry = h.run('inviteMember(inviteForm)');
+  assert.equal(h.context.requests.length, 2);
+  h.context.requests[1].resolve(h.context.fixtureMember);
+  await retry;
+  assert.equal(h.context.inviteForm.elements.email.value, '');
 });
 
 function editorActionHarness(action) {
