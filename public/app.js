@@ -117,6 +117,7 @@ let routeHistoryPosition = 0;
 let routeHistoryLength = 0;
 let editorRouteEntry = null;
 let pendingEditorNavigation = null;
+let pendingReconnectAutosave = null;
 document.documentElement.dataset.theme = state.theme;
 let supabaseClient = null;
 
@@ -1304,6 +1305,26 @@ function editorContext() {
     && state.projectLoadRevision === loadRevision
     && window.location.hash === hash;
   return { projectId, isCurrent };
+}
+
+async function resumeEditorAutosave() {
+  const editor = editorRouteEntry;
+  const context = editorContext();
+  const canResume = () => editor?.userId && editor.userId === state.user?.id
+    && editor === editorRouteEntry && editor.loadRevision === state.projectLoadRevision && context?.isCurrent()
+    && state.editorDirty && !state.editorConflict && navigator.onLine !== false;
+  if (!canResume() || pendingReconnectAutosave === editor) return;
+  pendingReconnectAutosave = editor;
+  try {
+    // Connectivity can return before the interrupted save finishes reporting its failure.
+    const pending = state.editorSaveRequest;
+    if (pending) await pending.promise;
+    if (!canResume() || state.editorSaveRequest) return;
+    clearTimeout(state.autosaveTimer);
+    await saveEditor();
+  } finally {
+    if (pendingReconnectAutosave === editor) pendingReconnectAutosave = null;
+  }
 }
 
 async function afterSavingEditor(action) {
@@ -2607,6 +2628,7 @@ document.addEventListener('dblclick', (event) => {
 });
 
 window.addEventListener('hashchange', handleHashChange);
+window.addEventListener('online', resumeEditorAutosave);
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;

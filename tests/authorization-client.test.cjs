@@ -317,6 +317,75 @@ test('overlapping saves serialize and preserve typing during a request', async (
   assert.equal(await second, true); assert.equal(h.state.editorText, 'draft C'); assert.equal(h.state.editorDirty, false);
 });
 
+test('reconnecting resumes autosave for the current mounted draft', async (t) => {
+  async function openEditor() {
+    const h = savingHarness();
+    h.context.window.location.hash = '#project/qa';
+    const patches = [];
+    h.context.fixtureApi = (url, options) => {
+      assert.equal(url, '/api/projects/qa');
+      if (!options) return h.state.activeProject;
+      assert.equal(options.method, 'PATCH');
+      return new Promise((resolve, reject) => patches.push({ body: options.body, resolve, reject }));
+    };
+    h.run(`
+      api = fixtureApi;
+      renderLoading = renderEditor = connectStream = startPresence = () => {};
+    `);
+    await h.run('handleRoute()');
+    return { ...h, patches, online: () => h.windowListeners.get('online')?.() };
+  }
+
+  for (const settlesBeforeOnline of [true, false]) {
+    await t.test(settlesBeforeOnline ? 'after offline rejection' : 'while offline request is pending', async () => {
+      const h = await openEditor();
+      Object.assign(h.state, { editorDirty: true, editorText: 'draft B' });
+      h.run('scheduleAutosave()');
+      const saving = h.timers.shift()();
+      if (settlesBeforeOnline) {
+        h.patches[0].reject(new TypeError('Network unavailable'));
+        assert.equal(await saving, false);
+      }
+      h.state.editorText = 'draft C';
+      const recovering = h.online();
+      const duplicate = h.online();
+      if (!settlesBeforeOnline) {
+        assert.equal(h.patches.length, 1);
+        h.patches[0].reject(new TypeError('Network unavailable'));
+        assert.equal(await saving, false);
+      }
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(h.patches.length, 2);
+      assert.equal(h.patches[1].body.structuredLanguage, 'draft C');
+      assert.equal(h.patches[1].body.expectedUpdatedAt, 'A');
+      h.patches[1].resolve({ id: 'qa', updatedAt: 'C', structuredLanguage: 'draft C' });
+      await Promise.all([recovering, duplicate]);
+      assert.equal(h.state.editorDirty, false);
+      assert.equal(h.state.activeProject.structuredLanguage, 'draft C');
+      assert.equal(h.context.document.getElementById('editor-save-state').textContent, 'Saved just now');
+    });
+  }
+
+  await t.test('conflict, new route, and new account stop the reconnect retry', async () => {
+    for (const reason of ['conflict', 'route', 'account']) {
+      const h = await openEditor();
+      Object.assign(h.state, { editorDirty: true, editorText: 'draft B' });
+      const saving = h.run('saveEditor()');
+      const recovering = h.online();
+      if (reason === 'route') h.context.window.location.hash = '#dashboard';
+      if (reason === 'account') h.state.user = { id: 'other-user' };
+      h.patches[0].reject(reason === 'conflict'
+        ? Object.assign(new Error('conflict'), { status: 409 })
+        : new TypeError('Network unavailable'));
+      await Promise.all([saving, recovering]);
+      assert.equal(h.patches.length, 1, reason);
+      assert.equal(h.state.editorText, 'draft B', reason);
+      assert.equal(h.state.editorDirty, true, reason);
+      assert.equal(h.state.editorConflict, reason === 'conflict', reason);
+    }
+  });
+});
+
 test('switching Output views keeps the mounted autosave status in sync', async (t) => {
   const success = { id: 'qa', updatedAt: 'B', structuredLanguage: 'draft B' };
   const outcomes = [
