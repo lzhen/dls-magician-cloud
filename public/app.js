@@ -2112,6 +2112,8 @@ async function resolveComment(commentId, resolved) {
 
 async function createVersion() {
   if (state.editorRestoreRequest?.isCurrent()) return;
+  const originatingModal = state.modal;
+  const selectedVersionId = state.selectedVersionId;
   await afterSavingEditor(async (isCurrent) => {
     const { id: projectId, updatedAt: expectedUpdatedAt } = state.activeProject;
     if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
@@ -2131,8 +2133,12 @@ async function createVersion() {
         state.activeProject.updatedAt = updatedAt;
       }
       state.activeProject.versions.unshift(version);
-      state.selectedVersionId = version.id;
-      renderModal();
+      if (state.modal?.type === 'versions') {
+        if (state.modal === originatingModal && state.selectedVersionId === selectedVersionId) {
+          state.selectedVersionId = version.id;
+        }
+        renderModal();
+      }
       showToast(`Version ${version.number} saved`);
     } catch (error) {
       if (isCurrent()) showToast(error.message, 'error');

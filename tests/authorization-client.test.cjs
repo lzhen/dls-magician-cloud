@@ -1185,6 +1185,50 @@ test('saving a named checkpoint advances the revision for the next edit', async 
   assert.equal(h.context.sent[1].body.expectedUpdatedAt, 'B');
 });
 
+test('a delayed checkpoint response respects the current editor dialog and selection', async t => {
+  const cases = [
+    { name: 'Share has been opened', modal: 'share', renders: 0 },
+    { name: 'Comments has been opened', modal: 'comments', renders: 0 },
+    { name: 'Version history has been closed', modal: null, renders: 0 },
+    { name: 'Version history and selection still match', modal: 'versions', sameModal: true, autoSelect: true, renders: 1 },
+    { name: 'another version has been selected', modal: 'versions', sameModal: true, selection: 'older', renders: 1 },
+    { name: 'Version history has been reopened', modal: 'versions', renders: 1 }
+  ];
+  for (const { name, modal, sameModal, selection = 'latest', autoSelect, renders } of cases) {
+    await t.test(name, async () => {
+      const h = savingHarness();
+      h.state.activeProject.versions = [{ id: 'latest' }, { id: 'older' }];
+      h.state.editorDirty = false;
+      h.state.modal = { type: 'versions' };
+      h.state.selectedVersionId = 'latest';
+      h.context.window.location.hash = '#project/qa';
+      h.context.window.prompt = () => 'My review';
+      let pending;
+      h.context.fixtureApi = (url, options) => {
+        assert.equal(url, '/api/projects/qa/versions');
+        assert.equal(options.method, 'POST');
+        return new Promise(resolve => { pending = resolve; });
+      };
+      h.run('api = fixtureApi; globalThis.modalRenders = 0; renderModal = () => { modalRenders++; };');
+
+      const saving = h.run('createVersion()');
+      await new Promise(resolve => setImmediate(resolve));
+      const currentModal = sameModal ? h.state.modal : modal && { type: modal };
+      h.state.modal = currentModal;
+      h.state.selectedVersionId = selection;
+      pending({ id: 'checkpoint', number: '1.0.1', previousUpdatedAt: 'A', updatedAt: 'B' });
+      await saving;
+
+      assert.equal(h.state.modal, currentModal);
+      assert.equal(h.state.activeProject.versions[0].id, 'checkpoint');
+      assert.equal(h.state.activeProject.updatedAt, 'B');
+      assert.equal(h.context.modalRenders, renders);
+      assert.equal(h.state.selectedVersionId, autoSelect ? 'checkpoint' : selection);
+      assert.equal(h.context.toasts[0], 'Version 1.0.1 saved');
+    });
+  }
+});
+
 function editorStreamHarness() {
   const h = savingHarness();
   const original = '2026-11-24T00:00:00.000Z';
