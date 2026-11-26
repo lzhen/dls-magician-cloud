@@ -1279,6 +1279,67 @@ function editorStreamHarness() {
   return { ...h, original, updated, note, open, receive, checkpoint, invitation, memberUpdate, commentAdded, commentUpdated, close: () => stream?.close() };
 }
 
+test('a collaborator checkpoint preserves the open comparison, Restore target, and focus', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  const { document, window } = h.context;
+  const modal = document.getElementById('modal-root');
+  const inserted = [];
+  const sidebar = { insertAdjacentHTML: (position, html) => inserted.push({ position, html }) };
+  modal.querySelector = selector => selector === '.version-sidebar' ? sidebar : null;
+  let modalHtml, modalRenders = 0;
+  Object.defineProperty(modal, 'innerHTML', { set(value) {
+    modalHtml = value;
+    modalRenders++;
+    document.activeElement = null;
+  } });
+  h.run('activateModal = () => {};');
+  window.requestAnimationFrame = () => {};
+  Object.assign(h.state.activeProject, {
+    name: 'Fixture workflow', ownerId: h.state.user.id,
+    versions: [
+      { id: 'latest', number: '1.0.0', content: 'Latest text' },
+      { id: 'earlier', number: '0.9.0', content: 'Earlier text' },
+    ],
+  });
+  h.state.editorDirty = false;
+  const click = (action, versionId) => h.listeners.get('click')({
+    target: { closest: () => ({ dataset: { action, versionId } }) },
+  });
+  await h.open();
+  await click('versions');
+  await click('select-version', 'earlier');
+  const restore = { dataset: { action: 'restore-version', versionId: 'earlier' } };
+  document.activeElement = restore;
+  assert.match(modalHtml, /Comparing 0\.9\.0/);
+  assert.match(modalHtml, /data-action="restore-version" data-version-id="earlier"/);
+  const rendersBeforeEvent = modalRenders;
+
+  await h.checkpoint();
+  assert.equal(h.state.selectedVersionId, 'earlier');
+  assert.equal(document.activeElement, restore);
+  assert.equal(modalRenders, rendersBeforeEvent);
+  assert.equal(inserted.length, 1);
+  assert.equal(inserted[0].position, 'afterbegin');
+  assert.match(inserted[0].html, /data-action="select-version" data-version-id="checkpoint"/);
+  assert.equal(h.state.activeProject.versions[0].id, 'checkpoint');
+  assert.equal(h.state.activeProject.updatedAt, h.updated);
+});
+
+test('the first collaborator checkpoint fills empty Version history', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  h.state.modal = { type: 'versions' };
+  const modal = h.context.document.getElementById('modal-root');
+  h.run('activateModal = () => {}; renderModal();');
+  assert.match(modal.innerHTML, /No saved versions/);
+  await h.open();
+  await h.checkpoint();
+  assert.equal(h.state.selectedVersionId, 'checkpoint');
+  assert.doesNotMatch(modal.innerHTML, /No saved versions/);
+  assert.match(modal.innerHTML, /Comparing 1\.0\.1/);
+});
+
 test('collaboration updates the member list without remounting the invite form or other share tabs', async t => {
   const h = editorStreamHarness();
   t.after(h.close);

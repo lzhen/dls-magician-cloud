@@ -1586,6 +1586,14 @@ function canRestoreVersion(project) {
   return memberships.length === 1 && ['Admin', 'Editor'].includes(memberships[0].role);
 }
 
+function renderVersionItem(version, selectedVersionId) {
+  return `
+    <button class="version-item ${selectedVersionId === version.id ? 'active' : ''}" data-action="select-version" data-version-id="${escapeHtml(version.id)}">
+      <span class="version-dot"></span><span><span class="version-number">${escapeHtml(version.number)}</span><span class="version-message">${escapeHtml(version.message)}</span><span class="version-time">${escapeHtml(version.user?.name || 'Unknown')} · ${relativeTime(version.createdAt)}</span></span>
+    </button>
+  `;
+}
+
 function renderVersionsModal() {
   const project = state.activeProject;
   if (!project) return '';
@@ -1611,11 +1619,7 @@ function renderVersionsModal() {
         ${versions.length ? `
           <div class="version-layout">
             <aside class="version-sidebar">
-              ${versions.map((version) => `
-                <button class="version-item ${selected?.id === version.id ? 'active' : ''}" data-action="select-version" data-version-id="${escapeHtml(version.id)}">
-                  <span class="version-dot"></span><span><span class="version-number">${escapeHtml(version.number)}</span><span class="version-message">${escapeHtml(version.message)}</span><span class="version-time">${escapeHtml(version.user?.name || 'Unknown')} · ${relativeTime(version.createdAt)}</span></span>
-                </button>
-              `).join('')}
+              ${versions.map((version) => renderVersionItem(version, selected?.id)).join('')}
             </aside>
             <section class="diff-panel">
               <div class="diff-toolbar"><span class="helper">Comparing ${escapeHtml(selected?.number || '')} → Current</span><span class="badge">${selectedContent === state.editorText ? 'No changes' : 'Changes detected'}</span></div>
@@ -1834,9 +1838,16 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
     const { version } = payload;
     const project = state.activeProject;
     applyRealtimeMetadataRevision(project, payload);
+    const historyOpen = state.modal?.type === 'versions';
+    const keepSelection = historyOpen && project.versions.some((item) => item.id === state.selectedVersionId);
     project.versions.unshift(version);
-    state.selectedVersionId = version.id;
-    if (state.modal?.type === 'versions') renderModal();
+    if (!keepSelection) state.selectedVersionId = version.id;
+    if (historyOpen) {
+      const sidebar = keepSelection ? modalRoot.querySelector('.version-sidebar') : null;
+      // Keep the selected comparison and the existing focused control mounted.
+      if (sidebar) sidebar.insertAdjacentHTML('afterbegin', renderVersionItem(version, state.selectedVersionId));
+      else renderModal();
+    }
     showToast(`${version.user.name} saved version ${version.number}`, 'info');
     return;
   }
