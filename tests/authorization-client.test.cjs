@@ -1279,6 +1279,95 @@ function editorStreamHarness({ renderEditor = false } = {}) {
   return { ...h, original, updated, note, open, receive, checkpoint, invitation, memberUpdate, commentAdded, commentUpdated, close: () => stream?.close() };
 }
 
+test('a newer workflow arriving before a save response is reconciled without losing local typing', async t => {
+  for (const dirtyAfterRequest of [false, true]) {
+    await t.test(dirtyAfterRequest ? 'keep new typing and pause autosave' : 'apply the latest saved workflow', async st => {
+      const h = editorStreamHarness();
+      st.after(h.close);
+      const calls = [];
+      const renders = [];
+      h.context.fixtureApi = (_url, { body }) => new Promise(resolve => calls.push({ body, resolve }));
+      h.context.renders = renders;
+      h.run('api = fixtureApi; renderEditor = (options) => renders.push(options);');
+      await h.open();
+      const save = h.run('saveEditor()');
+      if (dirtyAfterRequest) h.state.editorText = 'additional local typing';
+      const publish = (updatedAt, structuredLanguage, id = 'qa') => h.receive({
+        type: 'project_updated', projectId: 'qa',
+        payload: { project: { ...h.state.activeProject, id, updatedAt, structuredLanguage } }
+      });
+      const newestRevision = '2026-11-24T00:00:03.000Z';
+      await publish(newestRevision, 'latest collaborator workflow');
+      await publish('2026-11-24T00:00:02.000Z', 'older collaborator workflow');
+      await publish('invalid', 'invalid collaborator workflow');
+      await publish('2026-11-24T00:00:04.000Z', 'different project workflow', 'different');
+      assert.equal(renders.length, 0);
+      assert.equal(h.state.activeProject.updatedAt, h.original);
+      calls[0].resolve({ ...h.state.activeProject, updatedAt: h.updated, structuredLanguage: 'draft B' });
+
+      assert.equal(await save, !dirtyAfterRequest);
+      assert.equal(h.state.activeProject.updatedAt, newestRevision);
+      assert.equal(h.state.activeProject.structuredLanguage, 'latest collaborator workflow');
+      assert.equal(h.state.editorDirty, dirtyAfterRequest);
+      assert.equal(h.state.editorConflict, dirtyAfterRequest);
+      assert.equal(h.state.editorText, dirtyAfterRequest ? 'additional local typing' : 'latest collaborator workflow');
+      assert.equal(renders.length, dirtyAfterRequest ? 0 : 1);
+      if (dirtyAfterRequest) {
+        assert.match(h.context.document.getElementById('editor-save-state').textContent, /Save conflict/);
+        assert.equal(await h.run('saveEditor()'), false);
+        assert.equal(h.timers.length, 0, 'the conflict must not schedule another save');
+      } else {
+        assert.equal(renders[0].preserveCollaborationDrafts, true);
+      }
+      assert.equal(calls.length, 1);
+    });
+  }
+});
+
+test('an older or equal workflow update does not block the next local save', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  const calls = [];
+  h.context.fixtureApi = (_url, { body }) => new Promise(resolve => calls.push({ body, resolve }));
+  h.run('api = fixtureApi;');
+  await h.open();
+  const save = h.run('saveEditor()');
+  h.state.editorText = 'additional local typing';
+  for (const updatedAt of [h.original, h.updated]) {
+    await h.receive({
+      type: 'project_updated', projectId: 'qa',
+      payload: { project: { ...h.state.activeProject, updatedAt, structuredLanguage: 'older or equal workflow' } }
+    });
+  }
+  calls[0].resolve({ ...h.state.activeProject, updatedAt: h.updated, structuredLanguage: 'draft B' });
+  assert.equal(await save, true);
+  assert.equal(h.state.editorConflict, false);
+  const next = h.run('saveEditor()');
+  assert.equal(calls[1].body.expectedUpdatedAt, h.updated);
+  assert.equal(calls[1].body.structuredLanguage, 'additional local typing');
+  calls[1].resolve({ ...h.state.activeProject, updatedAt: '2026-11-24T00:00:02.000Z', structuredLanguage: 'additional local typing' });
+  assert.equal(await next, true);
+});
+
+test('an update from a stream with the wrong editor identity cannot supersede a save response', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  let resolveSave;
+  h.context.fixtureApi = () => new Promise(resolve => { resolveSave = resolve; });
+  h.run('api = fixtureApi;');
+  await h.open('other-user');
+  const save = h.run('saveEditor()');
+  await h.receive({
+    type: 'project_updated', projectId: 'qa',
+    payload: { project: { ...h.state.activeProject, updatedAt: '2026-11-24T00:00:02.000Z', structuredLanguage: 'other stream workflow' } }
+  });
+  resolveSave({ ...h.state.activeProject, updatedAt: h.updated, structuredLanguage: 'draft B' });
+  assert.equal(await save, true);
+  assert.equal(h.state.activeProject.updatedAt, h.updated);
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.state.editorConflict, false);
+});
+
 test('a collaborator checkpoint preserves the open comparison, Restore target, and focus', async t => {
   const h = editorStreamHarness();
   t.after(h.close);

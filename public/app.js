@@ -1246,6 +1246,13 @@ function scheduleAutosave() {
   if (!state.editorConflict) state.autosaveTimer = window.setTimeout(saveEditor, 900);
 }
 
+function pauseAutosaveForConflict(status) {
+  state.editorConflict = true;
+  clearTimeout(state.autosaveTimer);
+  updateEditorSaveStatus(editorConflictMessage, status);
+  showToast(editorConflictMessage, 'error', 10000);
+}
+
 async function saveEditor() {
   if (!state.activeProject) return false;
   if (state.editorConflict) return false;
@@ -1280,7 +1287,7 @@ async function saveEditor() {
   }
   state.editorSaveFailure = null;
   updateEditorSaveStatus('Saving…');
-  const request = { projectId, text, isCurrent, promise: null };
+  const request = { projectId, text, isCurrent, promise: null, realtimeUpdate: null };
   state.editorSaveRequest = request;
   request.promise = (async () => {
     try {
@@ -1288,19 +1295,29 @@ async function saveEditor() {
         method: 'PATCH', body: { structuredLanguage: text, expectedUpdatedAt }
       });
       if (!isCurrent()) return false;
-      state.activeProject = { ...updated, presence: state.activeProject.presence || [] };
+      const realtime = request.realtimeUpdate;
+      // A collaborator can save after this write commits but before its response arrives.
+      const superseded = realtime && realtime.revision > Date.parse(updated.updatedAt);
+      const current = superseded ? realtime.project : updated;
+      state.activeProject = { ...current, presence: state.activeProject.presence || [] };
       state.editorDirty = state.editorText !== text;
+      const summary = state.projects.find((project) => project.id === current.id);
+      if (summary) summary.updatedAt = current.updatedAt;
+      if (superseded) {
+        if (state.editorDirty) {
+          pauseAutosaveForConflict();
+          return false;
+        }
+        state.editorText = current.structuredLanguage;
+        renderEditor({ preserveCollaborationDrafts: true });
+        showToast(`${realtime.actor} updated the workflow`, 'info');
+      }
       updateEditorSaveStatus(state.editorDirty ? 'Unsaved changes…' : 'Saved just now');
-      const summary = state.projects.find((project) => project.id === updated.id);
-      if (summary) summary.updatedAt = updated.updatedAt;
       return true;
     } catch (error) {
       if (!isCurrent()) return false;
       if (error.status === 409) {
-        state.editorConflict = true;
-        clearTimeout(state.autosaveTimer);
-        updateEditorSaveStatus(editorConflictMessage, '409');
-        showToast(editorConflictMessage, 'error', 10000);
+        pauseAutosaveForConflict('409');
       } else {
         reportFailure('Save failed — your draft is kept here.');
         showToast(error.message, 'error');
@@ -1859,6 +1876,19 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
   }
 
   if (message.type === 'project_updated' && state.activeProject && message.projectId === state.activeProject.id) {
+    const pending = state.editorSaveRequest;
+    if (pending?.isCurrent()) {
+      const project = payload.project;
+      const revision = Date.parse(project?.updatedAt);
+      if (controller === state.streamController && streamEditor?.isCurrent()
+        && streamEditor.projectId === pending.projectId && project?.id === pending.projectId
+        && typeof project.structuredLanguage === 'string' && Number.isFinite(revision)
+        && Array.isArray(project.members) && Array.isArray(project.comments) && Array.isArray(project.versions)
+        && (!pending.realtimeUpdate || revision > pending.realtimeUpdate.revision)) {
+        pending.realtimeUpdate = { project, revision, actor: payload.actor?.name || 'A collaborator' };
+      }
+      return;
+    }
     if (state.editorDirty || state.editorConflict || state.editorSaveRequest) {
       showToast(`${payload.actor?.name || 'A collaborator'} updated this project. Your local changes are still active.`, 'info', 5200);
     } else {
