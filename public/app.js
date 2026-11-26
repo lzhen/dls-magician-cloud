@@ -1024,7 +1024,7 @@ function settingsToggle(key, title, description, on, iconName, customMark = '') 
   `;
 }
 
-function renderEditor({ preserveCommentsDrawer = false } = {}) {
+function renderEditor({ preserveCollaborationDrafts = false } = {}) {
   const project = state.activeProject;
   if (!project) return;
   const generated = parseStructuredLanguage(state.editorText, project.name);
@@ -1048,7 +1048,7 @@ function renderEditor({ preserveCommentsDrawer = false } = {}) {
         </div>
         <div class="editor-actions">
           <button id="comments-button" class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span id="comments-button-label">Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
-          <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
+          <button id="share-button" class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
           <button class="btn btn-primary btn-sm editor-publish" data-action="save-workflow">${icon('sparkles', 'icon-sm')}<span>Save workflow</span></button>
           <button class="btn btn-icon btn-sm" data-action="versions" aria-haspopup="dialog" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
         </div>
@@ -1070,9 +1070,15 @@ function renderEditor({ preserveCommentsDrawer = false } = {}) {
       </section>
     </main>
   `;
-  if (preserveCommentsDrawer && state.modal?.type === 'comments') {
+  if (preserveCollaborationDrafts && state.modal?.type === 'comments') {
     if (state.modalReturnFocus?.id === 'comments-button') state.modalReturnFocus = document.getElementById('comments-button');
     refreshComments();
+  } else if (preserveCollaborationDrafts && state.modal?.type === 'share' && state.shareTab === 'invite') {
+    const title = document.getElementById('share-title');
+    if (title) title.textContent = `Share “${project.name}”`;
+    const previousTrigger = state.modalReturnFocus;
+    state.modalReturnFocus = document.getElementById('share-button') || (previousTrigger?.isConnected ? previousTrigger : null);
+    refreshShareMembers(project.members);
   } else {
     renderModal();
   }
@@ -1858,7 +1864,7 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
     } else {
       state.activeProject = { ...payload.project, presence: state.activeProject.presence || [] };
       state.editorText = payload.project.structuredLanguage;
-      renderEditor({ preserveCommentsDrawer: true });
+      renderEditor({ preserveCollaborationDrafts: true });
       showToast(`${payload.actor?.name || 'A collaborator'} updated the workflow`, 'info');
     }
     return;

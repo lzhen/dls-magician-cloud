@@ -1229,7 +1229,7 @@ test('a delayed checkpoint response respects the current editor dialog and selec
   }
 });
 
-function editorStreamHarness() {
+function editorStreamHarness({ renderEditor = false } = {}) {
   const h = savingHarness();
   const original = '2026-11-24T00:00:00.000Z';
   const updated = '2026-11-24T00:00:01.000Z';
@@ -1248,8 +1248,8 @@ function editorStreamHarness() {
   };
   h.run(`
     supabaseClient = { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } };
-    renderEditor = () => { throw new Error('Metadata event must keep the mounted editor'); };
   `);
+  if (!renderEditor) h.run(`renderEditor = () => { throw new Error('Metadata event must keep the mounted editor'); };`);
   async function receive(message) {
     stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(message)}\n\n`));
     await new Promise(resolve => setImmediate(resolve));
@@ -1390,6 +1390,104 @@ test('collaboration updates the member list without remounting the invite form o
   assert.equal(modalRenders, 0);
   assert.equal(list.innerHTML, currentList);
   assert.equal(h.state.activeProject.members[0].role, 'Viewer');
+});
+
+test('a collaborator workflow save keeps the Invite form and returns focus to the new Share button', async t => {
+  for (const submitting of [false, true]) {
+    await t.test(submitting ? 'explicit invite pending' : 'unsent invite', async subtest => {
+      const h = editorStreamHarness({ renderEditor: true });
+      subtest.after(h.close);
+      const { document, window } = h.context;
+      const app = document.getElementById('app');
+      const modal = document.getElementById('modal-root');
+      const list = document.getElementById('share-member-list');
+      const title = document.getElementById('share-title');
+      const email = { value: 'invitee@example.invalid' };
+      const role = { value: 'Commenter' };
+      const form = {
+        dataset: {}, isConnected: true, elements: { email, role },
+        reset() { email.value = ''; role.value = 'Editor'; },
+      };
+      const focus = function () { document.activeElement = this; };
+      const dialog = { focus };
+      let editorHtml, shareButton;
+      Object.defineProperty(app, 'innerHTML', {
+        get: () => editorHtml,
+        set(html) {
+          editorHtml = html;
+          if (shareButton) shareButton.isConnected = false;
+          shareButton = { id: html.includes('id="share-button"') ? 'share-button' : '', isConnected: true, dataset: { action: 'share' }, focus };
+        },
+      });
+      const getElementById = document.getElementById.bind(document);
+      document.getElementById = id => id === 'share-button' ? (shareButton?.id ? shareButton : null) : getElementById(id);
+      modal.querySelector = selector => selector === '[role="dialog"]' ? dialog : null;
+      modal.querySelectorAll = () => [];
+      list.contains = () => false;
+      window.requestAnimationFrame = callback => callback();
+      Object.assign(h.state.activeProject, { name: 'Fixture workflow', status: 'Draft' });
+      h.state.editorText = h.state.activeProject.structuredLanguage;
+      h.state.editorDirty = false;
+      h.run('renderEditor()');
+      const originalShareButton = shareButton;
+      originalShareButton.focus();
+      await h.listeners.get('click')({ target: { closest: () => originalShareButton } });
+      assert.match(modal.innerHTML, /data-form="invite-member"/);
+      assert.equal(h.state.modalReturnFocus, originalShareButton);
+      let modalRenders = 0;
+      Object.defineProperty(modal, 'innerHTML', { set() {
+        modalRenders++;
+        form.isConnected = false;
+        document.activeElement = null;
+      } });
+      document.activeElement = email;
+
+      const requests = [];
+      h.context.inviteForm = form;
+      h.context.FormData = class {
+        constructor(source) { this.values = source.elements; }
+        get(name) { return this.values[name].value; }
+      };
+      h.context.fixtureApi = (url, { method, body }) => new Promise(resolve => requests.push({ url, method, body, resolve }));
+      h.run('api = fixtureApi');
+      const pending = submitting ? h.run('inviteMember(inviteForm)') : null;
+      await h.open();
+      const saved = {
+        ...h.state.activeProject, name: 'Updated fixture workflow', updatedAt: h.updated,
+        structuredLanguage: 'GIVEN\nUpdated collaborator content\nWHEN\nOpened\nTHEN\nShow results',
+        members: [{ userId: 'collaborator', role: 'Editor', user: { name: 'Fixture collaborator' } }],
+      };
+      await h.receive({ type: 'project_updated', projectId: 'qa', payload: { project: saved, actor: { name: 'Fixture collaborator' } } });
+
+      assert.equal(h.state.activeProject.updatedAt, h.updated);
+      assert.equal(h.state.editorText, saved.structuredLanguage);
+      assert.match(app.innerHTML, /Updated collaborator content/);
+      assert.equal(modalRenders, 0);
+      assert.equal(form.isConnected, true);
+      assert.equal(email.value, 'invitee@example.invalid');
+      assert.equal(role.value, 'Commenter');
+      assert.equal(document.activeElement, email);
+      assert.equal(title.textContent, 'Share “Updated fixture workflow”');
+      assert.match(list.innerHTML, /Fixture collaborator/);
+      assert.equal(requests.length, submitting ? 1 : 0);
+
+      if (submitting) await h.run('inviteMember(inviteForm)');
+      const invitation = pending || h.run('inviteMember(inviteForm)');
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].url, '/api/projects/qa/share');
+      assert.equal(requests[0].method, 'POST');
+      assert.deepEqual({ ...requests[0].body }, { email: 'invitee@example.invalid', role: 'Commenter' });
+      requests[0].resolve({ userId: 'invitee', role: 'Commenter', user: { name: 'Fixture invitee' } });
+      await invitation;
+      assert.equal(email.value, '');
+      assert.equal(form.dataset.submitting, undefined);
+      assert.match(list.innerHTML, /Fixture invitee/);
+
+      assert.equal(originalShareButton.isConnected, false);
+      h.run('closeModal()');
+      assert.equal(document.activeElement, shareButton);
+    });
+  }
 });
 
 test('a collaborator posting or resolving a comment lets the pending autosave keep its draft', async t => {
