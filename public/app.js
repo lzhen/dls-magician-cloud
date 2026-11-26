@@ -1876,26 +1876,29 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
   }
 
   if (message.type === 'project_updated' && state.activeProject && message.projectId === state.activeProject.id) {
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const current = state.activeProject;
+    const { project } = payload;
+    if (project?.id !== current.id || typeof project.structuredLanguage !== 'string' || typeof project.updatedAt !== 'string'
+      || !Array.isArray(project.members) || !Array.isArray(project.comments) || !Array.isArray(project.versions)) return;
+    const revision = Date.parse(project.updatedAt);
+    if (!Number.isFinite(revision) || revision <= Date.parse(current.updatedAt)) return;
+
+    const actor = payload.actor?.name || 'A collaborator';
     const pending = state.editorSaveRequest;
     if (pending?.isCurrent()) {
-      const project = payload.project;
-      const revision = Date.parse(project?.updatedAt);
-      if (controller === state.streamController && streamEditor?.isCurrent()
-        && streamEditor.projectId === pending.projectId && project?.id === pending.projectId
-        && typeof project.structuredLanguage === 'string' && Number.isFinite(revision)
-        && Array.isArray(project.members) && Array.isArray(project.comments) && Array.isArray(project.versions)
-        && (!pending.realtimeUpdate || revision > pending.realtimeUpdate.revision)) {
-        pending.realtimeUpdate = { project, revision, actor: payload.actor?.name || 'A collaborator' };
+      if (!pending.realtimeUpdate || revision > pending.realtimeUpdate.revision) {
+        pending.realtimeUpdate = { project, revision, actor };
       }
       return;
     }
-    if (state.editorDirty || state.editorConflict || state.editorSaveRequest) {
-      showToast(`${payload.actor?.name || 'A collaborator'} updated this project. Your local changes are still active.`, 'info', 5200);
+    if (state.editorDirty || state.editorConflict || pending) {
+      showToast(`${actor} updated this project. Your local changes are still active.`, 'info', 5200);
     } else {
-      state.activeProject = { ...payload.project, presence: state.activeProject.presence || [] };
-      state.editorText = payload.project.structuredLanguage;
+      state.activeProject = { ...project, presence: current.presence || [] };
+      state.editorText = project.structuredLanguage;
       renderEditor({ preserveCollaborationDrafts: true });
-      showToast(`${payload.actor?.name || 'A collaborator'} updated the workflow`, 'info');
+      showToast(`${actor} updated the workflow`, 'info');
     }
     return;
   }

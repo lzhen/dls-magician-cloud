@@ -297,11 +297,17 @@ test('409 retains draft and read revision and pauses subsequent saves', async ()
   assert.equal(await h.run('saveEditor()'), false); assert.equal(h.context.requests, 1);
   assert.match(h.context.toasts[0], /Copy it before reloading/);
 });
-test('realtime cannot replace dirty draft regardless of focused child', async () => {
-  const h = savingHarness();
-  h.run(`renderEditor = () => { throw Error('must not replace draft DOM'); };`);
-  await h.run(`handleRealtimeMessage({type:'project_updated',projectId:'qa',payload:{project:{id:'qa',updatedAt:'B',structuredLanguage:'remote'}}})`);
-  assert.equal(h.state.editorText, 'draft B'); assert.equal(h.state.activeProject.updatedAt, 'A');
+test('realtime cannot replace dirty draft regardless of focused child', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  await h.open();
+  await h.receive({
+    type: 'project_updated', projectId: 'qa',
+    payload: { project: { ...h.state.activeProject, updatedAt: h.updated, structuredLanguage: 'remote' } }
+  });
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.state.activeProject.updatedAt, h.original);
+  assert.match(h.context.toasts[0], /Your local changes are still active/);
 });
 test('overlapping saves serialize and preserve typing during a request', async () => {
   const h = savingHarness(), pending = [];
@@ -1279,6 +1285,52 @@ function editorStreamHarness({ renderEditor = false } = {}) {
   return { ...h, original, updated, note, open, receive, checkpoint, invitation, memberUpdate, commentAdded, commentUpdated, close: () => stream?.close() };
 }
 
+test('a clean editor accepts only newer workflow snapshots from its current stream', async t => {
+  const h = editorStreamHarness();
+  t.after(h.close);
+  const renders = [];
+  h.context.renders = renders;
+  h.run('renderEditor = (options) => renders.push(options);');
+  h.state.editorDirty = false;
+  h.state.activeProject.updatedAt = h.updated;
+  h.state.editorText = h.state.activeProject.structuredLanguage;
+  const presence = [{ id: 'local-presence' }];
+  h.state.activeProject.presence = presence;
+  const latest = '2026-11-24T00:00:02.000Z';
+  const publish = (project, projectId = 'qa') => h.receive({
+    type: 'project_updated', projectId,
+    payload: { project: { ...h.state.activeProject, updatedAt: latest, structuredLanguage: 'new workflow', ...project } }
+  });
+
+  await h.open('other-user');
+  await publish();
+  h.close();
+  await h.open();
+  const controller = h.state.streamController;
+  h.state.streamController = new AbortController();
+  await publish();
+  h.state.streamController = controller;
+  await publish({ updatedAt: h.original });
+  await publish({ updatedAt: h.updated });
+  await publish({ updatedAt: 'invalid' });
+  await publish({ id: 'other-project' });
+  await publish({}, 'other-project');
+  await publish({ comments: undefined });
+
+  assert.equal(h.state.activeProject.updatedAt, h.updated);
+  assert.equal(h.state.editorText, 'original');
+  assert.equal(renders.length, 0);
+  assert.equal(h.context.toasts.length, 0);
+
+  await publish({ presence: [] });
+  assert.equal(h.state.activeProject.updatedAt, latest);
+  assert.equal(h.state.editorText, 'new workflow');
+  assert.equal(h.state.activeProject.presence, presence);
+  assert.equal(renders.length, 1);
+  assert.equal(renders[0].preserveCollaborationDrafts, true);
+  assert.deepEqual(Array.from(h.context.toasts), ['A collaborator updated the workflow']);
+});
+
 test('a newer workflow arriving before a save response is reconciled without losing local typing', async t => {
   for (const dirtyAfterRequest of [false, true]) {
     await t.test(dirtyAfterRequest ? 'keep new typing and pause autosave' : 'apply the latest saved workflow', async st => {
@@ -1697,7 +1749,10 @@ test('metadata events after an unseen workflow edit preserve the conditional sav
   };
   h.run('api = fixtureApi;');
   await h.open();
-  await h.receive({ type: 'project_updated', projectId: 'qa', payload: { project: { updatedAt: h.updated, structuredLanguage: 'remote edit' } } });
+  await h.receive({
+    type: 'project_updated', projectId: 'qa',
+    payload: { project: { ...h.state.activeProject, updatedAt: h.updated, structuredLanguage: 'remote edit' } }
+  });
   await h.checkpoint({ previousUpdatedAt: h.updated, updatedAt: later });
   await h.invitation({ previousUpdatedAt: h.updated, updatedAt: later });
   await h.memberUpdate({ previousUpdatedAt: h.updated, updatedAt: later });
