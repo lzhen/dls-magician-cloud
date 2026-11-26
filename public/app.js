@@ -119,6 +119,7 @@ let routeHistoryLength = 0;
 let editorRouteEntry = null;
 let pendingEditorNavigation = null;
 let pendingReconnectAutosave = null;
+let streamRetryTimer = null;
 document.documentElement.dataset.theme = state.theme;
 let supabaseClient = null;
 
@@ -372,8 +373,9 @@ async function boot() {
   await handleRoute();
 }
 
-async function loadBootstrap() {
+async function loadBootstrap(isCurrent) {
   const data = await api('/api/bootstrap');
+  if (isCurrent && !isCurrent()) return;
   state.user = data.user;
   state.workspaces = data.workspaces || [];
   state.projects = data.projects || [];
@@ -422,6 +424,7 @@ function returnToEditorEntry(editor) {
   history.pushState(null, '', entry.hash);
   editor.entry = { hash: entry.hash, browserEntry: navigation?.currentEntry };
   routeHistoryLength = history.length;
+  if (!state.streamController) connectStream(editor.projectId);
 }
 
 async function handleHashChange(event) {
@@ -437,8 +440,10 @@ async function handleHashChange(event) {
     return route.page === 'project' && route.id === editor.projectId;
   };
   if (isEditorRoute()) {
+    const returning = editor.returning || pendingEditorNavigation === editor;
     editor.returning = false;
     editor.entry = rememberRouteEntry();
+    if (returning && !state.streamController) connectStream(editor.projectId);
     return;
   }
   // A legacy traversal can land on an unmarked entry. Recover without retrying the failed save.
@@ -1747,53 +1752,106 @@ function filterProjectRows(query) {
 
 function connectStream(projectId = null) {
   disconnectStream();
-  const controller = new AbortController();
-  state.streamController = controller;
-  streamEvents(projectId, controller).catch((error) => {
-    if (error.name !== 'AbortError') console.error('Realtime stream ended', error);
-  });
+  const userId = state.user?.id;
+  const route = parseRoute();
+  const loadRevision = state.projectLoadRevision;
+  if (!userId || !supabaseClient || projectId !== (route.page === 'project' ? route.id : null)) return;
+
+  const isCurrentRoute = () => {
+    const current = parseRoute();
+    return state.user?.id === userId && state.projectLoadRevision === loadRevision
+      && current.page === route.page && current.id === route.id
+      && (state.activeProject?.id || null) === projectId;
+  };
+  const initialRetryDelay = 1000;
+  const maxRetryDelay = 30_000;
+  let retryDelay = initialRetryDelay;
+  async function openStream() {
+    const controller = new AbortController();
+    state.streamController = controller;
+    let reading = true;
+    const isCurrent = () => reading && state.streamController === controller && isCurrentRoute();
+    const startedAt = Date.now();
+    let retryable;
+    try {
+      retryable = await streamEvents(projectId, controller, userId, isCurrent);
+    } catch (error) {
+      retryable = error.name !== 'AbortError';
+    }
+    reading = false;
+    if (state.streamController !== controller) return;
+    if (!retryable || !isCurrentRoute()) {
+      state.streamController = null;
+      return;
+    }
+
+    // Reset only after a stable stream, not after a handshake immediately followed by EOF.
+    if (Date.now() - startedAt >= maxRetryDelay) retryDelay = initialRetryDelay;
+    streamRetryTimer = window.setTimeout(() => {
+      if (state.streamController !== controller) return;
+      streamRetryTimer = null;
+      if (isCurrentRoute()) void openStream();
+      else state.streamController = null;
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+  }
+  void openStream();
 }
 
-async function streamEvents(projectId, controller) {
+async function streamEvents(projectId, controller, userId, isCurrent) {
   const editor = editorContext();
-  const userId = state.user?.id;
   const { data } = await supabaseClient.auth.getSession();
-  if (!data.session?.access_token) return;
+  if (!isCurrent() || !data?.session?.access_token) return false;
   const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
   const response = await fetch(appPath(`/api/events${query}`), {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
     signal: controller.signal
   });
-  if (!response.ok || !response.body) throw new Error(`Realtime connection failed (${response.status})`);
+  if (!response.ok || !isCurrent()) {
+    void response.body?.cancel().catch(() => {});
+    return response.status === 408 || response.status === 429 || response.status >= 500;
+  }
+  if (!response.body) return true;
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let connected = false;
   let streamEditor = null;
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const packets = buffer.split('\n\n');
-    buffer = packets.pop() || '';
-    for (const packet of packets) {
-      const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
-      if (!line) continue;
-      try {
-        const message = JSON.parse(line.slice(6));
-        if (message?.type === 'connected') {
-          streamEditor = userId && editor?.projectId === projectId && message.payload?.userId === userId ? editor : null;
-          continue;
+  try {
+    while (isCurrent()) {
+      const { value, done } = await reader.read();
+      if (!isCurrent()) return false;
+      if (done) return true;
+      buffer += decoder.decode(value, { stream: true });
+      const packets = buffer.split('\n\n');
+      buffer = packets.pop() || '';
+      for (const packet of packets) {
+        const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
+        if (!line) continue;
+        try {
+          const message = JSON.parse(line.slice(6));
+          if (message?.type === 'connected') {
+            if (message.payload?.userId !== userId) return false;
+            connected = true;
+            streamEditor = editor?.projectId === projectId ? editor : null;
+          } else if (connected) {
+            void handleRealtimeMessage(message, controller, streamEditor, isCurrent);
+          }
+        } catch (error) {
+          console.error('Invalid realtime message', error);
         }
-        handleRealtimeMessage(message, controller, streamEditor);
-      } catch (error) {
-        console.error('Invalid realtime message', error);
       }
     }
+    return false;
+  } finally {
+    void reader.cancel().catch(() => {});
   }
 }
 
 function disconnectStream() {
+  clearTimeout(streamRetryTimer);
+  streamRetryTimer = null;
   if (state.streamController) {
     state.streamController.abort();
     state.streamController = null;
@@ -1808,11 +1866,13 @@ function applyRealtimeMetadataRevision(project, { previousUpdatedAt, updatedAt }
   }
 }
 
-async function handleRealtimeMessage(message, controller = state.streamController, streamEditor = null) {
-  if (!message || message.type === 'connected') return;
+async function handleRealtimeMessage(message, controller = state.streamController, streamEditor = null, routeIsCurrent) {
+  const isCurrent = () => controller === state.streamController && (!routeIsCurrent || routeIsCurrent());
+  if (!message || message.type === 'connected' || !isCurrent()) return;
   const payload = message.payload || {};
 
   if (message.type === 'presence' && state.activeProject) {
+    if (message.projectId !== state.activeProject.id) return;
     state.activeProject.presence = payload.users || [];
     updatePresenceUi();
     return;
@@ -1905,7 +1965,8 @@ async function handleRealtimeMessage(message, controller = state.streamControlle
 
   if (['project_created', 'workspace_updated'].includes(message.type) || (!state.activeProject && message.type)) {
     try {
-      await loadBootstrap();
+      await loadBootstrap(isCurrent);
+      if (!isCurrent()) return;
       const route = parseRoute();
       if (!state.activeProject && route.page !== 'project') renderShell(route.page || 'dashboard');
     } catch (error) {
@@ -1977,8 +2038,11 @@ async function authenticate(provider, email = '') {
 async function logout(signOut = true) {
   state.projectLoadRevision += 1;
   state.editorSaveFailure = null;
-  if (signOut && supabaseClient) await supabaseClient.auth.signOut();
   disconnectStream();
+  if (signOut && supabaseClient) {
+    await supabaseClient.auth.signOut();
+    disconnectStream();
+  }
   stopPresence();
   state.user = null;
   state.provider = null;

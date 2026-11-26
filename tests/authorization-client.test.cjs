@@ -749,6 +749,7 @@ test('browser history waits for the draft, preserves its entry on error, and fol
       .map((hash, index) => ({ hash, state: null, browserEntry: { index } }));
     const restorations = [];
     const pending = [];
+    const subscriptions = [];
     let index = 0;
     let length = 1;
     let project = { id: 'qa', updatedAt: 'A', structuredLanguage: 'original' };
@@ -773,6 +774,7 @@ test('browser history waits for the draft, preserves its entry on error, and fol
       return h.windowListeners.get('hashchange')();
     };
     h.state.user = { id: 'fixture-user' };
+    h.context.subscriptions = subscriptions;
     h.context.fixtureApi = (url, options) => {
       assert.equal(url, '/api/projects/qa');
       if (!options) return project;
@@ -784,7 +786,7 @@ test('browser history waits for the draft, preserves its entry on error, and fol
       api = fixtureApi;
       renderShell = page => pages.push(page);
       renderEditor = () => pages.push('editor');
-      connectStream = () => {};
+      connectStream = projectId => subscriptions.push(projectId);
       startPresence = () => {};
       showToast = () => {};
     `);
@@ -798,7 +800,7 @@ test('browser history waits for the draft, preserves its entry on error, and fol
       project = { ...project, updatedAt, structuredLanguage: request.body.structuredLanguage };
       request.resolve(project);
     };
-    return { ...h, accept, pending, restorations, traverse };
+    return { ...h, accept, pending, restorations, subscriptions, traverse };
   }
 
   await t.test('multiple Back navigations wait for the latest edit and preserve Forward', async () => {
@@ -830,6 +832,7 @@ test('browser history waits for the draft, preserves its entry on error, and fol
       const leaving = h.traverse(1);
       await h.traverse(0);
       h.state.editorText = 'keep my latest draft';
+      const beforeReturn = h.subscriptions.length;
       h.pending[0].reject(Object.assign(new Error('Save failed'), { status }));
       await leaving;
       assert.deepEqual(h.restorations, [2]);
@@ -838,6 +841,7 @@ test('browser history waits for the draft, preserves its entry on error, and fol
       assert.equal(h.state.editorDirty, true);
       assert.equal(h.state.editorConflict, status === 409);
       assert.equal(h.state.editorText, 'keep my latest draft');
+      assert.deepEqual(h.subscriptions.slice(beforeReturn), ['qa']);
     });
   }
 
@@ -877,11 +881,13 @@ test('browser history waits for the draft, preserves its entry on error, and fol
   await t.test('an older browser recovers from unmarked history without overwriting the destination', async () => {
     const h = await historyHarness({ unmarked: true });
     const leaving = h.traverse(1);
+    const beforeReturn = h.subscriptions.length;
     h.pending[0].reject(new Error('Save failed'));
     await leaving;
     assert.deepEqual(h.restorations, []);
     assert.equal(h.context.window.location.hash, '#project/qa');
     assert.equal(h.state.editorText, 'draft B');
+    assert.deepEqual(h.subscriptions.slice(beforeReturn), ['qa']);
     const retry = h.traverse(1);
     h.accept(h.pending[1], 'B');
     await retry;
@@ -1250,14 +1256,17 @@ function editorStreamHarness({ renderEditor = false } = {}) {
   let stream;
   h.context.fetch = async (url) => {
     assert.equal(url, '/api/events?projectId=qa');
-    return { ok: true, body: new ReadableStream({ start(controller) { stream = controller; } }) };
+    return { ok: true, body: new ReadableStream({
+      start(controller) { stream = controller; },
+      cancel() { stream = null; }
+    }) };
   };
   h.run(`
     supabaseClient = { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } };
   `);
   if (!renderEditor) h.run(`renderEditor = () => { throw new Error('Metadata event must keep the mounted editor'); };`);
   async function receive(message) {
-    stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(message)}\n\n`));
+    stream?.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(message)}\n\n`));
     await new Promise(resolve => setImmediate(resolve));
   }
   async function open(userId = h.state.user.id) {
@@ -1285,6 +1294,89 @@ function editorStreamHarness({ renderEditor = false } = {}) {
   return { ...h, original, updated, note, open, receive, checkpoint, invitation, memberUpdate, commentAdded, commentUpdated, close: () => stream?.close() };
 }
 
+test('realtime reconnects after EOF and transient failure without remounting the editor', async () => {
+  const h = savingHarness();
+  h.context.window.location.hash = '#project/qa';
+  h.context.TextDecoder = TextDecoder;
+  h.state.activeProject.versions = [];
+  const pendingTimers = [];
+  h.context.window.setTimeout = (retry, delay) => pendingTimers.push({ retry, delay });
+  const attempts = [];
+  h.context.fetch = async (url, { signal }) => {
+    assert.equal(url, '/api/events?projectId=qa');
+    const attempt = { signal };
+    attempts.push(attempt);
+    if (attempts.length === 2) return { ok: false, status: 503 };
+    return { ok: true, body: new ReadableStream({ start(stream) { attempt.stream = stream; } }) };
+  };
+  h.run(`
+    supabaseClient = { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } };
+    renderEditor = () => { throw new Error('Retry must keep the mounted editor'); };
+  `);
+  const focus = {};
+  h.context.document.activeElement = focus;
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  const send = (attempt, message) => attempt.stream.enqueue(
+    new TextEncoder().encode(`data: ${JSON.stringify(message)}\n\n`));
+
+  h.run('connectStream("qa")');
+  await tick();
+  send(attempts[0], { type: 'connected', payload: { userId: h.state.user.id } });
+  attempts[0].stream.close();
+  await tick();
+  assert.equal(pendingTimers.length, 1);
+  assert.equal(pendingTimers[0].delay, 1000);
+  pendingTimers.shift().retry();
+  await tick();
+  assert.equal(pendingTimers.length, 1);
+  assert.equal(pendingTimers[0].delay, 2000);
+  pendingTimers.shift().retry();
+  await tick();
+  assert.equal(attempts.length, 3);
+  assert.notEqual(attempts[0].signal, attempts[2].signal);
+  send(attempts[2], { type: 'connected', payload: { userId: h.state.user.id } });
+  send(attempts[2], { type: 'version_created', projectId: 'qa', payload: {
+    version: { id: 'checkpoint', user: { name: 'Collaborator' } }
+  } });
+  await tick();
+  assert.equal(h.state.activeProject.versions[0]?.id, 'checkpoint');
+  assert.equal(h.state.editorText, 'draft B');
+  assert.equal(h.context.document.activeElement, focus);
+  h.run('disconnectStream()');
+  attempts[2].stream.close();
+  await tick();
+  assert.equal(pendingTimers.length, 0);
+});
+
+test('realtime backs off during repeated errors and stops on project refusal', async () => {
+  const h = savingHarness();
+  h.context.window.location.hash = '#project/qa';
+  const timers = [];
+  h.context.window.setTimeout = (retry, delay) => timers.push({ retry, delay });
+  const delays = [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000];
+  let attempts = 0;
+  h.context.fetch = async () => {
+    if (++attempts <= delays.length) throw new TypeError('Temporary network failure');
+    return { ok: false, status: 404 };
+  };
+  h.run(`
+    supabaseClient = { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture' } } }) } };
+    connectStream('qa');
+  `);
+
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  for (const delay of delays) {
+    await tick();
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].delay, delay);
+    timers.shift().retry();
+  }
+  await tick();
+  assert.equal(attempts, delays.length + 1);
+  assert.equal(timers.length, 0);
+  assert.equal(h.state.streamController, null);
+});
+
 test('a clean editor accepts only newer workflow snapshots from its current stream', async t => {
   const h = editorStreamHarness();
   t.after(h.close);
@@ -1306,10 +1398,9 @@ test('a clean editor accepts only newer workflow snapshots from its current stre
   await publish();
   h.close();
   await h.open();
-  const controller = h.state.streamController;
   h.state.streamController = new AbortController();
   await publish();
-  h.state.streamController = controller;
+  await h.open();
   await publish({ updatedAt: h.original });
   await publish({ updatedAt: h.updated });
   await publish({ updatedAt: 'invalid' });
