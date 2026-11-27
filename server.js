@@ -425,6 +425,21 @@ function readBody(req, limit = 1_000_000) {
   });
 }
 
+function removeSseClient(client, endResponse = false) {
+  sseClients.delete(client);
+  if (client.heartbeat !== null) {
+    clearInterval(client.heartbeat);
+    client.heartbeat = null;
+  }
+  if (endResponse) {
+    try {
+      client.res.end();
+    } catch (_) {
+      // The socket may already be closed.
+    }
+  }
+}
+
 function broadcast(type, payload, projectId = null, excludeSid = null, workspaceId = null) {
   const packet = JSON.stringify({ type, payload, projectId, sentAt: nowIso() });
   for (const client of sseClients) {
@@ -433,7 +448,7 @@ function broadcast(type, payload, projectId = null, excludeSid = null, workspace
     try {
       client.res.write(`data: ${packet}\n\n`);
     } catch (_) {
-      sseClients.delete(client);
+      removeSseClient(client);
     }
   }
 }
@@ -544,25 +559,22 @@ async function handleApi(req, res, url) {
     });
     res.write(`data: ${JSON.stringify({ type: 'connected', payload: { userId: session.userId }, sentAt: nowIso() })}\n\n`);
 
-    const client = { res, sid: session.sid, userId: session.userId, projectId, expiresAt: session.expiresAt };
+    const client = { res, sid: session.sid, userId: session.userId, projectId, expiresAt: session.expiresAt, heartbeat: null };
     sseClients.add(client);
-    const heartbeat = setInterval(() => {
+    client.heartbeat = setInterval(() => {
       if (client.expiresAt <= Date.now() || !getUser(client.userId) || (projectId && !canProject(db, getProject(projectId), client.userId))) {
-        clearInterval(heartbeat);
-        sseClients.delete(client);
-        res.end();
+        removeSseClient(client, true);
         return;
       }
       try {
         res.write(': heartbeat\n\n');
       } catch (_) {
-        clearInterval(heartbeat);
+        removeSseClient(client, true);
       }
     }, 20_000);
 
     req.on('close', () => {
-      clearInterval(heartbeat);
-      sseClients.delete(client);
+      removeSseClient(client);
     });
     return;
   }

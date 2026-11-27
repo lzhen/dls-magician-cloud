@@ -107,6 +107,7 @@ function harness(t, initial = fixture()) {
   }
   return { context, token, request, begin, timers,
     db: () => vm.runInContext('db', context),
+    sseClientCount() { return vm.runInContext('sseClients.size', context); },
     advance(ms) { now += ms; },
     broadcast(type, payload, projectId, workspaceId = null) { context.eventArgs = [type, payload, projectId, null, workspaceId]; vm.runInContext('broadcast(...eventArgs)', context); },
     heartbeat() { for (const fn of [...timers.values()]) fn(); }
@@ -540,6 +541,26 @@ test('expired SSE token prevents packets immediately and closes on heartbeat', a
   assert.equal(stream.events.length, 1);
   h.heartbeat();
   assert.equal(stream.ended, true);
+});
+
+test('failed SSE writes remove the client and its heartbeat together', async (t) => {
+  await t.test('heartbeat write failure removes the client', async () => {
+    const h = harness(t);
+    const stream = await h.request('editor', 'GET', '/api/events?projectId=a');
+    stream.write = () => { throw new Error('closed socket'); };
+    h.heartbeat();
+    assert.equal(h.sseClientCount(), 0);
+    assert.equal(h.timers.size, 0);
+  });
+
+  await t.test('broadcast write failure clears the heartbeat', async () => {
+    const h = harness(t);
+    const stream = await h.request('editor', 'GET', '/api/events?projectId=a');
+    stream.write = () => { throw new Error('closed socket'); };
+    h.broadcast('project_updated', { value: 'new' }, 'a');
+    assert.equal(h.sseClientCount(), 0);
+    assert.equal(h.timers.size, 0);
+  });
 });
 
 test('permission is rechecked after a delayed mutation body', async (t) => {
