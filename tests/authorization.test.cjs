@@ -107,6 +107,7 @@ function harness(t, initial = fixture()) {
   }
   return { context, token, request, begin, timers,
     db: () => vm.runInContext('db', context),
+    sseClientCount() { return vm.runInContext('sseClients.size', context); },
     advance(ms) { now += ms; },
     broadcast(type, payload, projectId, workspaceId = null) { context.eventArgs = [type, payload, projectId, null, workspaceId]; vm.runInContext('broadcast(...eventArgs)', context); },
     heartbeat() { for (const fn of [...timers.values()]) fn(); }
@@ -223,6 +224,18 @@ for (const id of ['owner-a', 'project-admin', 'workspace-admin', 'editor', 'comm
   }
 }
 
+test('restoring with a legacy empty body also retains the prior workflow in history', async t => {
+  const h = harness(t);
+  const original = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  const route = '/api/projects/a/versions/version/restore';
+  assert.equal((await h.request('owner-a', 'POST', route, { expectedUpdatedAt: null })).status, 400);
+  const restored = await h.request('owner-a', 'POST', route);
+  assert.equal(restored.status, 200);
+  assert.equal(restored.json.structuredLanguage, original.versions[0].content);
+  assert.equal(restored.json.versions[0].content, original.structuredLanguage);
+  assert.equal(restored.json.versions[1].id, original.versions[0].id);
+});
+
 test('read and presence work for members, owners and workspace administrators', async (t) => {
   const h = harness(t);
   for (const id of ['owner-a', 'project-admin', 'workspace-admin', 'editor', 'commenter', 'viewer', 'guest']) {
@@ -266,6 +279,59 @@ test('new authentication never autojoins a workspace or project, including metad
   assert.equal(protectedState(h), before);
 });
 
+test('posting and resolving a comment returns the revision for subsequent saves', async t => {
+  const h = harness(t);
+  const initialRevision = (await h.request('editor', 'GET', '/api/projects/a')).json.updatedAt;
+  const posted = await h.request('editor', 'POST', '/api/projects/a/comments', { body: 'Review note', anchor: 'WHEN' });
+  assert.equal(posted.status, 201);
+  assert.equal(posted.json.previousUpdatedAt, initialRevision);
+  assert.notEqual(posted.json.updatedAt, initialRevision);
+  const resolved = await h.request('editor', 'PATCH', `/api/projects/a/comments/${posted.json.id}`, { resolved: true });
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.json.previousUpdatedAt, posted.json.updatedAt);
+  assert.notEqual(resolved.json.updatedAt, posted.json.updatedAt);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    structuredLanguage: 'Workflow refined after review', expectedUpdatedAt: resolved.json.updatedAt
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.json.structuredLanguage, 'Workflow refined after review');
+  assert.equal(saved.json.comments[0].resolved, true);
+  assert.equal(saved.json.comments[0].updatedAt, undefined);
+});
+
+test('collaborator comment events report the persisted revisions for the editor’s next save', async t => {
+  const h = harness(t);
+  const before = (await h.request('editor', 'GET', '/api/projects/a')).json;
+  const commenterToken = h.token('commenter');
+  const commenterStream = await h.request('commenter', 'GET', '/api/events?projectId=a', undefined, commenterToken);
+  const editorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const readPersistedProject = () => vm.runInContext("storage.read().snapshot.projects.find(project => project.id === 'a')", h.context);
+  const posted = await h.request('commenter', 'POST', '/api/projects/a/comments', { body: 'Review note', anchor: 'WHEN' }, commenterToken);
+  assert.equal(posted.status, 201);
+  const addedProject = readPersistedProject();
+  const resolved = await h.request('commenter', 'PATCH', '/api/projects/a/comments/' + posted.json.id, { resolved: true }, commenterToken);
+  assert.equal(resolved.status, 200);
+  const resolvedProject = readPersistedProject();
+  assert.equal(resolvedProject.structuredLanguage, before.structuredLanguage);
+  assert.ok(Date.parse(addedProject.updatedAt) > Date.parse(before.updatedAt));
+  assert.ok(Date.parse(resolvedProject.updatedAt) > Date.parse(addedProject.updatedAt));
+  assert.deepEqual(commenterStream.events.map(event => event.type), ['connected']);
+
+  const commentEvents = editorStream.events.filter(event => ['comment_added', 'comment_updated'].includes(event.type));
+  assert.deepEqual(commentEvents.map(({ type, projectId, payload }) => ({
+    type, projectId, id: payload.comment.id, resolved: payload.comment.resolved,
+    previousUpdatedAt: payload.previousUpdatedAt, updatedAt: payload.updatedAt
+  })), [
+    { type: 'comment_added', projectId: 'a', id: posted.json.id, resolved: false, previousUpdatedAt: before.updatedAt, updatedAt: addedProject.updatedAt },
+    { type: 'comment_updated', projectId: 'a', id: posted.json.id, resolved: true, previousUpdatedAt: addedProject.updatedAt, updatedAt: resolvedProject.updatedAt }
+  ]);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: commentEvents[1].payload.updatedAt, structuredLanguage: 'Workflow refined after review'
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.json.structuredLanguage, 'Workflow refined after review');
+});
+
 test('confirmed invitee can claim an explicit invitation and receives only the assigned project access', async (t) => {
   const h = harness(t);
   const invited = await h.request('editor', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Commenter' });
@@ -277,6 +343,62 @@ test('confirmed invitee can claim an explicit invitation and receives only the a
   assert.equal((await h.request('invitee', 'POST', '/api/projects/a/comments', { body: 'review' })).status, 201);
   assert.equal((await h.request('invitee', 'PATCH', '/api/projects/a', { name: 'forbidden' })).status, 403);
   assert.equal(h.db().users.find((u) => u.id === invited.json.userId).authUserId, 'invitee');
+});
+
+test('invitation reports the exact project revision transition to the inviter and collaborators', async (t) => {
+  const h = harness(t);
+  const before = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  const inviterToken = h.token('owner-a');
+  const inviterStream = await h.request('owner-a', 'GET', '/api/events?projectId=a', undefined, inviterToken);
+  const editorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const invited = await h.request('owner-a', 'POST', '/api/projects/a/share', { email: 'invitee@example.invalid', role: 'Viewer' }, inviterToken);
+  assert.equal(invited.status, 201);
+  assert.equal(invited.json.role, 'Viewer');
+  assert.equal(invited.json.user.email, 'invitee@example.invalid');
+  assert.equal(invited.json.previousUpdatedAt, before.updatedAt);
+  assert.notEqual(invited.json.updatedAt, before.updatedAt);
+  const after = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  assert.equal(invited.json.updatedAt, after.updatedAt);
+  assert.equal(after.structuredLanguage, before.structuredLanguage);
+  assert.deepEqual(inviterStream.events.map(event => event.type), ['connected']);
+  const event = editorStream.events.find(event => event.type === 'member_invited');
+  assert.equal(event.projectId, 'a');
+  assert.equal(event.payload.member.userId, invited.json.userId);
+  assert.equal(event.payload.previousUpdatedAt, invited.json.previousUpdatedAt);
+  assert.equal(event.payload.updatedAt, invited.json.updatedAt);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: event.payload.updatedAt, structuredLanguage: 'GIVEN\nA new edit\nWHEN\nSave\nTHEN\nPreserve it'
+  });
+  assert.equal(saved.status, 200);
+  assert.match(saved.json.structuredLanguage, /A new edit/);
+});
+
+test('a role change reports its exact project revision to the administrator and collaborators', async t => {
+  const h = harness(t);
+  const before = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  const adminToken = h.token('owner-a');
+  const adminStream = await h.request('owner-a', 'GET', '/api/events?projectId=a', undefined, adminToken);
+  const editorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const updated = await h.request('owner-a', 'PATCH', '/api/projects/a/members/guest', { role: 'Commenter' }, adminToken);
+  assert.equal(updated.status, 200);
+  assert.equal(updated.json.role, 'Commenter');
+  const after = (await h.request('owner-a', 'GET', '/api/projects/a')).json;
+  assert.equal(after.structuredLanguage, before.structuredLanguage);
+  assert.equal(updated.json.previousUpdatedAt, before.updatedAt);
+  assert.equal(updated.json.updatedAt, after.updatedAt);
+  assert.ok(Date.parse(after.updatedAt) > Date.parse(before.updatedAt));
+  assert.deepEqual(adminStream.events.map(event => event.type), ['connected']);
+  const event = editorStream.events.find(event => event.type === 'member_updated');
+  assert.equal(event.projectId, 'a');
+  assert.equal(event.payload.member.userId, 'guest');
+  assert.equal(event.payload.member.role, 'Commenter');
+  assert.equal(event.payload.previousUpdatedAt, updated.json.previousUpdatedAt);
+  assert.equal(event.payload.updatedAt, updated.json.updatedAt);
+  const saved = await h.request('editor', 'PATCH', '/api/projects/a', {
+    expectedUpdatedAt: event.payload.updatedAt, structuredLanguage: 'GIVEN\nA draft\nWHEN\nSave\nTHEN\nPreserve it'
+  });
+  assert.equal(saved.status, 200);
+  assert.match(saved.json.structuredLanguage, /A draft/);
 });
 
 test('unconfirmed email cannot claim invitation; same email cannot hijack an already bound subject', async (t) => {
@@ -421,6 +543,26 @@ test('expired SSE token prevents packets immediately and closes on heartbeat', a
   assert.equal(stream.ended, true);
 });
 
+test('failed SSE writes remove the client and its heartbeat together', async (t) => {
+  await t.test('heartbeat write failure removes the client', async () => {
+    const h = harness(t);
+    const stream = await h.request('editor', 'GET', '/api/events?projectId=a');
+    stream.write = () => { throw new Error('closed socket'); };
+    h.heartbeat();
+    assert.equal(h.sseClientCount(), 0);
+    assert.equal(h.timers.size, 0);
+  });
+
+  await t.test('broadcast write failure clears the heartbeat', async () => {
+    const h = harness(t);
+    const stream = await h.request('editor', 'GET', '/api/events?projectId=a');
+    stream.write = () => { throw new Error('closed socket'); };
+    h.broadcast('project_updated', { value: 'new' }, 'a');
+    assert.equal(h.sseClientCount(), 0);
+    assert.equal(h.timers.size, 0);
+  });
+});
+
 test('permission is rechecked after a delayed mutation body', async (t) => {
   const h = harness(t);
   const pending = h.begin('editor', 'PATCH', '/api/projects/a');
@@ -509,6 +651,45 @@ test('unknown permissions and malformed or duplicate memberships default deny', 
   assert.equal((await h.request('editor', 'PATCH', '/api/projects/a', { structuredLanguage: 'stale again', expectedUpdatedAt: firstVersion })).status, 409);
   assert.equal((await h.request('editor', 'PATCH', '/api/projects/a', { name: 'legacy unguarded' })).status, 200);
  });
+ test('conditional checkpoint captures the requested revision and preserves its transition', async t => {
+  const h = harness(t);
+  const initial = h.db().projects[0].updatedAt;
+  const authorToken = h.token('owner-a');
+  const authorStream = await h.request('owner-a', 'GET', '/api/events?projectId=a', undefined, authorToken);
+  const siblingStream = await h.request('owner-a', 'GET', '/api/events?projectId=a');
+  const collaboratorStream = await h.request('editor', 'GET', '/api/events?projectId=a');
+  const saved = await h.request('owner-a', 'PATCH', '/api/projects/a', {
+    structuredLanguage: 'Checked workflow', expectedUpdatedAt: initial
+  }, authorToken);
+  assert.equal(saved.status, 200);
+  const before = protectedState(h);
+  const stale = await h.request('editor', 'POST', '/api/projects/a/versions', {
+    message: 'Outdated checkpoint', expectedUpdatedAt: initial
+  });
+  assert.equal(stale.status, 409);
+  assert.equal(protectedState(h), before);
+  const version = await h.request('owner-a', 'POST', '/api/projects/a/versions', {
+    message: 'Checked checkpoint', expectedUpdatedAt: saved.json.updatedAt
+  }, authorToken);
+  assert.equal(version.status, 201);
+  assert.equal(version.json.content, 'Checked workflow');
+  assert.equal(version.json.previousUpdatedAt, saved.json.updatedAt);
+  assert.notEqual(version.json.updatedAt, version.json.previousUpdatedAt);
+  assert.deepEqual(authorStream.events.map(event => event.type), ['connected']);
+  assert.deepEqual(siblingStream.events.map(event => event.type), ['connected']);
+  const event = collaboratorStream.events.find(event => event.type === 'version_created');
+  assert.equal(event.projectId, 'a');
+  assert.equal(event.payload.version.id, version.json.id);
+  assert.equal(event.payload.previousUpdatedAt, version.json.previousUpdatedAt);
+  assert.equal(event.payload.updatedAt, version.json.updatedAt);
+  assert.equal(h.db().projects[0].structuredLanguage, 'Checked workflow');
+  const nextSave = await h.request('editor', 'PATCH', '/api/projects/a', {
+    structuredLanguage: 'Continued workflow', expectedUpdatedAt: event.payload.updatedAt
+  });
+  assert.equal(nextSave.status, 200);
+  assert.equal(h.db().projects[0].versions[0].content, 'Checked workflow');
+ });
+
  test('conditional version is checked after the request body arrives and after authorization', async t => {
   const h = harness(t);
   const original = h.db().projects[0].updatedAt;

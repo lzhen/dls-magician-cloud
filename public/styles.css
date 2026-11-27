@@ -3498,7 +3498,7 @@ svg {
   }
 
   .editor-actions .editor-publish,
-  .editor-actions [data-action="editor-more"] {
+  .editor-actions [data-action="versions"] {
     display: inline-flex;
     width: 38px;
     min-width: 38px;
@@ -4333,7 +4333,7 @@ svg {
 
 @media (max-width: 760px) {
   .editor-collaborators { display: none; }
-  .editor-actions .btn:not(.editor-publish):not([data-action="editor-more"]) { display: none; }
+  .editor-actions .btn:not(.editor-publish):not([data-action="versions"]) { display: none; }
   .intent-blocks { padding: 14px 12px 76px; }
   .intent-block { grid-template-columns: 64px minmax(0, 1fr); }
   .output-toolbar { align-items: flex-start; flex-direction: column; }

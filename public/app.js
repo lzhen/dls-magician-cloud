@@ -92,6 +92,9 @@ const state = {
   editorDirty: false,
   editorConflict: false,
   editorSaveRequest: null,
+  editorSaveFailure: null,
+  editorCommentRequest: null,
+  editorRestoreRequest: null,
   autosaveTimer: null,
   streamController: null,
   presenceTimer: null,
@@ -111,6 +114,12 @@ const state = {
   theme: localStorage.getItem('dls-theme') || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
 };
 let deferredInstallPrompt = null;
+let routeHistoryPosition = 0;
+let routeHistoryLength = 0;
+let editorRouteEntry = null;
+let pendingEditorNavigation = null;
+let pendingReconnectAutosave = null;
+let streamRetryTimer = null;
 document.documentElement.dataset.theme = state.theme;
 let supabaseClient = null;
 
@@ -258,9 +267,18 @@ function brandLockup() {
   return `<span class="brand-lockup" role="img" aria-label="DLS Magician Cloud"><span class="brand-symbol" aria-hidden="true"></span><span class="brand-name"><span class="brand-prefix">DLS</span> <span class="brand-product">Magician</span></span></span>`;
 }
 
+function themeToggleAppearance() {
+  const switchToDark = state.theme === 'light';
+  return {
+    label: `Switch to ${switchToDark ? 'dark' : 'light'} mode`,
+    title: switchToDark ? 'Dark mode' : 'Light mode',
+    graphic: icon(switchToDark ? 'moon' : 'sun')
+  };
+}
+
 function themeToggle(className = '') {
-  const light = state.theme === 'light';
-  return `<button class="btn btn-icon btn-ghost theme-toggle ${className}" data-action="toggle-theme" aria-label="Switch to ${light ? 'dark' : 'light'} mode" title="${light ? 'Dark' : 'Light'} mode">${icon(light ? 'moon' : 'sun')}</button>`;
+  const { label, title, graphic } = themeToggleAppearance();
+  return `<button class="btn btn-icon btn-ghost theme-toggle ${className}" data-action="toggle-theme" aria-label="${label}" title="${title}">${graphic}</button>`;
 }
 
 async function api(path, options = {}) {
@@ -355,8 +373,9 @@ async function boot() {
   await handleRoute();
 }
 
-async function loadBootstrap() {
+async function loadBootstrap(isCurrent) {
   const data = await api('/api/bootstrap');
+  if (isCurrent && !isCurrent()) return;
   state.user = data.user;
   state.workspaces = data.workspaces || [];
   state.projects = data.projects || [];
@@ -370,7 +389,91 @@ function parseRoute() {
   return { page, id };
 }
 
+function rememberRouteEntry() {
+  const { history, location, navigation } = window;
+  const position = history.state?.dlsRoutePosition;
+  if (Number.isInteger(position)) {
+    routeHistoryPosition = position;
+  } else {
+    // Several fragment entries can be added before the browser delivers hashchange.
+    routeHistoryPosition += Math.max(1, history.length - routeHistoryLength);
+    history.replaceState({ ...history.state, dlsRoutePosition: routeHistoryPosition }, '');
+  }
+  routeHistoryLength = history.length;
+  return { hash: location.hash, position: routeHistoryPosition, browserEntry: navigation?.currentEntry };
+}
+
+function returnToEditorEntry(editor) {
+  const { history, navigation } = window;
+  const { entry } = editor;
+  let position = entry.position;
+  let currentPosition = history.state?.dlsRoutePosition;
+  // The Navigation API also knows the positions of entries created outside this app.
+  if (entry.browserEntry && navigation?.currentEntry) {
+    position = entry.browserEntry.index;
+    currentPosition = navigation.currentEntry.index;
+  }
+  if (!editor.returning && Number.isInteger(position) && Number.isInteger(currentPosition)
+    && position >= 0 && currentPosition >= 0 && position !== currentPosition) {
+    editor.returning = true;
+    history.go(position - currentPosition);
+    return;
+  }
+  // The original entry may be gone or its position unknown. Preserve the attempted destination.
+  editor.returning = false;
+  history.pushState(null, '', entry.hash);
+  editor.entry = { hash: entry.hash, browserEntry: navigation?.currentEntry };
+  routeHistoryLength = history.length;
+  if (!state.streamController) connectStream(editor.projectId);
+}
+
+async function handleHashChange(event) {
+  if (event?.newURL && new URL(event.newURL).hash !== window.location.hash) return;
+  const editor = editorRouteEntry;
+  const isCurrent = () => editor && editor === editorRouteEntry
+    && state.activeProject?.id === editor.projectId && state.user?.id === editor.userId
+    && state.projectLoadRevision === editor.loadRevision;
+  if (!isCurrent()) return handleRoute();
+
+  const isEditorRoute = () => {
+    const route = parseRoute();
+    return route.page === 'project' && route.id === editor.projectId;
+  };
+  if (isEditorRoute()) {
+    const returning = editor.returning || pendingEditorNavigation === editor;
+    editor.returning = false;
+    editor.entry = rememberRouteEntry();
+    if (returning && !state.streamController) connectStream(editor.projectId);
+    return;
+  }
+  // A legacy traversal can land on an unmarked entry. Recover without retrying the failed save.
+  if (editor.returning) return returnToEditorEntry(editor);
+  if (pendingEditorNavigation === editor) return;
+  if (!state.editorDirty) return handleRoute();
+
+  // The browser has moved already. Keep the mounted editor until its latest draft is saved.
+  pendingEditorNavigation = editor;
+  clearTimeout(state.autosaveTimer);
+  try {
+    do {
+      const saved = await saveEditor();
+      if (!isCurrent() || isEditorRoute()) return;
+      if (!saved) {
+        clearTimeout(state.autosaveTimer);
+        returnToEditorEntry(editor);
+        return;
+      }
+    } while (state.editorDirty);
+    clearTimeout(state.autosaveTimer);
+    return handleRoute();
+  } finally {
+    if (pendingEditorNavigation === editor) pendingEditorNavigation = null;
+  }
+}
+
 async function handleRoute() {
+  editorRouteEntry = null;
+  const entry = rememberRouteEntry();
   const route = parseRoute();
   if (!state.user) {
     disconnectStream();
@@ -380,6 +483,7 @@ async function handleRoute() {
 
   if (route.page === 'project' && route.id) {
     if (!await loadProject(route.id)) return;
+    editorRouteEntry = { entry, projectId: route.id, userId: state.user.id, loadRevision: state.projectLoadRevision };
     renderEditor();
     connectStream(route.id);
     startPresence(route.id);
@@ -389,12 +493,14 @@ async function handleRoute() {
   stopPresence();
   state.activeProject = null;
   state.editorText = '';
+  state.editorSaveFailure = null;
   connectStream(null);
   renderShell(route.page || 'dashboard');
 }
 
 async function loadProject(projectId, { silent = false } = {}) {
   const revision = ++state.projectLoadRevision;
+  state.editorSaveFailure = null;
   const userId = state.user?.id;
   const isCurrent = () => {
     const route = parseRoute();
@@ -923,12 +1029,13 @@ function settingsToggle(key, title, description, on, iconName, customMark = '') 
   `;
 }
 
-function renderEditor() {
+function renderEditor({ preserveCollaborationDrafts = false } = {}) {
   const project = state.activeProject;
   if (!project) return;
   const generated = parseStructuredLanguage(state.editorText, project.name);
   const members = project.presence?.length ? project.presence : project.members.map((member) => member.user);
   const unresolved = project.comments.filter((comment) => !comment.resolved).length;
+  const saveStatus = editorSaveStatus();
 
   app.innerHTML = `
     <main class="editor-shell">
@@ -937,7 +1044,7 @@ function renderEditor() {
           <button class="editor-brand-button" data-action="back-dashboard" aria-label="Back to workspace"><span class="brand-symbol" style="transform:scale(.75)"></span></button>
           <div class="editor-project-meta">
             <div class="editor-project-name"><h1>${escapeHtml(project.name)}</h1><span class="status-pill ${statusClass(project.status)}">${escapeHtml(project.status)}</span></div>
-            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">${state.editorConflict ? escapeHtml(editorConflictMessage) : state.editorDirty ? 'Unsaved changes…' : `Saved ${relativeTime(project.updatedAt)}`}</div>
+            <div class="editor-save-state" id="editor-save-state" role="status" aria-live="polite">${escapeHtml(saveStatus)}</div>
           </div>
         </div>
         <div class="editor-collaborators">
@@ -945,10 +1052,10 @@ function renderEditor() {
           <span id="presence-avatars">${avatarStack(members, members.length)}</span>
         </div>
         <div class="editor-actions">
-          <button class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span>Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
-          <button class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
-          <button class="btn btn-primary btn-sm editor-publish" data-action="publish-prototype">${icon('sparkles', 'icon-sm')}<span>Publish prototype</span></button>
-          <button class="btn btn-icon btn-sm" data-action="editor-more" aria-label="More actions" title="More actions">${icon('more', 'icon-sm')}</button>
+          <button id="comments-button" class="btn btn-sm" data-action="comments">${icon('comment', 'icon-sm')}<span id="comments-button-label">Comments${unresolved ? ` · ${unresolved}` : ''}</span></button>
+          <button id="share-button" class="btn btn-sm" data-action="share">${icon('share', 'icon-sm')}<span>Share</span></button>
+          <button class="btn btn-primary btn-sm editor-publish" data-action="save-workflow">${icon('sparkles', 'icon-sm')}<span>Save workflow</span></button>
+          <button class="btn btn-icon btn-sm" data-action="versions" aria-haspopup="dialog" aria-label="Version history" title="Version history">${icon('history', 'icon-sm')}</button>
         </div>
       </header>
       <section class="editor-body" style="--intent-width:${state.intentWidth}%">
@@ -968,7 +1075,18 @@ function renderEditor() {
       </section>
     </main>
   `;
-  renderModal();
+  if (preserveCollaborationDrafts && state.modal?.type === 'comments') {
+    if (state.modalReturnFocus?.id === 'comments-button') state.modalReturnFocus = document.getElementById('comments-button');
+    refreshComments();
+  } else if (preserveCollaborationDrafts && state.modal?.type === 'share' && state.shareTab === 'invite') {
+    const title = document.getElementById('share-title');
+    if (title) title.textContent = `Share “${project.name}”`;
+    const previousTrigger = state.modalReturnFocus;
+    state.modalReturnFocus = document.getElementById('share-button') || (previousTrigger?.isConnected ? previousTrigger : null);
+    refreshShareMembers(project.members);
+  } else {
+    renderModal();
+  }
 }
 
 function renderIntentBlocks(steps) {
@@ -1100,26 +1218,56 @@ function updateEditorOutputs() {
   const generatedPreview = document.getElementById('generated-preview');
   const validation = document.getElementById('validation-state');
   const lineNumbers = document.getElementById('line-numbers');
-  const saveState = document.getElementById('editor-save-state');
   if (generatedPreview) generatedPreview.innerHTML = renderOutput(parsed);
   if (validation) {
     validation.className = `validation-state ${parsed.valid ? 'valid' : 'invalid'}`;
     validation.innerHTML = `${icon(parsed.valid ? 'checkCircle' : 'alert', 'icon-sm')}${parsed.valid ? 'Valid' : 'Needs input'}`;
   }
   if (lineNumbers) lineNumbers.innerHTML = renderLineNumbers(state.editorText);
-  if (saveState) saveState.textContent = state.editorConflict ? editorConflictMessage : 'Unsaved changes…';
+  if (state.editorSaveFailure?.text !== state.editorText) state.editorSaveFailure = null;
+  updateEditorSaveStatus(editorSaveStatus());
 }
 
 const editorConflictMessage = 'Save conflict: your draft is kept here. Copy it before reloading the latest version, then merge your changes. Autosave is paused.';
+
+function editorSaveStatus() {
+  if (state.editorConflict) return editorConflictMessage;
+  const request = state.editorSaveRequest;
+  if (request?.text === state.editorText && request.isCurrent()) return 'Saving…';
+  if (!state.editorDirty) return `Saved ${relativeTime(state.activeProject.updatedAt)}`;
+  const failure = state.editorSaveFailure;
+  return failure?.text === state.editorText && failure.isCurrent() ? failure.message : 'Unsaved changes…';
+}
+
+function updateEditorSaveStatus(message, status) {
+  const saveState = document.getElementById('editor-save-state');
+  if (!saveState) return;
+  saveState.textContent = message;
+  if (status) saveState.setAttribute('data-http-status', status);
+}
 
 function scheduleAutosave() {
   clearTimeout(state.autosaveTimer);
   if (!state.editorConflict) state.autosaveTimer = window.setTimeout(saveEditor, 900);
 }
 
+function pauseAutosaveForConflict(status) {
+  state.editorConflict = true;
+  clearTimeout(state.autosaveTimer);
+  updateEditorSaveStatus(editorConflictMessage, status);
+  showToast(editorConflictMessage, 'error', 10000);
+}
+
 async function saveEditor() {
   if (!state.activeProject) return false;
   if (state.editorConflict) return false;
+  const restore = state.editorRestoreRequest;
+  if (restore?.isCurrent() && restore.restoring) return false;
+  const comment = state.editorCommentRequest;
+  if (comment?.isCurrent()) {
+    await comment.promise;
+    return comment.isCurrent() && saveEditor();
+  }
   if (state.editorSaveRequest) {
     const previous = state.editorSaveRequest;
     const ok = await previous.promise;
@@ -1133,13 +1281,18 @@ async function saveEditor() {
   const text = state.editorText;
   const expectedUpdatedAt = state.activeProject.updatedAt;
   const isCurrent = () => state.activeProject?.id === projectId && state.user?.id === userId && state.projectLoadRevision === loadRevision;
-  const saveState = document.getElementById('editor-save-state');
+  function reportFailure(message) {
+    if (state.editorText !== text) return;
+    state.editorSaveFailure = { text, isCurrent, message };
+    updateEditorSaveStatus(message);
+  }
   if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
-    if (saveState) saveState.textContent = 'Save unavailable: copy your draft, then reload the project.';
+    reportFailure('Save unavailable: copy your draft, then reload the project.');
     return false;
   }
-  if (saveState) saveState.textContent = 'Saving…';
-  const request = { projectId, promise: null };
+  state.editorSaveFailure = null;
+  updateEditorSaveStatus('Saving…');
+  const request = { projectId, text, isCurrent, promise: null, realtimeUpdate: null };
   state.editorSaveRequest = request;
   request.promise = (async () => {
     try {
@@ -1147,24 +1300,31 @@ async function saveEditor() {
         method: 'PATCH', body: { structuredLanguage: text, expectedUpdatedAt }
       });
       if (!isCurrent()) return false;
-      state.activeProject = { ...updated, presence: state.activeProject.presence || [] };
+      const realtime = request.realtimeUpdate;
+      // A collaborator can save after this write commits but before its response arrives.
+      const superseded = realtime && realtime.revision > Date.parse(updated.updatedAt);
+      const current = superseded ? realtime.project : updated;
+      state.activeProject = { ...current, presence: state.activeProject.presence || [] };
       state.editorDirty = state.editorText !== text;
-      if (saveState) saveState.textContent = state.editorDirty ? 'Unsaved changes…' : 'Saved just now';
-      const summary = state.projects.find((project) => project.id === updated.id);
-      if (summary) summary.updatedAt = updated.updatedAt;
+      const summary = state.projects.find((project) => project.id === current.id);
+      if (summary) summary.updatedAt = current.updatedAt;
+      if (superseded) {
+        if (state.editorDirty) {
+          pauseAutosaveForConflict();
+          return false;
+        }
+        state.editorText = current.structuredLanguage;
+        renderEditor({ preserveCollaborationDrafts: true });
+        showToast(`${realtime.actor} updated the workflow`, 'info');
+      }
+      updateEditorSaveStatus(state.editorDirty ? 'Unsaved changes…' : 'Saved just now');
       return true;
     } catch (error) {
       if (!isCurrent()) return false;
       if (error.status === 409) {
-        state.editorConflict = true;
-        clearTimeout(state.autosaveTimer);
-        if (saveState) {
-          saveState.textContent = editorConflictMessage;
-          saveState.setAttribute('data-http-status', '409');
-        }
-        showToast(editorConflictMessage, 'error', 10000);
+        pauseAutosaveForConflict('409');
       } else {
-        if (saveState) saveState.textContent = 'Save failed — your draft is kept here.';
+        reportFailure('Save failed — your draft is kept here.');
         showToast(error.message, 'error');
       }
       return false;
@@ -1174,6 +1334,50 @@ async function saveEditor() {
     }
   })();
   return request.promise;
+}
+
+function editorContext() {
+  const projectId = state.activeProject?.id;
+  const userId = state.user?.id;
+  const loadRevision = state.projectLoadRevision;
+  const hash = window.location.hash;
+  const route = parseRoute();
+  if (!projectId || route.page !== 'project' || route.id !== projectId) return;
+  const isCurrent = () => state.activeProject?.id === projectId
+    && state.user?.id === userId
+    && state.projectLoadRevision === loadRevision
+    && window.location.hash === hash;
+  return { projectId, isCurrent };
+}
+
+async function resumeEditorAutosave() {
+  const editor = editorRouteEntry;
+  const context = editorContext();
+  const canResume = () => editor?.userId && editor.userId === state.user?.id
+    && editor === editorRouteEntry && editor.loadRevision === state.projectLoadRevision && context?.isCurrent()
+    && state.editorDirty && !state.editorConflict && navigator.onLine !== false;
+  if (!canResume() || pendingReconnectAutosave === editor) return;
+  pendingReconnectAutosave = editor;
+  try {
+    // Connectivity can return before the interrupted save finishes reporting its failure.
+    const pending = state.editorSaveRequest;
+    if (pending) await pending.promise;
+    if (!canResume() || state.editorSaveRequest) return;
+    clearTimeout(state.autosaveTimer);
+    await saveEditor();
+  } finally {
+    if (pendingReconnectAutosave === editor) pendingReconnectAutosave = null;
+  }
+}
+
+async function afterSavingEditor(action) {
+  const context = editorContext();
+  if (!context) return;
+  const { isCurrent } = context;
+  do {
+    if (!await saveEditor() || !isCurrent()) return;
+  } while (state.editorDirty);
+  return action(isCurrent);
 }
 
 function renderModal() {
@@ -1292,18 +1496,35 @@ function renderInviteTab(project) {
       <button class="btn btn-primary" type="submit">Invite</button>
     </form>
     <h3>People with access</h3>
-    <div class="people-list">
-      ${project.members.map((member) => `
-        <div class="people-row">
-          ${avatar(member.user)}
-          <div><div class="person-name">${escapeHtml(member.user.name)}${member.user.id === state.user.id ? ' (you)' : ''}</div><div class="person-email">${escapeHtml(member.user.email)}</div></div>
-          <select class="select" data-action="member-role" data-user-id="${escapeHtml(member.userId)}" aria-label="Role for ${escapeHtml(member.user.name)}">
-            ${['Admin', 'Editor', 'Commenter', 'Viewer'].map((role) => `<option ${member.role === role ? 'selected' : ''}>${role}</option>`).join('')}
-          </select>
-        </div>
-      `).join('')}
+    <div class="people-list" id="share-member-list">
+      ${renderShareMembers(project.members)}
     </div>
   `;
+}
+
+function renderShareMembers(members) {
+  return members.map((member) => `
+    <div class="people-row">
+      ${avatar(member.user)}
+      <div><div class="person-name">${escapeHtml(member.user.name)}${member.user.id === state.user.id ? ' (you)' : ''}</div><div class="person-email">${escapeHtml(member.user.email)}</div></div>
+      <select class="select" data-action="member-role" data-user-id="${escapeHtml(member.userId)}" aria-label="Role for ${escapeHtml(member.user.name)}">
+        ${['Admin', 'Editor', 'Commenter', 'Viewer'].map((role) => `<option ${member.role === role ? 'selected' : ''}>${role}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+}
+
+function refreshShareMembers(members) {
+  if (state.modal?.type !== 'share' || state.shareTab !== 'invite') return;
+  const list = document.getElementById('share-member-list');
+  if (!list) return;
+  const focused = document.activeElement;
+  const focusedUserId = focused && list.contains(focused) ? focused.dataset.userId : null;
+  list.innerHTML = renderShareMembers(members);
+  if (focusedUserId) {
+    [...list.querySelectorAll('[data-action="member-role"]')]
+      .find((control) => control.dataset.userId === focusedUserId)?.focus({ preventScroll: true });
+  }
 }
 
 function renderShareLinkTab(project) {
@@ -1343,17 +1564,8 @@ function renderCommentsDrawer() {
   return `
     <div class="modal-backdrop" data-action="close-modal" style="place-items:stretch end;padding:0;background:rgba(0,0,0,.38)">
       <aside class="comments-drawer" role="dialog" aria-modal="true" aria-labelledby="comments-title">
-        <header class="drawer-header"><div class="drawer-title" id="comments-title">${icon('comment')}Comments <span class="badge">${comments.filter((comment) => !comment.resolved).length} open</span></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close comments">${icon('close')}</button></header>
-        <div class="drawer-body">
-          ${comments.length ? comments.map((comment) => `
-            <article class="comment-card" style="${comment.resolved ? 'opacity:.62' : ''}">
-              <div class="comment-head">${avatar(comment.user, 'avatar-sm')}<span class="comment-author">${escapeHtml(comment.user.name)}</span><span class="comment-time">${relativeTime(comment.createdAt)}</span></div>
-              <span class="comment-anchor">${escapeHtml(comment.anchor)}</span>
-              <div class="comment-body">${escapeHtml(comment.body)}</div>
-              <div class="comment-actions"><button class="btn btn-sm btn-ghost" data-action="resolve-comment" data-comment-id="${escapeHtml(comment.id)}" data-resolved="${comment.resolved}">${icon(comment.resolved ? 'refresh' : 'check', 'icon-sm')}${comment.resolved ? 'Reopen' : 'Resolve'}</button></div>
-            </article>
-          `).join('') : `<div class="empty-state"><div><div class="empty-state-icon">${icon('comment')}</div><h3>No comments yet</h3><p>Start a review thread for the structured language, generated JSON, or flow preview.</p></div></div>`}
-        </div>
+        <header class="drawer-header"><div class="drawer-title" id="comments-title">${icon('comment')}Comments <span class="badge" id="comments-open-count">${comments.filter((comment) => !comment.resolved).length} open</span></div><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close comments">${icon('close')}</button></header>
+        <div class="drawer-body" id="comment-list">${renderCommentList(comments)}</div>
         <form class="drawer-composer" data-form="new-comment">
           <label class="sr-only" for="comment-body">Comment</label><textarea id="comment-body" class="textarea" name="body" placeholder="Add a comment…" required></textarea>
           <div class="composer-row"><label class="sr-only" for="comment-anchor">Comment location</label><select id="comment-anchor" class="select" name="anchor"><option>General</option><option>GIVEN</option><option>WHEN</option><option>THEN</option><option>Generated JSON</option><option>Live preview</option></select><button class="btn btn-primary" type="submit">Comment</button></div>
@@ -1363,24 +1575,79 @@ function renderCommentsDrawer() {
   `;
 }
 
+function renderCommentList(comments) {
+  if (!comments.length) return `<div class="empty-state"><div><div class="empty-state-icon">${icon('comment')}</div><h3>No comments yet</h3><p>Start a review thread for the structured language, generated JSON, or flow preview.</p></div></div>`;
+  return comments.map((comment) => `
+    <article class="comment-card" style="${comment.resolved ? 'opacity:.62' : ''}">
+      <div class="comment-head">${avatar(comment.user, 'avatar-sm')}<span class="comment-author">${escapeHtml(comment.user.name)}</span><span class="comment-time">${relativeTime(comment.createdAt)}</span></div>
+      <span class="comment-anchor">${escapeHtml(comment.anchor)}</span>
+      <div class="comment-body">${escapeHtml(comment.body)}</div>
+      <div class="comment-actions"><button class="btn btn-sm btn-ghost" data-action="resolve-comment" data-comment-id="${escapeHtml(comment.id)}" data-resolved="${comment.resolved}">${icon(comment.resolved ? 'refresh' : 'check', 'icon-sm')}${comment.resolved ? 'Reopen' : 'Resolve'}</button></div>
+    </article>
+  `).join('');
+}
+
+function refreshComments() {
+  const comments = state.activeProject.comments;
+  const unresolved = comments.filter((comment) => !comment.resolved).length;
+  const toolbarLabel = document.getElementById('comments-button-label');
+  if (toolbarLabel) toolbarLabel.textContent = `Comments${unresolved ? ` · ${unresolved}` : ''}`;
+  if (state.modal?.type !== 'comments') return;
+  const list = document.getElementById('comment-list');
+  const badge = document.getElementById('comments-open-count');
+  if (!list || !badge) return;
+  const focused = document.activeElement;
+  const focusedCommentId = focused && list.contains(focused) ? focused.dataset.commentId : null;
+  list.innerHTML = renderCommentList(comments);
+  badge.textContent = `${unresolved} open`;
+  if (focusedCommentId) {
+    [...list.querySelectorAll('[data-comment-id]')]
+      .find((button) => button.dataset.commentId === focusedCommentId)?.focus();
+  }
+}
+
+function canRestoreVersion(project) {
+  const userId = state.user?.id;
+  if (!userId) return false;
+  if (project.ownerId === userId) return true;
+  const memberships = (project.members || []).filter(member => member.userId === userId);
+  return memberships.length === 1 && ['Admin', 'Editor'].includes(memberships[0].role);
+}
+
+function renderVersionItem(version, selectedVersionId) {
+  return `
+    <button class="version-item ${selectedVersionId === version.id ? 'active' : ''}" data-action="select-version" data-version-id="${escapeHtml(version.id)}">
+      <span class="version-dot"></span><span><span class="version-number">${escapeHtml(version.number)}</span><span class="version-message">${escapeHtml(version.message)}</span><span class="version-time">${escapeHtml(version.user?.name || 'Unknown')} · ${relativeTime(version.createdAt)}</span></span>
+    </button>
+  `;
+}
+
 function renderVersionsModal() {
   const project = state.activeProject;
   if (!project) return '';
   const versions = project.versions || [];
   const selected = versions.find((version) => version.id === state.selectedVersionId) || versions[0];
   const selectedContent = selected?.content || '';
+  const restorePending = state.editorRestoreRequest?.isCurrent();
   return `
     <div class="modal-backdrop" data-action="close-modal">
       <section class="modal modal-xl" role="dialog" aria-modal="true" aria-labelledby="versions-title">
-        <header class="modal-header"><div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare, document, and restore changes to “${escapeHtml(project.name)}”.</div></div><div style="display:flex;gap:8px"><button class="btn" data-action="create-version">${icon('save', 'icon-sm')}Save version</button><button class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button></div></header>
+        <header class="modal-header">
+          <div><h2 class="modal-title" id="versions-title">Version history</h2><div class="modal-subtitle">Compare saved versions of “${escapeHtml(project.name)}”.</div></div>
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <div style="display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px">
+              <button type="button" class="btn" data-action="create-version"${restorePending ? ' disabled' : ''}>${icon('save', 'icon-sm')}Save version</button>
+              ${selected?.id && typeof selected.content === 'string' && canRestoreVersion(project)
+                ? `<button type="button" class="btn" data-action="restore-version" data-version-id="${escapeHtml(selected.id)}"${restorePending ? ' disabled' : ''}>Restore this version</button>`
+                : ''}
+            </div>
+            <button type="button" class="btn btn-icon btn-ghost" data-action="close-modal" aria-label="Close version history">${icon('close')}</button>
+          </div>
+        </header>
         ${versions.length ? `
           <div class="version-layout">
             <aside class="version-sidebar">
-              ${versions.map((version) => `
-                <button class="version-item ${selected?.id === version.id ? 'active' : ''}" data-action="select-version" data-version-id="${escapeHtml(version.id)}">
-                  <span class="version-dot"></span><span><span class="version-number">${escapeHtml(version.number)}</span><span class="version-message">${escapeHtml(version.message)}</span><span class="version-time">${escapeHtml(version.user?.name || 'Unknown')} · ${relativeTime(version.createdAt)}</span></span>
-                </button>
-              `).join('')}
+              ${versions.map((version) => renderVersionItem(version, selected?.id)).join('')}
             </aside>
             <section class="diff-panel">
               <div class="diff-toolbar"><span class="helper">Comparing ${escapeHtml(selected?.number || '')} → Current</span><span class="badge">${selectedContent === state.editorText ? 'No changes' : 'Changes detected'}</span></div>
@@ -1391,7 +1658,6 @@ function renderVersionsModal() {
               <div class="detail-group"><div class="detail-label">Author</div><div class="detail-value">${escapeHtml(selected?.user?.name || '—')}</div></div>
               <div class="detail-group"><div class="detail-label">Created</div><div class="detail-value">${fullDate(selected?.createdAt)}</div></div>
               <div class="detail-group"><div class="detail-label">Summary</div><div class="detail-value">${escapeHtml(selected?.message || '—')}</div></div>
-              <div style="margin-top:22px"><button class="btn" style="width:100%" data-action="restore-version" data-version-id="${escapeHtml(selected?.id || '')}">${icon('history', 'icon-sm')}Restore this version</button></div>
             </aside>
           </div>
         ` : `<div class="empty-state"><div><div class="empty-state-icon">${icon('history')}</div><h3>No saved versions</h3><p>Create a named version to establish the first review checkpoint.</p><button class="btn btn-primary" style="margin-top:14px" data-action="create-version">Save first version</button></div></div>`}
@@ -1486,116 +1752,223 @@ function filterProjectRows(query) {
 
 function connectStream(projectId = null) {
   disconnectStream();
-  const controller = new AbortController();
-  state.streamController = controller;
-  streamEvents(projectId, controller).catch((error) => {
-    if (error.name !== 'AbortError') console.error('Realtime stream ended', error);
-  });
+  const userId = state.user?.id;
+  const route = parseRoute();
+  const loadRevision = state.projectLoadRevision;
+  if (!userId || !supabaseClient || projectId !== (route.page === 'project' ? route.id : null)) return;
+
+  const isCurrentRoute = () => {
+    const current = parseRoute();
+    return state.user?.id === userId && state.projectLoadRevision === loadRevision
+      && current.page === route.page && current.id === route.id
+      && (state.activeProject?.id || null) === projectId;
+  };
+  const initialRetryDelay = 1000;
+  const maxRetryDelay = 30_000;
+  let retryDelay = initialRetryDelay;
+  async function openStream() {
+    const controller = new AbortController();
+    state.streamController = controller;
+    let reading = true;
+    const isCurrent = () => reading && state.streamController === controller && isCurrentRoute();
+    const startedAt = Date.now();
+    let retryable;
+    try {
+      retryable = await streamEvents(projectId, controller, userId, isCurrent);
+    } catch (error) {
+      retryable = error.name !== 'AbortError';
+    }
+    reading = false;
+    if (state.streamController !== controller) return;
+    if (!retryable || !isCurrentRoute()) {
+      state.streamController = null;
+      return;
+    }
+
+    // Reset only after a stable stream, not after a handshake immediately followed by EOF.
+    if (Date.now() - startedAt >= maxRetryDelay) retryDelay = initialRetryDelay;
+    streamRetryTimer = window.setTimeout(() => {
+      if (state.streamController !== controller) return;
+      streamRetryTimer = null;
+      if (isCurrentRoute()) void openStream();
+      else state.streamController = null;
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
+  }
+  void openStream();
 }
 
-async function streamEvents(projectId, controller) {
+async function streamEvents(projectId, controller, userId, isCurrent) {
+  const editor = editorContext();
   const { data } = await supabaseClient.auth.getSession();
-  if (!data.session?.access_token) return;
+  if (!isCurrent() || !data?.session?.access_token) return false;
   const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
   const response = await fetch(appPath(`/api/events${query}`), {
     headers: { Authorization: `Bearer ${data.session.access_token}` },
     signal: controller.signal
   });
-  if (!response.ok || !response.body) throw new Error(`Realtime connection failed (${response.status})`);
+  if (!response.ok || !isCurrent()) {
+    void response.body?.cancel().catch(() => {});
+    return response.status === 408 || response.status === 429 || response.status >= 500;
+  }
+  if (!response.body) return true;
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const packets = buffer.split('\n\n');
-    buffer = packets.pop() || '';
-    for (const packet of packets) {
-      const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
-      if (!line) continue;
-      try {
-        handleRealtimeMessage(JSON.parse(line.slice(6)));
-      } catch (error) {
-        console.error('Invalid realtime message', error);
+  let connected = false;
+  let streamEditor = null;
+  try {
+    while (isCurrent()) {
+      const { value, done } = await reader.read();
+      if (!isCurrent()) return false;
+      if (done) return true;
+      buffer += decoder.decode(value, { stream: true });
+      const packets = buffer.split('\n\n');
+      buffer = packets.pop() || '';
+      for (const packet of packets) {
+        const line = packet.split('\n').find((entry) => entry.startsWith('data: '));
+        if (!line) continue;
+        try {
+          const message = JSON.parse(line.slice(6));
+          if (message?.type === 'connected') {
+            if (message.payload?.userId !== userId) return false;
+            connected = true;
+            streamEditor = editor?.projectId === projectId ? editor : null;
+          } else if (connected) {
+            void handleRealtimeMessage(message, controller, streamEditor, isCurrent);
+          }
+        } catch (error) {
+          console.error('Invalid realtime message', error);
+        }
       }
     }
+    return false;
+  } finally {
+    void reader.cancel().catch(() => {});
   }
 }
 
 function disconnectStream() {
+  clearTimeout(streamRetryTimer);
+  streamRetryTimer = null;
   if (state.streamController) {
     state.streamController.abort();
     state.streamController = null;
   }
 }
 
-async function handleRealtimeMessage(message) {
-  if (!message || message.type === 'connected') return;
+function applyRealtimeMetadataRevision(project, { previousUpdatedAt, updatedAt }) {
+  // A gap between revisions may include a workflow edit the draft has not seen.
+  if (!state.editorConflict && typeof previousUpdatedAt === 'string' && project.updatedAt === previousUpdatedAt
+    && typeof updatedAt === 'string' && Date.parse(updatedAt) > Date.parse(previousUpdatedAt)) {
+    project.updatedAt = updatedAt;
+  }
+}
+
+async function handleRealtimeMessage(message, controller = state.streamController, streamEditor = null, routeIsCurrent) {
+  const isCurrent = () => controller === state.streamController && (!routeIsCurrent || routeIsCurrent());
+  if (!message || message.type === 'connected' || !isCurrent()) return;
   const payload = message.payload || {};
 
   if (message.type === 'presence' && state.activeProject) {
+    if (message.projectId !== state.activeProject.id) return;
     state.activeProject.presence = payload.users || [];
     updatePresenceUi();
     return;
   }
 
-  if (message.type === 'comment_added' && state.activeProject) {
-    state.activeProject.comments.unshift(payload.comment);
-    if (state.modal?.type === 'comments') renderModal();
-    showToast(`${payload.comment.user.name} added a comment`, 'info');
-    return;
-  }
-
-  if (message.type === 'comment_updated' && state.activeProject) {
-    const index = state.activeProject.comments.findIndex((item) => item.id === payload.comment.id);
-    if (index >= 0) state.activeProject.comments[index] = payload.comment;
-    if (state.modal?.type === 'comments') renderModal();
+  if (message.type === 'comment_added' || message.type === 'comment_updated') {
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const comments = project.comments;
+    if (message.type === 'comment_added') {
+      comments.unshift(payload.comment);
+      showToast(`${payload.comment.user.name} added a comment`, 'info');
+    } else {
+      const index = comments.findIndex((item) => item.id === payload.comment.id);
+      if (index >= 0) comments[index] = payload.comment;
+    }
+    refreshComments();
     return;
   }
 
   if (message.type === 'member_invited' && state.activeProject) {
-    const existing = state.activeProject.members.findIndex((member) => member.userId === payload.member.userId);
-    if (existing >= 0) state.activeProject.members[existing] = payload.member;
-    else state.activeProject.members.push(payload.member);
-    if (state.modal?.type === 'share') renderModal();
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const existing = project.members.findIndex((member) => member.userId === payload.member.userId);
+    if (existing >= 0) project.members[existing] = payload.member;
+    else project.members.push(payload.member);
+    refreshShareMembers(project.members);
     showToast(`${payload.member.user.name} joined the project`, 'info');
     return;
   }
 
   if (message.type === 'member_updated' && state.activeProject) {
-    const existing = state.activeProject.members.findIndex((member) => member.userId === payload.member.userId);
-    if (existing >= 0) state.activeProject.members[existing] = payload.member;
-    if (state.modal?.type === 'share') renderModal();
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const existing = project.members.findIndex((member) => member.userId === payload.member.userId);
+    if (existing >= 0) project.members[existing] = payload.member;
+    refreshShareMembers(project.members);
     return;
   }
 
   if (message.type === 'version_created' && state.activeProject) {
-    state.activeProject.versions.unshift(payload.version);
-    state.selectedVersionId = payload.version.id;
-    if (state.modal?.type === 'versions') renderModal();
-    showToast(`${payload.version.user.name} saved version ${payload.version.number}`, 'info');
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const { version } = payload;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, payload);
+    const historyOpen = state.modal?.type === 'versions';
+    const keepSelection = historyOpen && project.versions.some((item) => item.id === state.selectedVersionId);
+    project.versions.unshift(version);
+    if (!keepSelection) state.selectedVersionId = version.id;
+    if (historyOpen) {
+      const sidebar = keepSelection ? modalRoot.querySelector('.version-sidebar') : null;
+      // Keep the selected comparison and the existing focused control mounted.
+      if (sidebar) sidebar.insertAdjacentHTML('afterbegin', renderVersionItem(version, state.selectedVersionId));
+      else renderModal();
+    }
+    showToast(`${version.user.name} saved version ${version.number}`, 'info');
     return;
   }
 
   if (message.type === 'project_updated' && state.activeProject && message.projectId === state.activeProject.id) {
-    if (state.editorDirty || state.editorConflict || state.editorSaveRequest) {
-      showToast(`${payload.actor?.name || 'A collaborator'} updated this project. Your local changes are still active.`, 'info', 5200);
+    if (controller !== state.streamController || !streamEditor?.isCurrent() || message.projectId !== streamEditor.projectId) return;
+    const current = state.activeProject;
+    const { project } = payload;
+    if (project?.id !== current.id || typeof project.structuredLanguage !== 'string' || typeof project.updatedAt !== 'string'
+      || !Array.isArray(project.members) || !Array.isArray(project.comments) || !Array.isArray(project.versions)) return;
+    const revision = Date.parse(project.updatedAt);
+    if (!Number.isFinite(revision) || revision <= Date.parse(current.updatedAt)) return;
+
+    const actor = payload.actor?.name || 'A collaborator';
+    const pending = state.editorSaveRequest;
+    if (pending?.isCurrent()) {
+      if (!pending.realtimeUpdate || revision > pending.realtimeUpdate.revision) {
+        pending.realtimeUpdate = { project, revision, actor };
+      }
+      return;
+    }
+    if (state.editorDirty || state.editorConflict || pending) {
+      showToast(`${actor} updated this project. Your local changes are still active.`, 'info', 5200);
     } else {
-      state.activeProject = { ...payload.project, presence: state.activeProject.presence || [] };
-      state.editorText = payload.project.structuredLanguage;
-      renderEditor();
-      showToast(`${payload.actor?.name || 'A collaborator'} updated the workflow`, 'info');
+      state.activeProject = { ...project, presence: current.presence || [] };
+      state.editorText = project.structuredLanguage;
+      renderEditor({ preserveCollaborationDrafts: true });
+      showToast(`${actor} updated the workflow`, 'info');
     }
     return;
   }
 
   if (['project_created', 'workspace_updated'].includes(message.type) || (!state.activeProject && message.type)) {
     try {
-      await loadBootstrap();
+      await loadBootstrap(isCurrent);
+      if (!isCurrent()) return;
       const route = parseRoute();
-      if (route.page !== 'project') renderShell(route.page || 'dashboard');
+      if (!state.activeProject && route.page !== 'project') renderShell(route.page || 'dashboard');
     } catch (error) {
       console.error(error);
     }
@@ -1664,8 +2037,12 @@ async function authenticate(provider, email = '') {
 
 async function logout(signOut = true) {
   state.projectLoadRevision += 1;
-  if (signOut && supabaseClient) await supabaseClient.auth.signOut();
+  state.editorSaveFailure = null;
   disconnectStream();
+  if (signOut && supabaseClient) {
+    await supabaseClient.auth.signOut();
+    disconnectStream();
+  }
   stopPresence();
   state.user = null;
   state.provider = null;
@@ -1752,101 +2129,217 @@ async function createProject(form) {
 }
 
 async function inviteMember(form) {
-  if (!state.activeProject) return;
+  const projectId = state.activeProject?.id;
+  if (!projectId || form.dataset.submitting) return;
+  const userId = state.user?.id;
+  const loadRevision = state.projectLoadRevision;
+  const hash = window.location.hash;
+  const isCurrent = () => state.activeProject?.id === projectId
+    && state.user?.id === userId
+    && state.projectLoadRevision === loadRevision
+    && window.location.hash === hash;
   const data = new FormData(form);
+  const email = data.get('email');
+  const role = data.get('role');
+  form.dataset.submitting = 'true';
   try {
-    const member = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/share`, {
+    const { previousUpdatedAt, updatedAt, ...member } = await api(`/api/projects/${encodeURIComponent(projectId)}/share`, {
       method: 'POST',
-      body: { email: data.get('email'), role: data.get('role') }
+      body: { email, role }
     });
+    if (!isCurrent()) return;
+    // Adopt only this invitation's revision, preserving conflicts from unseen edits.
+    const hasRevisionPair = typeof previousUpdatedAt === 'string' && previousUpdatedAt
+      && typeof updatedAt === 'string' && updatedAt;
+    if (hasRevisionPair && state.activeProject.updatedAt === previousUpdatedAt) {
+      state.activeProject.updatedAt = updatedAt;
+    }
     const index = state.activeProject.members.findIndex((item) => item.userId === member.userId);
     if (index >= 0) state.activeProject.members[index] = member;
     else state.activeProject.members.push(member);
-    renderModal();
+    if (form.isConnected && form.elements.email.value === email && form.elements.role.value === role) form.reset();
+    refreshShareMembers(state.activeProject.members);
     showToast(`${member.user.name} was invited as ${member.role}`);
   } catch (error) {
-    showToast(error.message, 'error');
+    if (isCurrent()) showToast(error.message, 'error');
+  } finally {
+    delete form.dataset.submitting;
   }
 }
 
+async function mutateComment(method, body, commentId) {
+  const context = editorContext();
+  if (!context) return;
+  const { projectId, isCurrent } = context;
+  const previousComment = state.editorCommentRequest;
+  const pendingSave = state.editorSaveRequest;
+  const request = { isCurrent, promise: null };
+  state.editorCommentRequest = request;
+  request.promise = (async () => {
+    try {
+      // Finish earlier writes before starting this one. Autosaves wait for this response.
+      if (previousComment?.isCurrent()) await previousComment.promise;
+      if (pendingSave?.projectId === projectId) await pendingSave.promise;
+      if (!isCurrent()) return;
+      const commentsPath = `/api/projects/${encodeURIComponent(projectId)}/comments`;
+      const path = commentId ? `${commentsPath}/${encodeURIComponent(commentId)}` : commentsPath;
+      const { previousUpdatedAt, updatedAt, ...comment } = await api(path, { method, body });
+      if (!isCurrent()) return;
+      const project = state.activeProject;
+      // A comment only acknowledges its own revision change, never an unseen edit.
+      if (typeof previousUpdatedAt === 'string' && previousUpdatedAt
+        && typeof updatedAt === 'string' && updatedAt && project.updatedAt === previousUpdatedAt) {
+        project.updatedAt = updatedAt;
+      }
+      const index = project.comments.findIndex(item => item.id === comment.id);
+      if (index >= 0) project.comments[index] = comment;
+      else if (method === 'POST') project.comments.unshift(comment);
+      refreshComments();
+      if (method === 'POST') showToast('Comment added');
+      return true;
+    } catch (error) {
+      if (isCurrent()) showToast(error.message, 'error');
+    } finally {
+      if (state.editorCommentRequest === request) state.editorCommentRequest = null;
+    }
+  })();
+  return request.promise;
+}
+
 async function addComment(form) {
-  if (!state.activeProject) return;
+  if (form.dataset.submitting) return;
   const data = new FormData(form);
+  const body = data.get('body');
+  const anchor = data.get('anchor');
+  form.dataset.submitting = 'true';
   try {
-    const comment = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/comments`, {
-      method: 'POST',
-      body: { body: data.get('body'), anchor: data.get('anchor') }
-    });
-    state.activeProject.comments.unshift(comment);
-    renderModal();
-    showToast('Comment added');
-  } catch (error) {
-    showToast(error.message, 'error');
+    const posted = await mutateComment('POST', { body, anchor });
+    if (posted && form.isConnected && form.elements.body.value === body && form.elements.anchor.value === anchor) form.reset();
+  } finally {
+    delete form.dataset.submitting;
   }
 }
 
 async function resolveComment(commentId, resolved) {
-  if (!state.activeProject) return;
-  try {
-    const updated = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/comments/${encodeURIComponent(commentId)}`, {
-      method: 'PATCH',
-      body: { resolved: !resolved }
-    });
-    const index = state.activeProject.comments.findIndex((comment) => comment.id === commentId);
-    if (index >= 0) state.activeProject.comments[index] = updated;
-    renderModal();
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
+  await mutateComment('PATCH', { resolved: !resolved }, commentId);
 }
 
 async function createVersion() {
-  if (!state.activeProject) return;
-  if (!await saveEditor()) return;
-  const message = window.prompt('Name this version:', 'Review checkpoint');
-  if (message === null) return;
-  try {
-    const version = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/versions`, {
-      method: 'POST',
-      body: { message: message.trim() || 'Review checkpoint' }
-    });
-    state.activeProject.versions.unshift(version);
-    state.selectedVersionId = version.id;
-    renderModal();
-    showToast(`Version ${version.number} saved`);
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
+  if (state.editorRestoreRequest?.isCurrent()) return;
+  const originatingModal = state.modal;
+  const selectedVersionId = state.selectedVersionId;
+  await afterSavingEditor(async (isCurrent) => {
+    const { id: projectId, updatedAt: expectedUpdatedAt } = state.activeProject;
+    if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
+      showToast('Reload the project before saving a version.', 'error');
+      return;
+    }
+    const message = window.prompt('Name this version:', 'Review checkpoint');
+    if (message === null) return;
+    try {
+      const { previousUpdatedAt, updatedAt, ...version } = await api(`/api/projects/${encodeURIComponent(projectId)}/versions`, {
+        method: 'POST',
+        body: { message: message.trim() || 'Review checkpoint', expectedUpdatedAt }
+      });
+      if (!isCurrent()) return;
+      if (typeof updatedAt === 'string' && updatedAt && previousUpdatedAt === expectedUpdatedAt
+        && state.activeProject.updatedAt === previousUpdatedAt) {
+        state.activeProject.updatedAt = updatedAt;
+      }
+      state.activeProject.versions.unshift(version);
+      if (state.modal?.type === 'versions') {
+        if (state.modal === originatingModal && state.selectedVersionId === selectedVersionId) {
+          state.selectedVersionId = version.id;
+        }
+        renderModal();
+      }
+      showToast(`Version ${version.number} saved`);
+    } catch (error) {
+      if (isCurrent()) showToast(error.message, 'error');
+    }
+  });
 }
 
 async function restoreVersion(versionId) {
-  if (!state.activeProject || !versionId) return;
-  const confirmed = window.confirm('Restore this version? Your current content will remain available in version history only if it was previously saved.');
-  if (!confirmed) return;
+  const context = editorContext();
+  const modal = state.modal;
+  if (!context || modal?.type !== 'versions' || state.editorRestoreRequest?.isCurrent()) return;
+  const version = state.activeProject.versions.find(item => item.id === versionId);
+  if (!version || typeof version.content !== 'string' || !canRestoreVersion(state.activeProject)) return;
+  if (!window.confirm('Restore this version? Your current workflow will be saved as a recovery checkpoint.')) return;
+
+  const { projectId, isCurrent } = context;
+  const request = { isCurrent, restoring: false };
+  state.editorRestoreRequest = request;
   try {
-    const project = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' });
-    state.activeProject = { ...project, presence: state.activeProject.presence || [] };
-    state.editorText = project.structuredLanguage;
-    state.editorDirty = false;
-    closeModal();
-    renderEditor();
-    showToast('Version restored');
+    renderModal();
+    window.requestAnimationFrame(() => {
+      if (isCurrent() && state.modal === modal) modalRoot.querySelector('[aria-label="Close version history"]')?.focus();
+    });
+    await afterSavingEditor(async () => {
+      if (state.modal !== modal) return;
+      const expectedUpdatedAt = state.activeProject.updatedAt;
+      if (typeof expectedUpdatedAt !== 'string' || !expectedUpdatedAt) {
+        showToast('Reload the project before restoring a version.', 'error');
+        return;
+      }
+      request.restoring = true;
+      const project = await api(`/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/restore`, {
+        method: 'POST', body: { expectedUpdatedAt }
+      });
+      if (!isCurrent()) return;
+      // A newer realtime update may have arrived before this response.
+      if (!(Date.parse(state.activeProject.updatedAt) > Date.parse(project.updatedAt))) {
+        state.activeProject = { ...project, presence: state.activeProject.presence || [] };
+      }
+      if (state.editorDirty) {
+        state.editorConflict = true;
+        clearTimeout(state.autosaveTimer);
+      } else {
+        state.editorText = state.activeProject.structuredLanguage;
+      }
+      const summary = state.projects.find(item => item.id === projectId);
+      if (summary) summary.updatedAt = state.activeProject.updatedAt;
+      const closeHistory = state.modal === modal;
+      if (closeHistory) closeModal();
+      renderEditor();
+      if (closeHistory) window.requestAnimationFrame(() => app.querySelector('[data-action="versions"]')?.focus());
+      showToast(state.editorConflict ? 'Version restored. ' + editorConflictMessage : 'Version restored. Your previous workflow is in Version history.',
+        state.editorConflict ? 'info' : 'success');
+    });
   } catch (error) {
-    showToast(error.message, 'error');
+    if (isCurrent()) {
+      showToast(error.message, 'error');
+      if (state.editorDirty) scheduleAutosave();
+    }
+  } finally {
+    if (state.editorRestoreRequest === request) state.editorRestoreRequest = null;
+    if (isCurrent() && state.modal === modal) {
+      renderModal();
+      window.requestAnimationFrame(() => {
+        if (isCurrent() && state.modal === modal) modalRoot.querySelector('[data-action="restore-version"]')?.focus();
+      });
+    }
   }
 }
 
 async function updateMemberRole(userId, role) {
-  if (!state.activeProject) return;
+  const context = editorContext();
+  if (!context) return;
+  const { projectId, isCurrent } = context;
   try {
-    const member = await api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/members/${encodeURIComponent(userId)}`, {
+    const { previousUpdatedAt, updatedAt, ...member } = await api(`/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`, {
       method: 'PATCH',
       body: { role }
     });
-    const index = state.activeProject.members.findIndex((item) => item.userId === userId);
-    if (index >= 0) state.activeProject.members[index] = member;
-    showToast(`${member.user.name} is now ${role}`);
+    if (!isCurrent()) return;
+    const project = state.activeProject;
+    applyRealtimeMetadataRevision(project, { previousUpdatedAt, updatedAt });
+    const index = project.members.findIndex((item) => item.userId === userId);
+    if (index >= 0) project.members[index] = member;
+    showToast(`${member.user.name} is now ${member.role}`);
   } catch (error) {
+    if (!isCurrent()) return;
     renderModal();
     showToast(error.message, 'error');
   }
@@ -1914,12 +2407,18 @@ document.addEventListener('click', async (event) => {
       scheduleAutosave();
       break;
     }
-    case 'toggle-theme':
+    case 'toggle-theme': {
       state.theme = state.theme === 'light' ? 'dark' : 'light';
       document.documentElement.dataset.theme = state.theme;
       localStorage.setItem('dls-theme', state.theme);
-      await handleRoute();
+      const { label, title, graphic } = themeToggleAppearance();
+      for (const toggle of document.querySelectorAll('[data-action="toggle-theme"]')) {
+        toggle.setAttribute('aria-label', label);
+        toggle.title = title;
+        toggle.innerHTML = graphic;
+      }
       break;
+    }
     case 'auth-provider':
       await authenticate(actionElement.dataset.provider);
       break;
@@ -1951,10 +2450,11 @@ document.addEventListener('click', async (event) => {
       closeModal();
       break;
     case 'share':
-      if (!await saveEditor()) break;
-      state.shareTab = 'invite';
-      state.modal = { type: 'share' };
-      renderModal();
+      await afterSavingEditor(() => {
+        state.shareTab = 'invite';
+        state.modal = { type: 'share' };
+        renderModal();
+      });
       break;
     case 'share-tab':
       state.shareTab = actionElement.dataset.tab;
@@ -1962,35 +2462,53 @@ document.addEventListener('click', async (event) => {
       window.requestAnimationFrame(() => modalRoot.querySelector(`[data-action="share-tab"][data-tab="${state.shareTab}"]`)?.focus());
       break;
     case 'copy-link': {
+      const context = editorContext();
+      const modal = state.modal;
       const input = document.getElementById('share-url');
+      if (!context || modal?.type !== 'share' || state.shareTab !== 'link' || !input?.readOnly || !input.value) break;
+      const url = input.value;
+      const isCurrentDialog = () => context.isCurrent()
+        && state.modal === modal
+        && state.shareTab === 'link'
+        && document.getElementById('share-url') === input
+        && input.readOnly
+        && input.value === url;
       try {
-        await navigator.clipboard.writeText(input?.value || window.location.href);
-        if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
-        showToast('Project link copied');
+        await navigator.clipboard.writeText(url);
       } catch (_) {
-        input?.select();
-        if (document.execCommand('copy')) {
-          if (state.activeProject?.id) void api(`/api/projects/${encodeURIComponent(state.activeProject.id)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
-          showToast('Project link copied');
-        } else {
-          showToast('Select the project link and copy it manually.', 'error');
+        if (!isCurrentDialog()) break;
+        input.select();
+        let copied = false;
+        try {
+          copied = document.execCommand?.('copy') === true;
+        } catch (_) {
+          // The selected link is still available for manual copy.
+        }
+        if (!copied) {
+          if (isCurrentDialog()) showToast('Select the project link and copy it manually.', 'error');
+          break;
         }
       }
+      if (!isCurrentDialog()) break;
+      void api(`/api/projects/${encodeURIComponent(context.projectId)}/metrics`, {method:'POST',body:{event:'share'}}).catch(() => {});
+      showToast('Project link copied');
       break;
     }
     case 'comments':
-      if (!await saveEditor()) break;
-      state.modal = { type: 'comments' };
-      renderModal();
+      await afterSavingEditor(() => {
+        state.modal = { type: 'comments' };
+        renderModal();
+      });
       break;
     case 'resolve-comment':
       await resolveComment(actionElement.dataset.commentId, actionElement.dataset.resolved === 'true');
       break;
     case 'versions':
-      if (!await saveEditor()) break;
-      state.selectedVersionId = state.activeProject?.versions?.[0]?.id || null;
-      state.modal = { type: 'versions' };
-      renderModal();
+      await afterSavingEditor(() => {
+        state.selectedVersionId = state.activeProject.versions?.[0]?.id || null;
+        state.modal = { type: 'versions' };
+        renderModal();
+      });
       break;
     case 'select-version':
       state.selectedVersionId = actionElement.dataset.versionId;
@@ -2012,21 +2530,29 @@ document.addEventListener('click', async (event) => {
       renderEditor();
       window.requestAnimationFrame(() => document.getElementById(`output-tab-${state.previewMode}`)?.focus());
       break;
-    case 'publish-prototype':
-      if (!await saveEditor()) break;
-      showToast(`Prototype published with ${DESIGN_SYSTEMS[state.designSystem].name}.`, 'success');
+    case 'save-workflow':
+      await afterSavingEditor(() => {
+        showToast('Workflow saved.', 'success');
+      });
       break;
     case 'copy-generated-json': {
-      const projectId = state.activeProject?.id;
+      const context = editorContext();
+      const output = document.getElementById('json-code');
+      if (!context || state.previewMode !== 'json' || !output) break;
       const userId = state.user?.id;
+      const outputText = output.textContent;
       const parsed = generatedOutput(parseStructuredLanguage(state.editorText, state.activeProject?.name));
       const json = JSON.stringify(parsed, null, 2);
+      const isCurrentOutput = () => context.isCurrent()
+        && state.previewMode === 'json'
+        && document.getElementById('json-code') === output
+        && output.textContent === outputText;
       try {
         await navigator.clipboard.writeText(json);
       } catch (_) {
-        const output = document.getElementById('json-code');
+        if (!isCurrentOutput()) break;
         const selection = window.getSelection();
-        if (selection && state.user?.id === userId && state.activeProject?.id === projectId && output?.textContent === json) {
+        if (selection && outputText === json) {
           const range = document.createRange();
           range.selectNodeContents(output);
           selection.removeAllRanges();
@@ -2037,8 +2563,8 @@ document.addEventListener('click', async (event) => {
         }
         break;
       }
-      if (projectId && state.user?.id === userId) void api(`/api/projects/${encodeURIComponent(projectId)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
-      showToast('Generated JSON copied.', 'success');
+      if (state.user?.id === userId) void api(`/api/projects/${encodeURIComponent(context.projectId)}/metrics`, {method:'POST',body:{event:'export'}}).catch(() => {});
+      if (isCurrentOutput()) showToast('Generated JSON copied.', 'success');
       break;
     }
     case 'run-prototype':
@@ -2053,8 +2579,9 @@ document.addEventListener('click', async (event) => {
     }
     case 'back-dashboard':
     case 'mobile-home':
-      if (!await saveEditor()) break;
-      window.location.hash = '#dashboard';
+      await afterSavingEditor(() => {
+        window.location.hash = '#dashboard';
+      });
       break;
     case 'settings-tab':
       state.settingsTab = actionElement.dataset.tab;
@@ -2076,9 +2603,6 @@ document.addEventListener('click', async (event) => {
       break;
     case 'notifications':
       showToast('You are all caught up.', 'info');
-      break;
-    case 'editor-more':
-      showToast('Export, duplicate, archive, and developer handoff actions belong here.', 'info');
       break;
     case 'open-workspace-invite':
       showToast('Open a project and use Share to invite a collaborator with a role.', 'info');
@@ -2245,7 +2769,8 @@ document.addEventListener('dblclick', (event) => {
   showToast('Panel widths reset.', 'info');
 });
 
-window.addEventListener('hashchange', handleRoute);
+window.addEventListener('hashchange', handleHashChange);
+window.addEventListener('online', resumeEditorAutosave);
 window.addEventListener('beforeinstallprompt', (event) => {
   event.preventDefault();
   deferredInstallPrompt = event;

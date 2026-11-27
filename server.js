@@ -425,6 +425,21 @@ function readBody(req, limit = 1_000_000) {
   });
 }
 
+function removeSseClient(client, endResponse = false) {
+  sseClients.delete(client);
+  if (client.heartbeat !== null) {
+    clearInterval(client.heartbeat);
+    client.heartbeat = null;
+  }
+  if (endResponse) {
+    try {
+      client.res.end();
+    } catch (_) {
+      // The socket may already be closed.
+    }
+  }
+}
+
 function broadcast(type, payload, projectId = null, excludeSid = null, workspaceId = null) {
   const packet = JSON.stringify({ type, payload, projectId, sentAt: nowIso() });
   for (const client of sseClients) {
@@ -433,7 +448,7 @@ function broadcast(type, payload, projectId = null, excludeSid = null, workspace
     try {
       client.res.write(`data: ${packet}\n\n`);
     } catch (_) {
-      sseClients.delete(client);
+      removeSseClient(client);
     }
   }
 }
@@ -473,6 +488,19 @@ function versionNumber(project) {
   const parts = latest.split('.').map((value) => Number(value) || 0);
   parts[2] += 1;
   return parts.join('.');
+}
+
+function checkpointVersion(project, userId, message) {
+  const version = {
+    id: `v-${crypto.randomUUID()}`,
+    number: versionNumber(project),
+    userId,
+    message,
+    createdAt: nowIso(),
+    content: project.structuredLanguage
+  };
+  project.versions.unshift(version);
+  return version;
 }
 
 function activePresence(projectId) {
@@ -531,25 +559,22 @@ async function handleApi(req, res, url) {
     });
     res.write(`data: ${JSON.stringify({ type: 'connected', payload: { userId: session.userId }, sentAt: nowIso() })}\n\n`);
 
-    const client = { res, sid: session.sid, userId: session.userId, projectId, expiresAt: session.expiresAt };
+    const client = { res, sid: session.sid, userId: session.userId, projectId, expiresAt: session.expiresAt, heartbeat: null };
     sseClients.add(client);
-    const heartbeat = setInterval(() => {
+    client.heartbeat = setInterval(() => {
       if (client.expiresAt <= Date.now() || !getUser(client.userId) || (projectId && !canProject(db, getProject(projectId), client.userId))) {
-        clearInterval(heartbeat);
-        sseClients.delete(client);
-        res.end();
+        removeSseClient(client, true);
         return;
       }
       try {
         res.write(': heartbeat\n\n');
       } catch (_) {
-        clearInterval(heartbeat);
+        removeSseClient(client, true);
       }
     }, 20_000);
 
     req.on('close', () => {
-      clearInterval(heartbeat);
-      sseClients.delete(client);
+      removeSseClient(client);
     });
     return;
   }
@@ -699,15 +724,18 @@ async function handleApi(req, res, url) {
       resolved: false,
       createdAt: nowIso()
     };
+    const previousUpdatedAt = project.updatedAt;
     project.comments.unshift(comment);
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'comment', `commented on ${comment.anchor}`);
     saveDb();
     broadcast('comment_added', {
       comment: { ...comment, user: publicUser(currentUser) },
-      activity: activityPayload(activity)
+      activity: activityPayload(activity),
+      previousUpdatedAt,
+      updatedAt: project.updatedAt
     }, project.id, session.sid);
-    return sendJson(res, 201, { ...comment, user: publicUser(currentUser) });
+    return sendJson(res, 201, { ...comment, user: publicUser(currentUser), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const resolveCommentMatch = pathname.match(/^\/api\/projects\/([^/]+)\/comments\/([^/]+)$/);
@@ -718,11 +746,16 @@ async function handleApi(req, res, url) {
     if (!comment) return sendError(res, 404, 'Comment not found.');
     const body = await readBody(req);
     if (!authorizeProject(res, project, session, 'comment')) return;
+    const previousUpdatedAt = project.updatedAt;
     comment.resolved = Boolean(body.resolved);
     project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
-    broadcast('comment_updated', { comment: { ...comment, user: publicUser(getUser(comment.userId)) } }, project.id, session.sid);
-    return sendJson(res, 200, { ...comment, user: publicUser(getUser(comment.userId)) });
+    broadcast('comment_updated', {
+      comment: { ...comment, user: publicUser(getUser(comment.userId)) },
+      previousUpdatedAt,
+      updatedAt: project.updatedAt
+    }, project.id, session.sid);
+    return sendJson(res, 200, { ...comment, user: publicUser(getUser(comment.userId)), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const shareMatch = pathname.match(/^\/api\/projects\/([^/]+)\/share$/);
@@ -761,17 +794,21 @@ async function handleApi(req, res, url) {
       db.users.push(user);
     }
 
+    const previousUpdatedAt = project.updatedAt;
     if (existing) existing.role = role;
     else project.members.push({ userId: user.id, role });
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'share', `invited ${user.name} as ${role}`);
     recordMetric(db, 'share');
     saveDb();
+    const member = { userId: user.id, role, user: publicUser(user) };
     broadcast('member_invited', {
-      member: { userId: user.id, role, user: publicUser(user) },
+      member,
+      previousUpdatedAt,
+      updatedAt: project.updatedAt,
       activity: activityPayload(activity)
     }, project.id, session.sid);
-    return sendJson(res, 201, { userId: user.id, role, user: publicUser(user) });
+    return sendJson(res, 201, { ...member, previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const memberMatch = pathname.match(/^\/api\/projects\/([^/]+)\/members\/([^/]+)$/);
@@ -784,11 +821,14 @@ async function handleApi(req, res, url) {
     if (!authorizeProject(res, project, session, 'administer')) return;
     if (!ROLES.includes(body.role)) return sendError(res, 400, 'Invalid role.');
     if (member.userId === project.ownerId && body.role !== 'Admin') return sendError(res, 409, 'The project owner must remain an administrator.');
+    const previousUpdatedAt = project.updatedAt;
     member.role = body.role;
     project.updatedAt = nextProjectUpdatedAt(project);
     saveDb();
-    broadcast('member_updated', { member: { ...member, user: publicUser(getUser(member.userId)) } }, project.id, session.sid);
-    return sendJson(res, 200, { ...member, user: publicUser(getUser(member.userId)) });
+    const updatedMember = { ...member, user: publicUser(getUser(member.userId)) };
+    const revision = { previousUpdatedAt, updatedAt: project.updatedAt };
+    broadcast('member_updated', { member: updatedMember, ...revision }, project.id, session.sid);
+    return sendJson(res, 200, { ...updatedMember, ...revision });
   }
 
   const versionMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions$/);
@@ -797,32 +837,41 @@ async function handleApi(req, res, url) {
     if (!authorizeProject(res, project, session)) return;
     const body = await readBody(req);
     if (!authorizeProject(res, project, session, 'edit')) return;
-    const version = {
-      id: `v-${crypto.randomUUID()}`,
-      number: versionNumber(project),
-      userId: session.userId,
-      message: String(body.message || 'Saved a new version.').trim(),
-      createdAt: nowIso(),
-      content: project.structuredLanguage
-    };
-    project.versions.unshift(version);
+    if (Object.prototype.hasOwnProperty.call(body, 'expectedUpdatedAt')) {
+      if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt) return sendError(res, 400, 'Invalid expectedUpdatedAt.');
+      if (body.expectedUpdatedAt !== project.updatedAt) return sendError(res, 409, 'Project changed. Reload before saving a version.');
+    }
+    const previousUpdatedAt = project.updatedAt;
+    const version = checkpointVersion(project, session.userId, String(body.message || 'Saved a new version.').trim());
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'version', `saved version ${version.number}`);
     saveDb();
     broadcast('version_created', {
       version: { ...version, user: publicUser(currentUser) },
+      previousUpdatedAt,
+      updatedAt: project.updatedAt,
       activity: activityPayload(activity)
     }, project.id, session.sid);
-    return sendJson(res, 201, { ...version, user: publicUser(currentUser) });
+    return sendJson(res, 201, { ...version, user: publicUser(currentUser), previousUpdatedAt, updatedAt: project.updatedAt });
   }
 
   const restoreMatch = pathname.match(/^\/api\/projects\/([^/]+)\/versions\/([^/]+)\/restore$/);
   if (restoreMatch && req.method === 'POST') {
-    const project = getProject(decodeURIComponent(restoreMatch[1]));
-    if (!authorizeProject(res, project, session)) return;
+    const projectId = decodeURIComponent(restoreMatch[1]);
+    if (!authorizeProject(res, getProject(projectId), session, 'edit')) return;
+    const body = await readBody(req);
+    const project = getProject(projectId);
     if (!authorizeProject(res, project, session, 'edit')) return;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendError(res, 400, 'Invalid restore request.');
+    // Older clients omit the revision. They still get a recovery checkpoint.
+    if (Object.prototype.hasOwnProperty.call(body, 'expectedUpdatedAt')) {
+      if (typeof body.expectedUpdatedAt !== 'string' || !body.expectedUpdatedAt) return sendError(res, 400, 'Invalid expectedUpdatedAt.');
+      if (body.expectedUpdatedAt !== project.updatedAt) return sendError(res, 409, 'Project changed. Reload before restoring a version.');
+    }
     const version = project.versions.find((item) => item.id === decodeURIComponent(restoreMatch[2]));
-    if (!version) return sendError(res, 404, 'Version not found.');
+    if (!version || typeof version.content !== 'string') return sendError(res, 404, 'Version not found.');
+    // Commit the recovery point and restored content in the same storage write.
+    checkpointVersion(project, session.userId, `Before restoring version ${version.number}`);
     project.structuredLanguage = version.content;
     project.updatedAt = nextProjectUpdatedAt(project);
     const activity = recordActivity(session.userId, project.id, 'restore', `restored version ${version.number}`);

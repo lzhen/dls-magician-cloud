@@ -75,4 +75,29 @@ test('real HTTP create/save/conflict survives a server restart with synthetic Au
   assert.equal(recovered.body.comments[0].body,'Synthetic review only');
   assert.equal(recovered.body.versions[0].id,versionSaved.body.id);
   assert.ok(recovered.body.members.some(member=>member.userId===shared.body.userId&&member.role==='Viewer'));
+
+  const projectUrl='/api/projects/'+id;
+  const restoreUrl=projectUrl+'/versions/'+versionSaved.body.id+'/restore';
+  const currentText='GIVEN\nA newer fixture\nWHEN\nSaved before restore\nTHEN\nRecover it';
+  const edited=await request('PATCH',projectUrl,{structuredLanguage:currentText,expectedUpdatedAt:recovered.body.updatedAt});
+  assert.equal(edited.status,200);
+  assert.equal((await request('POST',restoreUrl,{expectedUpdatedAt:recovered.body.updatedAt})).status,409);
+  const untouched=await request('GET',projectUrl);
+  assert.equal(untouched.body.structuredLanguage,currentText);
+  assert.deepEqual(untouched.body.versions,edited.body.versions);
+
+  const restored=await request('POST',restoreUrl,{expectedUpdatedAt:edited.body.updatedAt});
+  assert.equal(restored.status,200);
+  assert.equal(restored.body.structuredLanguage,saved.body.structuredLanguage);
+  const [checkpoint, earlierVersion]=restored.body.versions;
+  assert.equal(checkpoint.content,currentText);
+  assert.equal(checkpoint.message,'Before restoring version '+versionSaved.body.number);
+  assert.equal(earlierVersion.id,versionSaved.body.id);
+  assert.notEqual(restored.body.updatedAt,edited.body.updatedAt);
+
+  await stop();await start();
+  const reopened=await request('GET',projectUrl);
+  assert.equal(reopened.body.structuredLanguage,restored.body.structuredLanguage);
+  assert.equal(reopened.body.versions[0].id,checkpoint.id);
+  assert.equal(reopened.body.versions[0].content,currentText);
 });
